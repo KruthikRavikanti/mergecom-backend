@@ -17,7 +17,9 @@
       "outputs": []
     },
     "test:integration": {
+      "cache": false,
       "dependsOn": ["^build"],
+      "env": ["RUN_TESTCONTAINERS", "TEST_DATABASE_URL"],
       "outputs": []
     },
     "test:unit": {

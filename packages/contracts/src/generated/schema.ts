@@ -11,7 +11,6 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Process liveness */
         get: operations["getLiveness"];
         put?: never;
         post?: never;
@@ -28,7 +27,6 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Dependency readiness */
         get: operations["getReadiness"];
         put?: never;
         post?: never;
@@ -38,10 +36,279 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Starts the Microsoft Entra authorization-code flow with PKCE. */
+        get: operations["beginOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Completes the OIDC callback and redirects to the web application. */
+        get: operations["completeOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/development/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Non-production identity exchange for pre-seeded local users. */
+        post: operations["createDevelopmentSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/session/organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["switchOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listMemberships"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/memberships/{membershipId}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                membershipId: components["parameters"]["MembershipId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["changeMembershipRole"];
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/memberships/{membershipId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                membershipId: components["parameters"]["MembershipId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["changeMembershipStatus"];
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/memberships/{membershipId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                membershipId: components["parameters"]["MembershipId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["removeMembership"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ApiError: {
+            code: string;
+            message: string;
+        };
+        /** @enum {string} */
+        OrganizationRole: "owner" | "admin" | "project_lead" | "contributor" | "reviewer" | "viewer" | "external_reviewer";
+        /** @enum {string} */
+        MembershipStatus: "active" | "suspended";
+        Organization: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            role: components["schemas"]["OrganizationRole"];
+        };
+        CurrentUser: {
+            user: {
+                /** Format: uuid */
+                id: string;
+                displayName: string;
+                /** Format: email */
+                email: string;
+                emailVerified: boolean;
+            };
+            activeOrganization: null | {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                role: components["schemas"]["OrganizationRole"];
+                status: components["schemas"]["MembershipStatus"];
+            };
+            organizations: components["schemas"]["Organization"][];
+            session: {
+                csrfToken: string;
+                /** Format: date-time */
+                expiresAt: string;
+            };
+        };
+        Membership: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["OrganizationRole"];
+            status: components["schemas"]["MembershipStatus"];
+            /** Format: date-time */
+            joinedAt: string;
+        };
+        Invitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["OrganizationRole"];
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: uri */
+            acceptanceUrl?: string;
+        };
         Liveness: {
             /** @constant */
             status: "alive";
@@ -56,8 +323,22 @@ export interface components {
             };
         };
     };
-    responses: never;
-    parameters: never;
+    responses: {
+        /** @description Request rejected. */
+        ApiError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+    };
+    parameters: {
+        CsrfToken: string;
+        OrganizationId: string;
+        MembershipId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -73,7 +354,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The process is running. */
+            /** @description Process is alive. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -93,7 +374,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Required dependencies are available. */
+            /** @description Dependencies are ready. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -102,7 +383,7 @@ export interface operations {
                     "application/json": components["schemas"]["Readiness"];
                 };
             };
-            /** @description At least one required dependency is unavailable. */
+            /** @description A dependency is unavailable. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -111,6 +392,355 @@ export interface operations {
                     "application/json": components["schemas"]["Readiness"];
                 };
             };
+        };
+    };
+    beginOidcLogin: {
+        parameters: {
+            query?: {
+                returnTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirects to the configured Microsoft identity provider. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["ApiError"];
+        };
+    };
+    completeOidcLogin: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirects to the requested application path or the login error page. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createDevelopmentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    identity: "alpha-owner" | "alpha-admin" | "alpha-project-lead" | "alpha-contributor" | "alpha-reviewer" | "alpha-viewer" | "alpha-external-reviewer" | "beta-owner";
+                };
+            };
+        };
+        responses: {
+            /** @description Session created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        authenticated: true;
+                    };
+                };
+            };
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        redirectTo: string;
+                    };
+                };
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authenticated user and active organization context. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            401: components["responses"]["ApiError"];
+        };
+    };
+    switchOrganization: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    organizationId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated active organization context. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+        };
+    };
+    listMemberships: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Memberships in the active organization. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        memberships: components["schemas"]["Membership"][];
+                    };
+                };
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+        };
+    };
+    createInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                    role: components["schemas"]["OrganizationRole"];
+                    expiresInDays?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Invitation created and delivered. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            400: components["responses"]["ApiError"];
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+            409: components["responses"]["ApiError"];
+            503: components["responses"]["ApiError"];
+        };
+    };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Invitation accepted once. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        organizationId: string;
+                    };
+                };
+            };
+            400: components["responses"]["ApiError"];
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            409: components["responses"]["ApiError"];
+        };
+    };
+    changeMembershipRole: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                membershipId: components["parameters"]["MembershipId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    role: components["schemas"]["OrganizationRole"];
+                };
+            };
+        };
+        responses: {
+            /** @description Role changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+            409: components["responses"]["ApiError"];
+        };
+    };
+    changeMembershipStatus: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                membershipId: components["parameters"]["MembershipId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    status: components["schemas"]["MembershipStatus"];
+                };
+            };
+        };
+        responses: {
+            /** @description Membership status changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+            409: components["responses"]["ApiError"];
+        };
+    };
+    removeMembership: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                membershipId: components["parameters"]["MembershipId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Membership removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+            404: components["responses"]["ApiError"];
+            409: components["responses"]["ApiError"];
         };
     };
 }

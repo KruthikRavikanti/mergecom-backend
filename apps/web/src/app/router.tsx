@@ -1,11 +1,14 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { createBrowserRouter, type RouteObject } from 'react-router-dom';
 
 import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { protectedRouteLoader } from '../auth/session';
 import { AppLayout } from '../components/layout/AppLayout';
 import { PublicLayout } from '../components/layout/PublicLayout';
 import { AdminPage } from '../features/admin/AdminPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DocumentHistoryPage } from '../features/history/DocumentHistoryPage';
+import { InviteAcceptancePage } from '../features/invitations/InviteAcceptancePage';
 import { ProjectPage } from '../features/projects/ProjectPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { TeamPage } from '../features/team/TeamPage';
@@ -16,7 +19,7 @@ import { RouteErrorPage } from '../pages/RouteErrorPage';
 import { SecurityPage } from '../pages/SecurityPage';
 import { SupportPage } from '../pages/SupportPage';
 
-export const appRoutes: RouteObject[] = [
+export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
   {
     children: [
       { element: <HomePage />, index: true },
@@ -31,6 +34,7 @@ export const appRoutes: RouteObject[] = [
   },
   {
     children: [
+      { element: <InviteAcceptancePage />, path: 'invite/:token' },
       {
         children: [
           { element: <DashboardPage />, index: true },
@@ -49,8 +53,10 @@ export const appRoutes: RouteObject[] = [
     ],
     element: <ProtectedRoute />,
     errorElement: <RouteErrorPage />,
+    loader: protectedRouteLoader(queryClient),
   },
   { element: <NotFoundPage />, path: '*' },
 ];
 
-export const createAppRouter = () => createBrowserRouter(appRoutes);
+export const createAppRouter = (queryClient: QueryClient) =>
+  createBrowserRouter(createAppRoutes(queryClient));

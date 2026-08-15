@@ -1,17 +1,45 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider } from '../auth/AuthContext';
-import { appRoutes } from './router';
+import { createAppRoutes } from './router';
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            code: 'unauthenticated',
+            message: 'Authentication is required.',
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 401,
+          },
+        ),
+      ),
+    ),
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function renderRoute(path: string) {
-  const router = createMemoryRouter(appRoutes, { initialEntries: [path] });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const router = createMemoryRouter(createAppRoutes(queryClient), {
+    initialEntries: [path],
+  });
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <RouterProvider router={router} />
       </AuthProvider>

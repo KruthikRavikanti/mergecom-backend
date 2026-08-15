@@ -19,24 +19,37 @@ developer machine.
 
 ```bash
 pnpm infra:up
-pnpm dev
+export DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom
+export AUTH_MODE=development
+export SMTP_URL=smtp://localhost:1025
+pnpm --filter @mergecom/api db:migrate
+pnpm --filter @mergecom/api db:seed
+VITE_ENABLE_DEMO_DATA=true pnpm dev
 ```
 
 Readiness endpoints are dependency-aware:
 
 - API: `http://localhost:3001/health/ready` requires PostgreSQL.
 - Worker: `http://localhost:3002/health/ready` requires Redis.
-- Document engine: `http://localhost:3003/health/ready` has no external Phase 1 dependency.
+- Document engine: `http://localhost:3003/health/ready` has no external dependency.
 
 MinIO creates the `mergecom-artifacts` bucket through the one-shot `minio-init`
 container. Mailpit receives local SMTP traffic on port `1025` and exposes its UI on
 port `8025`.
 
-## 4. Optional web demo
+## 4. Local identity
 
-Add `VITE_ENABLE_DEMO_AUTH=true` to `apps/web/.env.local`, then restart the dev command.
-The button is compiled out of production behavior and uses only synthetic
-`example.test` identities and in-memory fixtures.
+The development login control exchanges one of the identities created by `db:seed`
+for a database-backed API session. It does not use local storage, accept a role from
+the browser, or create an organization. The seed command refuses production and
+creates two organizations with every organization role.
+
+`VITE_ENABLE_DEMO_DATA=true` enables only the deferred project/version fixtures. It
+does not affect identity, memberships, invitations, tenant checks, or RBAC.
+
+Mailpit receives local invitation messages through `SMTP_URL`. Non-production can
+also return the one-time acceptance URL to an authorized owner/admin when
+`EXPOSE_INVITATION_LINKS=true`.
 
 ## 5. Stop local infrastructure
 

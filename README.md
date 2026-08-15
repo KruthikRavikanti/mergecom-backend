@@ -1,9 +1,9 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 1
-establishes the monorepo, service boundaries, local infrastructure, generated API
-client, and migrated web shell. Document capture, identity, persistence, diffing, and
-Office host behavior are intentionally deferred to later phases.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 2
+adds Microsoft Entra OIDC, server-owned sessions, PostgreSQL organizations and
+memberships, centralized RBAC, invitations, audit events, and an authenticated web
+experience. Document capture, diffing, and Office host behavior remain deferred.
 
 ## Repository map
 
@@ -38,7 +38,12 @@ Corepack installation is unavailable.
 pnpm install --frozen-lockfile
 cp infra/compose/.env.example infra/compose/.env
 pnpm infra:up
-pnpm dev
+export DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom
+export AUTH_MODE=development
+export SMTP_URL=smtp://localhost:1025
+pnpm --filter @mergecom/api db:migrate
+pnpm --filter @mergecom/api db:seed
+VITE_ENABLE_DEMO_DATA=true pnpm dev
 ```
 
 The web app is available at `http://localhost:5173`, the Office shell at
@@ -47,15 +52,9 @@ at `http://localhost:3002`, and the document engine at `http://localhost:3003`.
 Mailpit is available at `http://localhost:8025` and the MinIO console at
 `http://localhost:9001`.
 
-Demo authentication is disabled by default and cannot run in production builds. To
-inspect protected routes locally, create `apps/web/.env.local` with:
-
-```dotenv
-VITE_ENABLE_DEMO_AUTH=true
-```
-
-This enables an explicit development adapter with synthetic data. It does not add
-password authentication or product API endpoints.
+The local identity exchange resolves only pre-seeded immutable subjects through the
+API and cannot run with `NODE_ENV=production`. It never creates passwords or lets the
+browser assign a role. The development login UI is excluded from production builds.
 
 ## Commands
 
@@ -78,6 +77,7 @@ RUN_TESTCONTAINERS=true pnpm test:integration
 ```
 
 See [local setup](docs/setup/local-development.md),
+[identity and RBAC](docs/security/identity-rbac.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.
 

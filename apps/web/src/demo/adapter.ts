@@ -1,14 +1,8 @@
-import {
-  demoMembers,
-  demoProjects,
-  demoVersions,
-  initialDemoSettings,
-} from './seed';
-import type { DemoProject, DemoSettings, DemoVersion } from './types';
+import { demoProjects, demoVersions } from './seed';
+import type { DemoProject, DemoVersion } from './types';
 
 const demoEnabled =
-  import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_AUTH === 'true';
-let settings = { ...initialDemoSettings };
+  import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_DATA === 'true';
 
 function assertDemoEnabled() {
   if (!demoEnabled)
@@ -23,10 +17,6 @@ async function settle<T>(value: T): Promise<T> {
 }
 
 export const demoAdapter = {
-  async getMembers() {
-    assertDemoEnabled();
-    return settle(demoMembers);
-  },
   async getProject(projectId: string): Promise<DemoProject | null> {
     assertDemoEnabled();
     return settle(
@@ -36,10 +26,6 @@ export const demoAdapter = {
   async getProjects() {
     assertDemoEnabled();
     return settle(demoProjects);
-  },
-  async getSettings() {
-    assertDemoEnabled();
-    return settle(settings);
   },
   async getVersions(
     projectId: string,
@@ -53,10 +39,5 @@ export const demoAdapter = {
       project?.documents.some((document) => document.id === documentId) ??
       false;
     return settle(documentExists ? demoVersions : []);
-  },
-  async updateSettings(next: DemoSettings) {
-    assertDemoEnabled();
-    settings = { ...next };
-    return settle(settings);
   },
 };

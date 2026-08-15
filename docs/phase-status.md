@@ -1,5 +1,28 @@
 # Phase status
 
+## Phase 2: identity, tenancy, and organization RBAC
+
+Status: implementation complete on `phase-2/identity-rbac`; pending owner review.
+
+- [x] Drizzle schema and PostgreSQL migration cover users, immutable identity mappings, organizations, memberships, invitations, sessions, OIDC transactions, controlled owner grants, admission policies, and audit events.
+- [x] Entra OIDC authorization code flow uses discovery, PKCE, state, nonce, issuer/audience/signature validation, verified email-domain claims, and automatic signing-key discovery.
+- [x] Opaque HttpOnly sessions enforce idle/absolute expiry, logout revocation, origin-checked CSRF tokens, and suspended membership denial.
+- [x] First-owner creation requires an operator-created, time-limited grant bound to exact issuer, tenant, subject, and verified email. Public self-service organization creation does not exist.
+- [x] Owner, admin, project lead, contributor, reviewer, viewer, and external reviewer permissions are centralized in one policy module and rechecked by transactional mutations.
+- [x] Current-user, organization switch, invitation create/accept, membership list, role change, suspension/reactivation, and removal endpoints are generated into the shared client.
+- [x] Cross-tenant paths return the same not-found response as unknown resources and create denial audit events without querying or returning the foreign tenant.
+- [x] Login-adjacent, development identity, invitation creation, and invitation acceptance endpoints are rate limited.
+- [x] The web app uses a protected route loader and real session client with loading, error, logout, organization, invitation, team, settings, and administration states.
+- [x] Local development seeds two organizations and every role without passwords or production secrets.
+
+The remaining `apps/web/src/demo/` boundary contains only synthetic project and
+version fixtures scheduled for Phase 3. It no longer supplies identity, memberships,
+or current-user settings.
+
+Configuration and the authorization matrix are documented in
+`docs/security/identity-rbac.md`. Verification evidence is recorded in
+`docs/verification/phase-2-command-results.md`.
+
 ## Phase 1: monorepo foundation and frontend migration
 
 Status: implementation complete on `phase-1/monorepo-foundation`; pending owner review.
@@ -15,10 +38,8 @@ Status: implementation complete on `phase-1/monorepo-foundation`; pending owner 
 - [x] Vitest, xUnit, Testcontainers, and Playwright scaffolding is active; public and authenticated routes have desktop/mobile smoke tests.
 - [x] CI covers formatting, lint, types, tests, builds, generated contracts, Compose configuration, and dependency scans.
 
-Remaining mock boundary: `apps/web/src/demo/` contains only synthetic project, member,
-version, and settings fixtures behind the explicit development adapter. It has no
-product endpoint or persistence behavior and is scheduled for replacement as Phase 2
-and later domain APIs arrive.
+The Phase 1 mock identity/member/settings boundary was removed in Phase 2. Only
+synthetic project/version fixtures remain pending Phase 3.
 
 Local verification evidence and known environment limits are recorded in
 `docs/verification/phase-1-command-results.md`.

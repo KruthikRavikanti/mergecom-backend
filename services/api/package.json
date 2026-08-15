@@ -6,23 +6,35 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist coverage",
+    "db:generate": "drizzle-kit generate",
+    "db:bootstrap-owner": "tsx src/db/bootstrap-owner.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
     "dev": "tsx watch src/server.ts",
     "lint": "eslint src test",
     "start": "node dist/server.js",
-    "test:integration": "vitest run test/startup.test.ts test/postgres.test.ts",
-    "test:unit": "vitest run src/app.test.ts",
+    "test:integration": "vitest run test/startup.test.ts test/postgres.test.ts test/identity.postgres.test.ts",
+    "test:unit": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fastify/cookie": "11.0.2",
+    "@fastify/cors": "11.1.0",
+    "@fastify/rate-limit": "11.1.0",
     "@fastify/swagger": "9.8.1",
     "@fastify/type-provider-typebox": "6.1.0",
     "@sinclair/typebox": "0.34.48",
+    "drizzle-orm": "0.45.2",
     "fastify": "5.12.0",
+    "nodemailer": "9.0.5",
+    "openid-client": "6.8.5",
     "pg": "8.16.3"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "12.1.0",
+    "@types/nodemailer": "7.0.11",
     "@types/pg": "8.15.6",
+    "drizzle-kit": "0.31.10",
     "tsx": "4.21.0",
     "vitest": "4.0.16"
   }

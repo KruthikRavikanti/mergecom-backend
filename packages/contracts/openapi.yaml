@@ -1,61 +1,438 @@
 openapi: 3.1.0
 info:
-  title: MergeCom Foundation API
-  version: 0.1.0
-  description: Phase 1 exposes health contracts only. Product endpoints arrive in later phases.
+  title: MergeCom API
+  version: 0.2.0
+  description: Identity, organization, invitation, and membership contracts for Phase 2.
 paths:
   /health/live:
     get:
       operationId: getLiveness
-      summary: Process liveness
       responses:
         '200':
-          description: The process is running.
+          description: Process is alive.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Liveness'
+              schema: { $ref: '#/components/schemas/Liveness' }
   /health/ready:
     get:
       operationId: getReadiness
-      summary: Dependency readiness
       responses:
         '200':
-          description: Required dependencies are available.
+          description: Dependencies are ready.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Readiness'
+              schema: { $ref: '#/components/schemas/Readiness' }
         '503':
-          description: At least one required dependency is unavailable.
+          description: A dependency is unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+  /auth/login:
+    get:
+      operationId: beginOidcLogin
+      description: Starts the Microsoft Entra authorization-code flow with PKCE.
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirects to the configured Microsoft identity provider.
+        '503': { $ref: '#/components/responses/ApiError' }
+  /auth/callback:
+    get:
+      operationId: completeOidcLogin
+      description: Completes the OIDC callback and redirects to the web application.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string }
+        - name: error
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirects to the requested application path or the login error page.
+  /auth/development/session:
+    post:
+      operationId: createDevelopmentSession
+      description: Non-production identity exchange for pre-seeded local users.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [identity]
+              properties:
+                identity:
+                  type: string
+                  enum:
+                    [
+                      alpha-owner,
+                      alpha-admin,
+                      alpha-project-lead,
+                      alpha-contributor,
+                      alpha-reviewer,
+                      alpha-viewer,
+                      alpha-external-reviewer,
+                      beta-owner,
+                    ]
+      responses:
+        '200':
+          description: Session created.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Readiness'
+                type: object
+                required: [authenticated]
+                properties:
+                  authenticated: { type: boolean, const: true }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+  /auth/logout:
+    post:
+      operationId: logout
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Session revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [redirectTo]
+                properties:
+                  redirectTo: { type: string, format: uri }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+  /v1/me:
+    get:
+      operationId: getCurrentUser
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Authenticated user and active organization context.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentUser' }
+        '401': { $ref: '#/components/responses/ApiError' }
+  /v1/session/organization:
+    post:
+      operationId: switchOrganization
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [organizationId]
+              properties:
+                organizationId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Updated active organization context.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentUser' }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/memberships:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: listMemberships
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Memberships in the active organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [memberships]
+                properties:
+                  memberships:
+                    type: array
+                    items: { $ref: '#/components/schemas/Membership' }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    post:
+      operationId: createInvitation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, role]
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+                expiresInDays: { type: integer, minimum: 1, maximum: 14 }
+      responses:
+        '201':
+          description: Invitation created and delivered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invitation' }
+        '400': { $ref: '#/components/responses/ApiError' }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '409': { $ref: '#/components/responses/ApiError' }
+        '503': { $ref: '#/components/responses/ApiError' }
+  /v1/invitations/accept:
+    post:
+      operationId: acceptInvitation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string, minLength: 20, maxLength: 256 }
+      responses:
+        '200':
+          description: Invitation accepted once.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [organizationId]
+                properties:
+                  organizationId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/ApiError' }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '409': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/memberships/{membershipId}/role:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/MembershipId'
+    patch:
+      operationId: changeMembershipRole
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+      responses:
+        '204': { description: Role changed. }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '409': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/memberships/{membershipId}/status:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/MembershipId'
+    patch:
+      operationId: changeMembershipStatus
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/MembershipStatus' }
+      responses:
+        '204': { description: Membership status changed. }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '409': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/memberships/{membershipId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/MembershipId'
+    delete:
+      operationId: removeMembership
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204': { description: Membership removed. }
+        '401': { $ref: '#/components/responses/ApiError' }
+        '403': { $ref: '#/components/responses/ApiError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '409': { $ref: '#/components/responses/ApiError' }
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: mergecom_session
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+    OrganizationId:
+      name: organizationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    ApiError:
+      description: Request rejected.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
   schemas:
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+    OrganizationRole:
+      type: string
+      enum:
+        [
+          owner,
+          admin,
+          project_lead,
+          contributor,
+          reviewer,
+          viewer,
+          external_reviewer,
+        ]
+    MembershipStatus:
+      type: string
+      enum: [active, suspended]
+    Organization:
+      type: object
+      additionalProperties: false
+      required: [id, name, role]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/OrganizationRole' }
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [user, activeOrganization, organizations, session]
+      properties:
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, displayName, email, emailVerified]
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            email: { type: string, format: email }
+            emailVerified: { type: boolean }
+        activeOrganization:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [id, name, role, status]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+                role: { $ref: '#/components/schemas/OrganizationRole' }
+                status: { $ref: '#/components/schemas/MembershipStatus' }
+        organizations:
+          type: array
+          items: { $ref: '#/components/schemas/Organization' }
+        session:
+          type: object
+          additionalProperties: false
+          required: [csrfToken, expiresAt]
+          properties:
+            csrfToken: { type: string }
+            expiresAt: { type: string, format: date-time }
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [id, userId, name, email, role, status, joinedAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/OrganizationRole' }
+        status: { $ref: '#/components/schemas/MembershipStatus' }
+        joinedAt: { type: string, format: date-time }
+    Invitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/OrganizationRole' }
+        expiresAt: { type: string, format: date-time }
+        acceptanceUrl: { type: string, format: uri }
     Liveness:
       type: object
       additionalProperties: false
       required: [status, service]
       properties:
-        status:
-          type: string
-          const: alive
-        service:
-          type: string
+        status: { type: string, const: alive }
+        service: { type: string }
     Readiness:
       type: object
       additionalProperties: false
       required: [status, service, dependencies]
       properties:
-        status:
-          type: string
-          enum: [ready, not-ready]
-        service:
-          type: string
+        status: { type: string, enum: [ready, not-ready] }
+        service: { type: string }
         dependencies:
           type: object
-          additionalProperties:
-            type: string
-            enum: [ready, unavailable]
+          additionalProperties: { type: string, enum: [ready, unavailable] }

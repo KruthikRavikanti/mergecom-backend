@@ -7,8 +7,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "@mergecom/demo-action": ["src/auth/DemoLoginAction.development.tsx"],
-      "@mergecom/demo-auth": ["src/auth/demoAuth.development.ts"]
+      "@mergecom/development-login": [
+        "src/auth/DevelopmentLoginAction.development.tsx"
+      ]
     },
     "types": ["vitest/globals"]
   },

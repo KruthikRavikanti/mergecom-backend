@@ -1,27 +1,24 @@
 import { ErrorState, LoadingState } from '@mergecom/ui';
-import { UserPlus } from 'lucide-react';
 
 import { useMembersQuery } from '../../api/queries';
+import { useAuth } from '../../auth/AuthContext';
+import { roleLabels } from '../../auth/roles';
 
 export function TeamPage() {
-  const members = useMembersQuery();
+  const { user } = useAuth();
+  const members = useMembersQuery(user?.activeOrganization?.id);
   if (members.isLoading) return <LoadingState label="Loading team" />;
   if (members.isError)
     return <ErrorState message="Team members could not be loaded." />;
   return (
     <section>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-bold text-red-700">WORKSPACE</p>
-          <h1 className="page-title mt-1">Team</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Development-only members for route and layout validation.
-          </p>
-        </div>
-        <button className="button-primary" disabled type="button">
-          <UserPlus aria-hidden="true" size={18} />
-          Invite member
-        </button>
+      <div>
+        <p className="text-sm font-bold text-red-700">WORKSPACE</p>
+        <h1 className="page-title mt-1">Team</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Active and suspended memberships in{' '}
+          {user?.activeOrganization?.name ?? 'this workspace'}.
+        </p>
       </div>
       <div className="mt-7 overflow-x-auto border border-slate-200 bg-white">
         <table className="w-full min-w-[560px] text-left text-sm">
@@ -30,6 +27,7 @@ export function TeamPage() {
               <th className="px-5 py-3 font-semibold">Member</th>
               <th className="px-5 py-3 font-semibold">Email</th>
               <th className="px-5 py-3 font-semibold">Role</th>
+              <th className="px-5 py-3 font-semibold">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -39,7 +37,16 @@ export function TeamPage() {
                   {member.name}
                 </td>
                 <td className="px-5 py-4 text-slate-600">{member.email}</td>
-                <td className="px-5 py-4 text-slate-600">{member.role}</td>
+                <td className="px-5 py-4 text-slate-600">
+                  {roleLabels[member.role]}
+                </td>
+                <td className="px-5 py-4">
+                  <span
+                    className={`inline-flex px-2 py-1 text-xs font-semibold ${member.status === 'active' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}
+                  >
+                    {member.status === 'active' ? 'Active' : 'Suspended'}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>

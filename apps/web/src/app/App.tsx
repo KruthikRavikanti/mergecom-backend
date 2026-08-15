@@ -14,7 +14,7 @@ export function App() {
         defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
       }),
   );
-  const [router] = useState(createAppRouter);
+  const [router] = useState(() => createAppRouter(queryClient));
 
   return (
     <AppErrorBoundary>

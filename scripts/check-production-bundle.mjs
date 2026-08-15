@@ -6,6 +6,8 @@ const bundleRoot = fileURLToPath(new URL('../apps/web/dist/', import.meta.url));
 const prohibited = [
   'Enter development demo',
   'mergecom.demo-session',
+  'alpha-owner',
+  'Continue with local identity',
   'reviewer@example.test',
   'password123',
 ];

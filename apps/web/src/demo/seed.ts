@@ -1,9 +1,4 @@
-import type {
-  DemoMember,
-  DemoProject,
-  DemoSettings,
-  DemoVersion,
-} from './types';
+import type { DemoProject, DemoVersion } from './types';
 
 export const demoProjects: DemoProject[] = [
   {
@@ -88,30 +83,3 @@ export const demoVersions: DemoVersion[] = [
     timestamp: '2026-08-12T11:05:00Z',
   },
 ];
-
-export const demoMembers: DemoMember[] = [
-  {
-    email: 'avery@example.test',
-    id: 'member-1',
-    name: 'Avery Chen',
-    role: 'Project lead',
-  },
-  {
-    email: 'jordan@example.test',
-    id: 'member-2',
-    name: 'Jordan Lee',
-    role: 'Reviewer',
-  },
-  {
-    email: 'morgan@example.test',
-    id: 'member-3',
-    name: 'Morgan Patel',
-    role: 'Reviewer',
-  },
-];
-
-export const initialDemoSettings: DemoSettings = {
-  digestEnabled: true,
-  displayName: 'Demo Reviewer',
-  title: 'Document reviewer',
-};

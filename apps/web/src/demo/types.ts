@@ -23,16 +23,3 @@ export interface DemoVersion {
   note: string;
   timestamp: string;
 }
-
-export interface DemoMember {
-  email: string;
-  id: string;
-  name: string;
-  role: string;
-}
-
-export interface DemoSettings {
-  digestEnabled: boolean;
-  displayName: string;
-  title: string;
-}
