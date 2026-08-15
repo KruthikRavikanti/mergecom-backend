@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: MergeCom Foundation API
+  version: 0.1.0
+  description: Phase 1 exposes health contracts only. Product endpoints arrive in later phases.
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Process liveness
+      responses:
+        '200':
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Liveness'
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: Dependency readiness
+      responses:
+        '200':
+          description: Required dependencies are available.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          description: At least one required dependency is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+components:
+  schemas:
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          const: alive
+        service:
+          type: string
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, service, dependencies]
+      properties:
+        status:
+          type: string
+          enum: [ready, not-ready]
+        service:
+          type: string
+        dependencies:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ready, unavailable]

@@ -1,48 +1,90 @@
 # MergeCom
 
-MergeCom is intended to become version control for Microsoft Office documents. This repository currently contains legacy Office.js experiments and a filesystem server retained only as migration evidence. It is not a production service and must not be used with confidential documents.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 1
+establishes the monorepo, service boundaries, local infrastructure, generated API
+client, and migrated web shell. Document capture, identity, persistence, diffing, and
+Office host behavior are intentionally deferred to later phases.
 
-Phase 0 contains the exposed development key and generated document data in the current branch, records the audited baseline, and fixes the target architecture before implementation begins. See [docs/phase-status.md](docs/phase-status.md) for the current gate.
-
-## Current repository map
+## Repository map
 
 ```text
-Mergecom V1/                  Word Office.js technical spike
-Mergecom V1 PowerPoint/       PowerPoint Office.js technical spike
-Mergecom V2 Excel/            Excel Office.js technical spike
-server.js                     legacy localhost filesystem server
-docs/                         Phase 0 audit, decisions, and runbooks
+apps/web/                    React web application
+apps/office-addin/           shared Office task-pane shell
+services/api/                Fastify HTTP API
+services/worker/             BullMQ/Redis worker process shell
+services/document-engine/    ASP.NET Core document-engine boundary
+packages/contracts/          OpenAPI source and generated TypeScript client types
+packages/ui/                 shared accessible UI primitives
+packages/office-core/        shared Office artifact invariants
+packages/test-fixtures/      synthetic test data only
+infra/compose/               PostgreSQL, Redis, MinIO, and Mailpit
+legacy/                      archived prototypes outside the workspace
 ```
 
-The React frontend audited during Phase 0 is currently attached as a sibling workspace at `../mergecom-frontend`; it is not tracked by this Git repository yet. Phase 1 will migrate it into the canonical monorepo.
+## Prerequisites
 
-## Legacy verification
+- Node.js `24.18.1`
+- pnpm `11.22.0`
+- .NET SDK `10.0.400`
+- Docker with Compose v2 for local dependencies and Testcontainers checks
 
-Use Node.js 20 or later. These commands verify the historical projects; they do not make them production-capable.
+The versions are pinned in `.nvmrc`, `.node-version`, `package.json`, and
+`global.json`. Install pnpm with `npm install --global pnpm@11.22.0` when a current
+Corepack installation is unavailable.
+
+## Setup
 
 ```bash
-npm ci
-npm run legacy:certs
-npm run legacy:start
+pnpm install --frozen-lockfile
+cp infra/compose/.env.example infra/compose/.env
+pnpm infra:up
+pnpm dev
 ```
 
-The certificate setup can request interactive operating-system trust confirmation. The legacy server listens only on `127.0.0.1:3001`, accepts browser requests from the local task pane, and reads certificates generated outside the repository by `office-addin-dev-certs`. There is deliberately no normal `start` script.
+The web app is available at `http://localhost:5173`, the Office shell at
+`http://localhost:5174`, the API at `http://localhost:3001`, the worker health server
+at `http://localhost:3002`, and the document engine at `http://localhost:3003`.
+Mailpit is available at `http://localhost:8025` and the MinIO console at
+`http://localhost:9001`.
 
-Each add-in is checked separately:
+Demo authentication is disabled by default and cannot run in production builds. To
+inspect protected routes locally, create `apps/web/.env.local` with:
+
+```dotenv
+VITE_ENABLE_DEMO_AUTH=true
+```
+
+This enables an explicit development adapter with synthetic data. It does not add
+password authentication or product API endpoints.
+
+## Commands
 
 ```bash
-cd "Mergecom V1" && npm ci && npm run build && npm run lint && npm run validate
-cd "Mergecom V1 PowerPoint" && npm ci && npm run build && npm run lint && npm run validate
-cd "Mergecom V2 Excel" && npm ci && npm run build && npm run lint && npm run validate
+pnpm dev                 # all JS processes plus the .NET document engine
+pnpm build               # production builds for every active workspace/service
+pnpm format:check        # Prettier policy
+pnpm lint                # ESLint policy
+pnpm typecheck           # strict TypeScript checks
+pnpm test:unit           # Vitest and xUnit
+pnpm test:integration    # service startup and gated Testcontainers checks
+pnpm test:e2e            # Playwright desktop/mobile route suite
+pnpm verify              # complete local quality gate
 ```
 
-Builds and manifest validation pass at the Phase 0 baseline; lint failures are documented in [docs/verification/phase-0-command-results.md](docs/verification/phase-0-command-results.md). There are no tests.
+Run the real PostgreSQL integration check with Docker available:
 
-## Read first
+```bash
+RUN_TESTCONTAINERS=true pnpm test:integration
+```
 
-- [As-is architecture](docs/as-is-architecture.md)
-- [Target architecture](docs/target-architecture.md)
-- [Migration map](docs/migration-map.md)
-- [Version semantics](docs/product/version-semantics.md)
-- [Security exposure inventory](docs/security/phase-0-exposure-inventory.md)
-- [Security policy](SECURITY.md)
+See [local setup](docs/setup/local-development.md),
+[troubleshooting](docs/troubleshooting/local-development.md), and
+[phase status](docs/phase-status.md) for operational detail.
+
+## Safety
+
+The codebase is not production-ready and must not be used with confidential files.
+Legacy prototypes remain historical evidence only and are excluded from pnpm, Turbo,
+CI builds, and deployment paths. Historical credential exposure and the deferred
+history-cleaning decision remain documented in
+[the Phase 0 exposure inventory](docs/security/phase-0-exposure-inventory.md).

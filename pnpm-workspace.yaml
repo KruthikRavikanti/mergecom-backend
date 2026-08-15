@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - services/api
+  - services/worker
+  - packages/*
+
+allowBuilds:
+  cpu-features: false
+  esbuild: true
+  msgpackr-extract: false
+  protobufjs: false
+  ssh2: false
+
+minimumReleaseAgeExclude:
+  - concurrently@10.0.5

@@ -1,0 +1,12 @@
+{
+  "name": "mergecom-legacy-server-reference",
+  "private": true,
+  "description": "Dependency record for the archived Express prototype. Not installable from the workspace.",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "office-addin-dev-certs": "^2.0.3"
+  }
+}

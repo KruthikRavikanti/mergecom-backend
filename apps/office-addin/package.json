@@ -1,0 +1,16 @@
+{
+  "name": "@mergecom/office-addin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "clean": "rm -rf dist",
+    "dev": "vite --port 5174",
+    "lint": "eslint src vite.config.ts",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "devDependencies": {
+    "vite": "7.2.7"
+  }
+}

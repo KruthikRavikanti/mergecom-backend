@@ -1,0 +1,10 @@
+legacy/
+docs/
+SECURITY.md
+.dotnet/
+dist/
+coverage/
+playwright-report/
+test-results/
+pnpm-lock.yaml
+packages/contracts/src/generated/

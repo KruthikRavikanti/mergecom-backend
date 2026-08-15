@@ -1,6 +1,7 @@
 # Dependencies and package-manager state
 node_modules/
 .pnpm-store/
+.dotnet/
 
 # Build and test output
 dist/
@@ -8,6 +9,8 @@ build/
 coverage/
 .turbo/
 *.tsbuildinfo
+bin/
+obj/
 
 # Environment files and local secrets
 .env
@@ -39,3 +42,7 @@ tmp/
 .DS_Store
 .idea/
 .vscode/
+
+# Test tooling
+playwright-report/
+test-results/

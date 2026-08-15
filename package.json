@@ -1,21 +1,45 @@
 {
-  "name": "mergecom-legacy-server",
-  "version": "0.0.0",
+  "name": "mergecom",
+  "version": "0.1.0",
   "private": true,
-  "description": "Legacy filesystem prototype retained only as a migration reference.",
-  "scripts": {
-    "legacy:certs": "office-addin-dev-certs install",
-    "legacy:certs:verify": "office-addin-dev-certs verify",
-    "legacy:start": "node server.js"
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": "24.18.1",
+    "pnpm": "11.22.0"
   },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^5.1.0"
+  "scripts": {
+    "build": "turbo run build && pnpm build:dotnet && pnpm check:production-bundle",
+    "build:dotnet": "dotnet build services/document-engine/MergeCom.DocumentEngine.sln --configuration Release --nologo",
+    "clean": "turbo run clean && rm -rf coverage playwright-report test-results",
+    "check:production-bundle": "node scripts/check-production-bundle.mjs",
+    "dev": "concurrently --kill-others --names workspace,document-engine \"pnpm dev:workspace\" \"pnpm dev:document-engine\"",
+    "dev:document-engine": "ASPNETCORE_URLS=http://0.0.0.0:3003 dotnet watch --project services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj run --no-launch-profile",
+    "dev:workspace": "turbo run dev --parallel",
+    "format": "prettier --write . && dotnet format services/document-engine/MergeCom.DocumentEngine.sln",
+    "format:check": "prettier --check . && dotnet format services/document-engine/MergeCom.DocumentEngine.sln --verify-no-changes",
+    "infra:down": "docker compose --env-file infra/compose/.env.example -f infra/compose/compose.yaml down",
+    "infra:up": "docker compose --env-file infra/compose/.env.example -f infra/compose/compose.yaml up -d --wait",
+    "install:check": "pnpm install --frozen-lockfile",
+    "lint": "turbo run lint",
+    "test:dotnet": "dotnet test services/document-engine/MergeCom.DocumentEngine.sln --configuration Release --nologo",
+    "test:e2e": "playwright test",
+    "test:integration": "turbo run test:integration",
+    "test:unit": "turbo run test:unit && pnpm test:dotnet",
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm build && pnpm test:e2e"
   },
   "devDependencies": {
-    "office-addin-dev-certs": "^2.0.3"
-  },
-  "engines": {
-    "node": ">=20"
+    "@eslint/js": "9.39.2",
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.10.1",
+    "concurrently": "10.0.5",
+    "eslint": "9.39.2",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "eslint-plugin-react-refresh": "0.4.24",
+    "globals": "16.5.0",
+    "prettier": "3.9.0",
+    "turbo": "2.10.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.52.0"
   }
 }
