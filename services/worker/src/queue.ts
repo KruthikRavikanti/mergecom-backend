@@ -3,7 +3,7 @@ import { Queue, Worker } from 'bullmq';
 export const DOCUMENT_QUEUE_NAME = 'document-processing';
 
 export type DocumentQueueJob =
-  | { jobId: string; kind: 'comparison' | 'inspection' }
+  | { jobId: string; kind: 'comparison' | 'inspection' | 'merge' }
   | { processingJobId: string };
 
 export function createDocumentQueue(redisUrl: string) {

@@ -22,11 +22,16 @@ builder.Services
     .Validate(options => options.MaxSemanticItems > 0, "Inspection semantic item limit must be positive.")
     .Validate(options => options.MaxSemanticTextCharacters > 0, "Inspection semantic text limit must be positive.")
     .Validate(options => options.MaxComparisonInputBytes > 0, "Comparison input limit must be positive.")
+    .Validate(options => options.MaxMergeInputBytes >= options.MaxInputBytes, "Merge input limit must cover one maximum-size package.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.TempRoot), "Inspection temporary root is required.")
     .ValidateOnStart();
 builder.Services.AddSingleton(serviceProvider =>
     new OoxmlInspector(serviceProvider.GetRequiredService<IOptions<InspectionOptions>>().Value));
 builder.Services.AddSingleton<OoxmlComparator>();
+builder.Services.AddSingleton(serviceProvider =>
+    new OoxmlMerger(
+        serviceProvider.GetRequiredService<IOptions<InspectionOptions>>().Value,
+        serviceProvider.GetRequiredService<OoxmlComparator>()));
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
@@ -55,6 +60,9 @@ app.MapPost("/internal/v1/inspections", InspectAsync)
     .WithMetadata(new DisableRequestSizeLimitAttribute());
 
 app.MapPost("/internal/v1/comparisons", CompareAsync)
+    .WithMetadata(new DisableRequestSizeLimitAttribute());
+
+app.MapPost("/internal/v1/merges", MergeAsync)
     .WithMetadata(new DisableRequestSizeLimitAttribute());
 
 app.Run();
@@ -189,6 +197,113 @@ static async Task<IResult> CompareAsync(
     }
 }
 
+static async Task<IResult> MergeAsync(
+    HttpRequest request,
+    OoxmlMerger merger,
+    IOptions<InspectionOptions> configuredOptions,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken)
+{
+    var options = configuredOptions.Value;
+    if (!request.Headers.TryGetValue("X-MergeCom-Internal-Token", out var providedToken)
+        || !TokensEqual(providedToken.ToString(), options.InternalToken))
+    {
+        return Results.Json(new { code = "unauthorized", message = "Internal authentication is required." }, statusCode: 401);
+    }
+
+    var fileType = request.Headers["X-MergeCom-File-Type"].ToString();
+    var extension = request.Headers["X-MergeCom-Extension"].ToString().ToLowerInvariant();
+    var baseSha256 = request.Headers["X-MergeCom-Base-Sha256"].ToString();
+    var oursSha256 = request.Headers["X-MergeCom-Ours-Sha256"].ToString();
+    var theirsSha256 = request.Headers["X-MergeCom-Theirs-Sha256"].ToString();
+    var traceId = request.Headers["X-MergeCom-Trace-Id"].ToString();
+    var validBaseSize = long.TryParse(request.Headers["X-MergeCom-Base-Size"], out var baseSize);
+    var validOursSize = long.TryParse(request.Headers["X-MergeCom-Ours-Size"], out var oursSize);
+    var validTheirsSize = long.TryParse(request.Headers["X-MergeCom-Theirs-Size"], out var theirsSize);
+    var validSizes = validBaseSize && validOursSize && validTheirsSize;
+    long totalSize;
+    try
+    {
+        totalSize = validSizes ? checked(baseSize + oursSize + theirsSize) : -1;
+    }
+    catch (OverflowException)
+    {
+        totalSize = -1;
+    }
+
+    if (!IsSupported(fileType, extension)
+        || !IsSha256(baseSha256)
+        || !IsSha256(oursSha256)
+        || !IsSha256(theirsSha256)
+        || !Guid.TryParse(traceId, out _)
+        || baseSize <= 0
+        || oursSize <= 0
+        || theirsSize <= 0
+        || baseSize > options.MaxInputBytes
+        || oursSize > options.MaxInputBytes
+        || theirsSize > options.MaxInputBytes
+        || totalSize > options.MaxMergeInputBytes
+        || request.ContentLength != totalSize)
+    {
+        return Results.BadRequest(new { code = "invalid_merge_metadata", message = "Merge metadata is invalid." });
+    }
+
+    Directory.CreateDirectory(options.TempRoot);
+    var tempDirectory = Path.Combine(options.TempRoot, $"merge-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDirectory);
+    var basePath = Path.Combine(tempDirectory, $"base{extension}");
+    var oursPath = Path.Combine(tempDirectory, $"ours{extension}");
+    var theirsPath = Path.Combine(tempDirectory, $"theirs{extension}");
+    var candidatePath = Path.Combine(tempDirectory, $"candidate{extension}");
+    try
+    {
+        var actualBaseSha256 = await CopyExactAndHashAsync(
+            request.Body, basePath, baseSize, cancellationToken);
+        var actualOursSha256 = await CopyExactAndHashAsync(
+            request.Body, oursPath, oursSize, cancellationToken);
+        var actualTheirsSha256 = await CopyExactAndHashAsync(
+            request.Body, theirsPath, theirsSize, cancellationToken);
+        if (actualBaseSha256 != baseSha256
+            || actualOursSha256 != oursSha256
+            || actualTheirsSha256 != theirsSha256)
+        {
+            return Results.UnprocessableEntity(new { code = "source_hash_mismatch", message = "A merge source does not match its declared SHA-256." });
+        }
+
+        using (logger.BeginScope(new Dictionary<string, object> { ["TraceId"] = traceId }))
+        {
+            return Results.Ok(merger.Merge(
+                basePath,
+                oursPath,
+                theirsPath,
+                fileType,
+                baseSha256,
+                oursSha256,
+                theirsSha256,
+                candidatePath));
+        }
+    }
+    catch (EndOfStreamException)
+    {
+        return Results.BadRequest(new { code = "merge_body_incomplete", message = "The merge request body is incomplete." });
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(tempDirectory, true);
+        }
+        catch (IOException exception)
+        {
+            logger.LogWarning(exception, "Could not remove merge temporary directory {TempDirectory}.", tempDirectory);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            logger.LogWarning(exception, "Could not remove merge temporary directory {TempDirectory}.", tempDirectory);
+        }
+    }
+}
+
 static async Task<string> CopyBoundedAndHashAsync(
     Stream source,
     string destinationPath,
@@ -216,6 +331,41 @@ static async Task<string> CopyBoundedAndHashAsync(
 
         hash.AppendData(buffer, 0, read);
         await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+    }
+
+    await destination.FlushAsync(cancellationToken);
+    return Convert.ToHexStringLower(hash.GetHashAndReset());
+}
+
+static async Task<string> CopyExactAndHashAsync(
+    Stream source,
+    string destinationPath,
+    long expectedBytes,
+    CancellationToken cancellationToken)
+{
+    using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+    await using var destination = new FileStream(
+        destinationPath,
+        FileMode.CreateNew,
+        FileAccess.Write,
+        FileShare.None,
+        64 * 1024,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
+    var buffer = new byte[64 * 1024];
+    long remaining = expectedBytes;
+    while (remaining > 0)
+    {
+        var read = await source.ReadAsync(
+            buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
+            cancellationToken);
+        if (read == 0)
+        {
+            throw new EndOfStreamException();
+        }
+
+        hash.AppendData(buffer, 0, read);
+        await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        remaining -= read;
     }
 
     await destination.FlushAsync(cancellationToken);

@@ -80,6 +80,14 @@ export const processingJobStatus = pgEnum('processing_job_status', [
   'quarantined',
   'completed',
 ]);
+export const mergeOperationStatus = pgEnum('merge_operation_status', [
+  'queued',
+  'running',
+  'retryable_failed',
+  'permanently_failed',
+  'manual_resolution_required',
+  'completed',
+]);
 export const outboxEventStatus = pgEnum('outbox_event_status', [
   'pending',
   'published',
@@ -973,6 +981,125 @@ export const versionComparisons = pgTable(
     check(
       'version_comparisons_completeness_ck',
       sql`${table.completeness} is null or ${table.completeness} in ('complete', 'partial')`,
+    ),
+  ],
+);
+
+export const mergeOperations = pgTable(
+  'merge_operations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    branchId: uuid('branch_id')
+      .references(() => documentBranches.id, { onDelete: 'restrict' })
+      .notNull(),
+    baseVersionId: uuid('base_version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    oursVersionId: uuid('ours_version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    theirsVersionId: uuid('theirs_version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    requestedByUserId: uuid('requested_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    note: text('note').notNull(),
+    mergeSchemaVersion: text('merge_schema_version').default('1.0.0').notNull(),
+    parserVersion: text('parser_version').default('1.1.0').notNull(),
+    engineVersion: text('engine_version').default('1.0.0').notNull(),
+    status: mergeOperationStatus('status').default('queued').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
+    lastError: text('last_error'),
+    traceId: uuid('trace_id').defaultRandom().notNull(),
+    strategy: text('strategy'),
+    stableHash: text('stable_hash'),
+    warnings: jsonb('warnings')
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    appliedPaths: jsonb('applied_paths')
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    candidateObjectKey: text('candidate_object_key'),
+    candidateSha256: text('candidate_sha256'),
+    candidateByteSize: bigint('candidate_byte_size', { mode: 'number' }),
+    resultVersionId: uuid('result_version_id').references(
+      () => documentVersions.id,
+      { onDelete: 'restrict' },
+    ),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('merge_operations_source_versions_uq').on(
+      table.baseVersionId,
+      table.oursVersionId,
+      table.theirsVersionId,
+      table.mergeSchemaVersion,
+      table.parserVersion,
+    ),
+    uniqueIndex('merge_operations_candidate_object_uq').on(
+      table.candidateObjectKey,
+    ),
+    uniqueIndex('merge_operations_result_version_uq').on(table.resultVersionId),
+    uniqueIndex('merge_operations_organization_document_id_uq').on(
+      table.organizationId,
+      table.documentId,
+      table.id,
+    ),
+    index('merge_operations_document_created_idx').on(
+      table.organizationId,
+      table.documentId,
+      table.createdAt,
+    ),
+    index('merge_operations_queue_idx').on(table.status, table.availableAt),
+    index('merge_operations_lease_idx').on(table.status, table.leaseExpiresAt),
+    check(
+      'merge_operations_distinct_versions_ck',
+      sql`${table.baseVersionId} <> ${table.oursVersionId}
+          and ${table.baseVersionId} <> ${table.theirsVersionId}
+          and ${table.oursVersionId} <> ${table.theirsVersionId}`,
+    ),
+    check(
+      'merge_operations_attempts_ck',
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} > 0 and ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+    check(
+      'merge_operations_hashes_ck',
+      sql`(${table.stableHash} is null or ${table.stableHash} ~ '^[0-9a-f]{64}$')
+          and (${table.candidateSha256} is null or ${table.candidateSha256} ~ '^[0-9a-f]{64}$')`,
+    ),
+    check(
+      'merge_operations_candidate_ck',
+      sql`(${table.candidateObjectKey} is null and ${table.candidateSha256} is null and ${table.candidateByteSize} is null)
+          or (${table.candidateObjectKey} is not null and ${table.candidateSha256} is not null and ${table.candidateByteSize} > 0)`,
+    ),
+    check(
+      'merge_operations_outcome_ck',
+      sql`(${table.status} = 'completed' and ${table.resultVersionId} is not null
+            and ${table.candidateObjectKey} is not null and ${table.failureCode} is null)
+          or (${table.status} = 'manual_resolution_required' and ${table.resultVersionId} is null
+            and ${table.failureCode} is not null)
+          or (${table.status} not in ('completed', 'manual_resolution_required')
+            and ${table.resultVersionId} is null)`,
     ),
   ],
 );

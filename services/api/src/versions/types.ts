@@ -93,6 +93,44 @@ export interface VersionComparison {
   warnings: string[];
 }
 
+export type MergeOperationStatus =
+  | 'queued'
+  | 'running'
+  | 'retryable_failed'
+  | 'permanently_failed'
+  | 'manual_resolution_required'
+  | 'completed';
+
+export interface MergeVersionReference extends ComparisonVersionReference {
+  status: VersionStatus;
+}
+
+export interface DocumentMerge {
+  appliedPaths: string[];
+  attempts: number;
+  baseVersion: MergeVersionReference;
+  branchId: string;
+  candidate: { byteSize: number; sha256: string } | null;
+  createdAt: Date;
+  engineVersion: string;
+  failureCode: string | null;
+  id: string;
+  maxAttempts: number;
+  mergeSchemaVersion: string;
+  nextAttemptAt: Date | null;
+  note: string;
+  oursVersion: MergeVersionReference;
+  parserVersion: string;
+  resultVersionId: string | null;
+  stableHash: string | null;
+  state: MergeOperationStatus;
+  strategy: string | null;
+  supportTraceId: string;
+  theirsVersion: MergeVersionReference;
+  updatedAt: Date;
+  warnings: string[];
+}
+
 export interface ArtifactSummary {
   byteSize: number;
   detectedMediaType: string;

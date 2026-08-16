@@ -7,6 +7,7 @@ import { VersionMetrics } from './metrics';
 import { VersionOperationError, type VersionStore } from './store';
 import type {
   DocumentVersionSummary,
+  DocumentMerge,
   FinalizeVersionResult,
   UploadIntent,
   VersionActor,
@@ -34,6 +35,7 @@ function secondsUntil(date: Date, maximum: number): number {
 export const COMPARISON_SCHEMA_VERSION = '1.0.0';
 export const DOCUMENT_ENGINE_VERSION = '1.0.0';
 export const DOCUMENT_PARSER_VERSION = '1.1.0';
+export const MERGE_SCHEMA_VERSION = '1.0.0';
 
 export class VersionService {
   public constructor(
@@ -506,6 +508,64 @@ export class VersionService {
     projectId: string;
   }): Promise<VersionComparison> {
     return this.store.getComparison(input);
+  }
+
+  public async createMerge(input: {
+    actor: VersionActor;
+    baseVersionId: string;
+    documentId: string;
+    idempotencyKey: string;
+    note: string;
+    oursVersionId: string;
+    projectId: string;
+    requestId: string;
+    theirsVersionId: string;
+  }): Promise<{ merge: DocumentMerge; replayed: boolean }> {
+    return this.store.createMerge({
+      ...input,
+      engineVersion: DOCUMENT_ENGINE_VERSION,
+      mergeSchemaVersion: MERGE_SCHEMA_VERSION,
+      parserVersion: DOCUMENT_PARSER_VERSION,
+      requestHash: requestHash({
+        baseVersionId: input.baseVersionId,
+        note: input.note,
+        oursVersionId: input.oursVersionId,
+        theirsVersionId: input.theirsVersionId,
+      }),
+    });
+  }
+
+  public async getMerge(input: {
+    actor: VersionActor;
+    documentId: string;
+    mergeId: string;
+    projectId: string;
+  }): Promise<DocumentMerge> {
+    return this.store.getMerge(input);
+  }
+
+  public async createMergeCandidateDownloadGrant(input: {
+    actor: VersionActor;
+    documentId: string;
+    mergeId: string;
+    projectId: string;
+    requestId: string;
+  }) {
+    const candidate = await this.store.getMergeCandidate(input);
+    const filename = `merge-candidate-${input.mergeId}${candidate.extension}`;
+    const grant = await this.blobOperation(() =>
+      this.blobs.signDownload(
+        candidate.objectKey,
+        filename,
+        this.config.signedUrlSeconds,
+      ),
+    );
+    await this.store.appendMergeCandidateDownloadAudit({
+      actor: input.actor,
+      mergeId: input.mergeId,
+      requestId: input.requestId,
+    });
+    return { ...grant, filename, sha256: candidate.sha256 };
   }
 
   public async createDownloadGrant(input: {

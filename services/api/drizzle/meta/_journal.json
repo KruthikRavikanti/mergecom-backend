@@ -50,6 +50,13 @@
       "when": 1786885250945,
       "tag": "0006_bored_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786897545592,
+      "tag": "0007_fluffy_photon",
+      "breakpoints": true
     }
   ]
 }

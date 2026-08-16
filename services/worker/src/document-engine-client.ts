@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import type {
   ClaimedComparisonJob,
+  ClaimedMergeJob,
   ComparisonResult,
   DocumentFileType,
   InspectionResult,
   InspectionWarning,
+  MergeResult,
   SnapshotEnvelope,
 } from './types';
 import { PermanentProcessingError } from './types';
@@ -115,6 +119,51 @@ export class DocumentEngineClient {
       throw new PermanentProcessingError(error.code, error.message);
     }
     return parseComparisonResult(await response.json(), job);
+  }
+
+  public async merge(
+    job: ClaimedMergeJob,
+    baseArtifact: Uint8Array,
+    oursArtifact: Uint8Array,
+    theirsArtifact: Uint8Array,
+  ): Promise<MergeResult> {
+    const body = new Uint8Array(
+      baseArtifact.byteLength +
+        oursArtifact.byteLength +
+        theirsArtifact.byteLength,
+    );
+    body.set(baseArtifact, 0);
+    body.set(oursArtifact, baseArtifact.byteLength);
+    body.set(theirsArtifact, baseArtifact.byteLength + oursArtifact.byteLength);
+    const response = await fetch(
+      new URL('/internal/v1/merges', this.endpoint),
+      {
+        body: body.buffer,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-MergeCom-Base-Sha256': job.baseArtifact.sha256,
+          'X-MergeCom-Base-Size': String(baseArtifact.byteLength),
+          'X-MergeCom-Extension': job.oursArtifact.extension,
+          'X-MergeCom-File-Type': job.fileType,
+          'X-MergeCom-Internal-Token': this.internalToken,
+          'X-MergeCom-Ours-Sha256': job.oursArtifact.sha256,
+          'X-MergeCom-Ours-Size': String(oursArtifact.byteLength),
+          'X-MergeCom-Theirs-Sha256': job.theirsArtifact.sha256,
+          'X-MergeCom-Theirs-Size': String(theirsArtifact.byteLength),
+          'X-MergeCom-Trace-Id': job.traceId,
+        },
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      },
+    );
+    if (!response.ok) {
+      const error = await readEngineError(response);
+      if (response.status >= 500) {
+        throw new Error(`Document engine unavailable: ${error.code}.`);
+      }
+      throw new PermanentProcessingError(error.code, error.message);
+    }
+    return parseMergeResult(await response.json(), job);
   }
 }
 
@@ -284,6 +333,80 @@ function parseComparisonResult(
     target_source_sha256: job.targetArtifact.sha256,
     warnings,
   };
+}
+
+function parseMergeResult(value: unknown, job: ClaimedMergeJob): MergeResult {
+  if (
+    !isObject(value) ||
+    value.merge_schema_version !== job.mergeSchemaVersion ||
+    value.parser_version !== job.parserVersion ||
+    value.engine_version !== job.engineVersion ||
+    value.file_type !== job.fileType ||
+    value.base_source_sha256 !== job.baseArtifact.sha256 ||
+    value.ours_source_sha256 !== job.oursArtifact.sha256 ||
+    value.theirs_source_sha256 !== job.theirsArtifact.sha256 ||
+    (value.outcome !== 'completed' &&
+      value.outcome !== 'manual_resolution_required') ||
+    !nullableString(value.strategy) ||
+    !nullableString(value.failure_code) ||
+    !isSha256(value.stable_hash) ||
+    !Array.isArray(value.warnings) ||
+    !Array.isArray(value.applied_paths)
+  ) {
+    return invalidContract();
+  }
+  const warnings = value.warnings.map((warning) => {
+    if (typeof warning !== 'string') return invalidContract();
+    return warning;
+  });
+  const appliedPaths = value.applied_paths.map((path) => {
+    if (typeof path !== 'string') return invalidContract();
+    return path;
+  });
+  let candidate: Uint8Array | null = null;
+  if (value.candidate_bytes !== null) {
+    if (typeof value.candidate_bytes !== 'string') return invalidContract();
+    candidate = Buffer.from(value.candidate_bytes, 'base64');
+  }
+  const hasCandidate = candidate !== null;
+  if (
+    (value.candidate_sha256 !== null && !isSha256(value.candidate_sha256)) ||
+    (value.candidate_byte_size !== null &&
+      (!Number.isSafeInteger(value.candidate_byte_size) ||
+        (value.candidate_byte_size as number) <= 0)) ||
+    hasCandidate !== (value.candidate_sha256 !== null) ||
+    hasCandidate !== (value.candidate_byte_size !== null) ||
+    (candidate && candidate.byteLength !== value.candidate_byte_size) ||
+    (candidate && createSha256(candidate) !== value.candidate_sha256) ||
+    (value.outcome === 'completed' &&
+      (!candidate || value.strategy === null || value.failure_code !== null)) ||
+    (value.outcome === 'manual_resolution_required' &&
+      value.failure_code === null)
+  ) {
+    return invalidContract();
+  }
+  return {
+    applied_paths: appliedPaths,
+    base_source_sha256: job.baseArtifact.sha256,
+    candidate_byte_size: value.candidate_byte_size as number | null,
+    candidate_bytes: candidate,
+    candidate_sha256: value.candidate_sha256,
+    engine_version: job.engineVersion,
+    failure_code: value.failure_code,
+    file_type: job.fileType,
+    merge_schema_version: job.mergeSchemaVersion,
+    outcome: value.outcome,
+    ours_source_sha256: job.oursArtifact.sha256,
+    parser_version: job.parserVersion,
+    stable_hash: value.stable_hash,
+    strategy: value.strategy,
+    theirs_source_sha256: job.theirsArtifact.sha256,
+    warnings,
+  };
+}
+
+function createSha256(value: Uint8Array): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function isSha256(value: unknown): value is string {

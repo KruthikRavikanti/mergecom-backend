@@ -11,6 +11,7 @@ import type { DocumentKind, ProjectRole } from '../projects/types';
 import {
   VersionOperationError,
   type AuthorizedArtifact,
+  type AuthorizedMergeCandidate,
   type CreatedUploadRecord,
   type FinalizedArtifactInput,
   type VersionStore,
@@ -19,6 +20,7 @@ import type {
   BranchSummary,
   ComparisonChange,
   DocumentAccess,
+  DocumentMerge,
   DocumentVersionSummary,
   ExpiredUpload,
   FinalizeVersionResult,
@@ -135,6 +137,52 @@ interface ComparisonRow {
   target_display_number: number;
   target_note: string;
   target_version_id: string;
+  trace_id: string;
+  updated_at: Date;
+  warnings: string[];
+}
+
+interface MergeRow {
+  applied_paths: string[];
+  attempts: number;
+  available_at: Date;
+  base_artifact_sha256: string;
+  base_author_name: string;
+  base_created_at: Date;
+  base_display_number: number;
+  base_note: string;
+  base_status: VersionStatus;
+  base_version_id: string;
+  branch_id: string;
+  candidate_byte_size: string | number | null;
+  candidate_object_key: string | null;
+  candidate_sha256: string | null;
+  created_at: Date;
+  engine_version: string;
+  failure_code: string | null;
+  id: string;
+  max_attempts: number;
+  merge_schema_version: string;
+  note: string;
+  ours_artifact_sha256: string;
+  ours_author_name: string;
+  ours_created_at: Date;
+  ours_display_number: number;
+  ours_note: string;
+  ours_status: VersionStatus;
+  ours_version_id: string;
+  parser_version: string;
+  result_version_id: string | null;
+  stable_hash: string | null;
+  status: DocumentMerge['state'];
+  strategy: string | null;
+  theirs_artifact_sha256: string;
+  theirs_author_name: string;
+  theirs_created_at: Date;
+  theirs_display_number: number;
+  theirs_note: string;
+  theirs_status: VersionStatus;
+  theirs_version_id: string;
   trace_id: string;
   updated_at: Date;
   warnings: string[];
@@ -276,6 +324,54 @@ function mapComparison(row: ComparisonRow): VersionComparison {
   };
 }
 
+function mapMerge(row: MergeRow): DocumentMerge {
+  const version = (
+    prefix: 'base' | 'ours' | 'theirs',
+  ): DocumentMerge['baseVersion'] => ({
+    artifactSha256: row[`${prefix}_artifact_sha256`],
+    authorName: row[`${prefix}_author_name`],
+    createdAt: row[`${prefix}_created_at`],
+    displayNumber: row[`${prefix}_display_number`],
+    id: row[`${prefix}_version_id`],
+    note: row[`${prefix}_note`],
+    status: row[`${prefix}_status`],
+  });
+  return {
+    appliedPaths: row.applied_paths,
+    attempts: row.attempts,
+    baseVersion: version('base'),
+    branchId: row.branch_id,
+    candidate:
+      row.candidate_sha256 && row.candidate_byte_size !== null
+        ? {
+            byteSize: Number(row.candidate_byte_size),
+            sha256: row.candidate_sha256,
+          }
+        : null,
+    createdAt: row.created_at,
+    engineVersion: row.engine_version,
+    failureCode: row.failure_code,
+    id: row.id,
+    maxAttempts: row.max_attempts,
+    mergeSchemaVersion: row.merge_schema_version,
+    nextAttemptAt:
+      row.status === 'queued' || row.status === 'retryable_failed'
+        ? row.available_at
+        : null,
+    note: row.note,
+    oursVersion: version('ours'),
+    parserVersion: row.parser_version,
+    resultVersionId: row.result_version_id,
+    stableHash: row.stable_hash,
+    state: row.status,
+    strategy: row.strategy,
+    supportTraceId: row.trace_id,
+    theirsVersion: version('theirs'),
+    updatedAt: row.updated_at,
+    warnings: row.warnings,
+  };
+}
+
 function encodeVersionCursor(row: VersionRow): string {
   return Buffer.from(
     JSON.stringify({ id: row.id, sequence: row.sequence }),
@@ -366,6 +462,23 @@ const comparisonColumns = `
   ta.sha256 as target_artifact_sha256,
   tu.display_name as target_author_name`;
 
+const mergeColumns = `
+  m.id, m.branch_id, m.base_version_id, m.ours_version_id,
+  m.theirs_version_id, m.note, m.merge_schema_version, m.parser_version,
+  m.engine_version, m.status, m.attempts, m.max_attempts, m.available_at,
+  m.failure_code, m.trace_id, m.strategy, m.stable_hash, m.warnings,
+  m.applied_paths, m.candidate_object_key, m.candidate_sha256,
+  m.candidate_byte_size, m.result_version_id, m.created_at, m.updated_at,
+  bv.display_number as base_display_number, bv.note as base_note,
+  bv.created_at as base_created_at, bv.status as base_status,
+  ba.sha256 as base_artifact_sha256, bu.display_name as base_author_name,
+  ov.display_number as ours_display_number, ov.note as ours_note,
+  ov.created_at as ours_created_at, ov.status as ours_status,
+  oa.sha256 as ours_artifact_sha256, ou.display_name as ours_author_name,
+  tv.display_number as theirs_display_number, tv.note as theirs_note,
+  tv.created_at as theirs_created_at, tv.status as theirs_status,
+  ta.sha256 as theirs_artifact_sha256, tu.display_name as theirs_author_name`;
+
 export class PostgresVersionStore implements VersionStore {
   public constructor(
     private readonly pool: Pool,
@@ -452,6 +565,30 @@ export class PostgresVersionStore implements VersionStore {
          join users tu on tu.id = tv.author_user_id
         where c.organization_id = $1 and c.document_id = $2 and c.id = $3`,
       [organizationId, documentId, comparisonId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async mergeRow(
+    client: PoolClient,
+    organizationId: string,
+    documentId: string,
+    mergeId: string,
+  ): Promise<MergeRow | null> {
+    const result = await client.query<MergeRow>(
+      `select ${mergeColumns}
+         from merge_operations m
+         join document_versions bv on bv.id = m.base_version_id
+         join artifacts ba on ba.id = bv.artifact_id
+         join users bu on bu.id = bv.author_user_id
+         join document_versions ov on ov.id = m.ours_version_id
+         join artifacts oa on oa.id = ov.artifact_id
+         join users ou on ou.id = ov.author_user_id
+         join document_versions tv on tv.id = m.theirs_version_id
+         join artifacts ta on ta.id = tv.artifact_id
+         join users tu on tu.id = tv.author_user_id
+        where m.organization_id = $1 and m.document_id = $2 and m.id = $3`,
+      [organizationId, documentId, mergeId],
     );
     return result.rows[0] ?? null;
   }
@@ -773,6 +910,284 @@ export class PostgresVersionStore implements VersionStore {
       );
       if (!row) throw new VersionOperationError('not_found');
       return mapComparison(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async createMerge(input: {
+    actor: VersionActor;
+    baseVersionId: string;
+    documentId: string;
+    engineVersion: string;
+    idempotencyKey: string;
+    mergeSchemaVersion: string;
+    note: string;
+    oursVersionId: string;
+    parserVersion: string;
+    projectId: string;
+    requestHash: string;
+    requestId: string;
+    theirsVersionId: string;
+  }): Promise<{ merge: DocumentMerge; replayed: boolean }> {
+    return inTransaction(this.pool, async (client) => {
+      const access = await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        true,
+      );
+      if (
+        new Set([
+          input.baseVersionId,
+          input.oursVersionId,
+          input.theirsVersionId,
+        ]).size !== 3 ||
+        access.branch_head_version_id !== input.oursVersionId
+      ) {
+        throw new VersionOperationError('merge_unavailable');
+      }
+
+      const operation = `merge.create:${input.documentId}`;
+      const idempotency = await this.lockIdempotency(
+        client,
+        input.actor,
+        operation,
+        input.idempotencyKey,
+      );
+      if (idempotency.record) {
+        if (idempotency.record.request_hash !== input.requestHash) {
+          throw new VersionOperationError('idempotency_conflict');
+        }
+        const replay = await this.mergeRow(
+          client,
+          input.actor.organizationId,
+          input.documentId,
+          idempotency.record.resource_id,
+        );
+        if (!replay) throw new VersionOperationError('not_found');
+        return { merge: mapMerge(replay), replayed: true };
+      }
+
+      const versions = await client.query<{
+        id: string;
+        status: VersionStatus;
+      }>(
+        `select v.id, v.status
+           from document_versions v
+           join artifacts a on a.id = v.artifact_id
+           join version_processing_jobs j on j.version_id = v.id
+            and j.job_type = 'semantic_ingestion'
+          where v.organization_id = $1 and v.document_id = $2
+            and v.branch_id = $3 and v.id in ($4, $5, $6)
+            and v.status in ('ready', 'conflicted')
+            and a.scan_status = 'clean' and j.status = 'completed'`,
+        [
+          input.actor.organizationId,
+          input.documentId,
+          access.branch_id,
+          input.baseVersionId,
+          input.oursVersionId,
+          input.theirsVersionId,
+        ],
+      );
+      const statuses = new Map(
+        versions.rows.map((version) => [version.id, version.status]),
+      );
+      if (
+        statuses.size !== 3 ||
+        statuses.get(input.baseVersionId) !== 'ready' ||
+        statuses.get(input.oursVersionId) !== 'ready'
+      ) {
+        throw new VersionOperationError('merge_unavailable');
+      }
+
+      const ancestry = await client.query<{
+        ours_has_base: boolean;
+        theirs_has_base: boolean;
+      }>(
+        `with recursive ancestry(root, id) as (
+           values ('ours', $4::uuid), ('theirs', $5::uuid)
+           union
+           select ancestry.root, parent.id
+             from ancestry
+             join document_versions v on v.id = ancestry.id
+              and v.organization_id = $1 and v.document_id = $2
+             cross join lateral (
+               values (v.parent_version_id), (v.merge_parent_version_id)
+             ) parent(id)
+            where parent.id is not null
+         )
+         select coalesce(bool_or(root = 'ours' and id = $3), false) as ours_has_base,
+                coalesce(bool_or(root = 'theirs' and id = $3), false) as theirs_has_base
+           from ancestry`,
+        [
+          input.actor.organizationId,
+          input.documentId,
+          input.baseVersionId,
+          input.oursVersionId,
+          input.theirsVersionId,
+        ],
+      );
+      if (
+        !ancestry.rows[0]?.ours_has_base ||
+        !ancestry.rows[0].theirs_has_base
+      ) {
+        throw new VersionOperationError('merge_unavailable');
+      }
+
+      const inserted = await client.query<{ id: string }>(
+        `insert into merge_operations
+          (organization_id, document_id, branch_id, base_version_id,
+           ours_version_id, theirs_version_id, requested_by_user_id, note,
+           merge_schema_version, parser_version, engine_version)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         on conflict (base_version_id, ours_version_id, theirs_version_id,
+                      merge_schema_version, parser_version)
+         do nothing
+         returning id`,
+        [
+          input.actor.organizationId,
+          input.documentId,
+          access.branch_id,
+          input.baseVersionId,
+          input.oursVersionId,
+          input.theirsVersionId,
+          input.actor.userId,
+          input.note,
+          input.mergeSchemaVersion,
+          input.parserVersion,
+          input.engineVersion,
+        ],
+      );
+      const mergeId =
+        inserted.rows[0]?.id ??
+        (
+          await client.query<{ id: string }>(
+            `select id from merge_operations
+              where base_version_id = $1 and ours_version_id = $2
+                and theirs_version_id = $3 and merge_schema_version = $4
+                and parser_version = $5`,
+            [
+              input.baseVersionId,
+              input.oursVersionId,
+              input.theirsVersionId,
+              input.mergeSchemaVersion,
+              input.parserVersion,
+            ],
+          )
+        ).rows[0]?.id;
+      if (!mergeId) throw new Error('Merge could not be created or loaded.');
+
+      if (inserted.rows[0]) {
+        await client.query(
+          `insert into outbox_events
+            (organization_id, aggregate_type, aggregate_id, event_type, payload)
+           values ($1, 'merge_operation', $2, 'version.merge_requested', $3)`,
+          [input.actor.organizationId, mergeId, JSON.stringify({ mergeId })],
+        );
+      }
+      await this.saveIdempotency(client, {
+        actor: input.actor,
+        keyHash: idempotency.keyHash,
+        operation,
+        requestHash: input.requestHash,
+        resourceId: mergeId,
+        response: { mergeId },
+        statusCode: inserted.rows[0] ? 201 : 200,
+      });
+      await this.insertAudit(client, {
+        action: 'merge.requested',
+        actor: input.actor,
+        metadata: {
+          baseVersionId: input.baseVersionId,
+          oursVersionId: input.oursVersionId,
+          replayed: !inserted.rows[0],
+          theirsVersionId: input.theirsVersionId,
+        },
+        requestId: input.requestId,
+        targetId: mergeId,
+        targetType: 'merge_operation',
+      });
+      const row = await this.mergeRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        mergeId,
+      );
+      if (!row) throw new Error('Created merge could not be loaded.');
+      return { merge: mapMerge(row), replayed: !inserted.rows[0] };
+    });
+  }
+
+  public async getMerge(input: {
+    actor: VersionActor;
+    documentId: string;
+    mergeId: string;
+    projectId: string;
+  }): Promise<DocumentMerge> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const row = await this.mergeRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        input.mergeId,
+      );
+      if (!row) throw new VersionOperationError('not_found');
+      return mapMerge(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async getMergeCandidate(input: {
+    actor: VersionActor;
+    documentId: string;
+    mergeId: string;
+    projectId: string;
+  }): Promise<AuthorizedMergeCandidate> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const result = await client.query<{
+        byte_size: string | number;
+        extension: string;
+        object_key: string;
+        sha256: string;
+      }>(
+        `select m.candidate_byte_size as byte_size,
+                m.candidate_object_key as object_key,
+                m.candidate_sha256 as sha256, a.extension
+           from merge_operations m
+           join document_versions v on v.id = m.ours_version_id
+           join artifacts a on a.id = v.artifact_id
+          where m.organization_id = $1 and m.document_id = $2 and m.id = $3
+            and m.candidate_object_key is not null`,
+        [input.actor.organizationId, input.documentId, input.mergeId],
+      );
+      const row = result.rows[0];
+      if (!row) throw new VersionOperationError('not_found');
+      return {
+        byteSize: Number(row.byte_size),
+        extension: row.extension,
+        objectKey: row.object_key,
+        sha256: row.sha256,
+      };
     } finally {
       client.release();
     }
@@ -1477,6 +1892,25 @@ export class PostgresVersionStore implements VersionStore {
     }
   }
 
+  public async appendMergeCandidateDownloadAudit(input: {
+    actor: VersionActor;
+    mergeId: string;
+    requestId: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await this.insertAudit(client, {
+        action: 'merge.candidate_download_granted',
+        actor: input.actor,
+        requestId: input.requestId,
+        targetId: input.mergeId,
+        targetType: 'merge_operation',
+      });
+    } finally {
+      client.release();
+    }
+  }
+
   public async expireUploads(now: Date): Promise<ExpiredUpload[]> {
     const result = await this.pool.query<{
       id: string;
@@ -1507,7 +1941,10 @@ export class PostgresVersionStore implements VersionStore {
        select object_key from normalized_snapshots
        union
        select result_object_key as object_key from version_comparisons
-        where result_object_key is not null`,
+        where result_object_key is not null
+       union
+       select candidate_object_key as object_key from merge_operations
+        where candidate_object_key is not null`,
     );
     return new Set(result.rows.map((row) => row.object_key));
   }

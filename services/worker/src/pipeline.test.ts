@@ -2,13 +2,19 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { ComparisonProcessor, DocumentProcessor } from './pipeline';
+import {
+  ComparisonProcessor,
+  DocumentProcessor,
+  MergeProcessor,
+} from './pipeline';
 import {
   PermanentProcessingError,
   type ClaimedComparisonJob,
+  type ClaimedMergeJob,
   type ClaimedProcessingJob,
   type ComparisonResult,
   type InspectionResult,
+  type MergeResult,
 } from './types';
 
 const job: ClaimedProcessingJob = {
@@ -258,5 +264,136 @@ describe('comparison processor', () => {
     );
     expect(store.completeComparison).toHaveBeenCalledOnce();
     expect(store.recordComparisonFailure).not.toHaveBeenCalled();
+  });
+});
+
+const mergeCandidate = Uint8Array.from([9, 8, 7, 6]);
+const mergeJob: ClaimedMergeJob = {
+  attempts: 1,
+  baseArtifact: comparisonJob.baseArtifact,
+  branchId: '72000000-0000-4000-8000-000000000001',
+  documentId: '82000000-0000-4000-8000-000000000001',
+  engineVersion: '1.0.0',
+  fileType: 'word_document',
+  id: '92000000-0000-4000-8000-000000000001',
+  maxAttempts: 3,
+  mergeSchemaVersion: '1.0.0',
+  note: 'Merge approved edits',
+  organizationId: job.organizationId,
+  oursArtifact: {
+    byteSize: 4,
+    detectedMediaType:
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    extension: '.docx',
+    objectKey: 'organizations/org/artifacts/ours.docx',
+    originalFilename: 'proposal.docx',
+    sha256: '1'.repeat(64),
+    versionId: 'a2000000-0000-4000-8000-000000000001',
+  },
+  parserVersion: '1.1.0',
+  requestedByUserId: 'b2000000-0000-4000-8000-000000000001',
+  theirsArtifact: comparisonJob.targetArtifact,
+  traceId: job.traceId,
+};
+const mergeResult: MergeResult = {
+  applied_paths: ['/body/p/2'],
+  base_source_sha256: mergeJob.baseArtifact.sha256,
+  candidate_byte_size: mergeCandidate.byteLength,
+  candidate_bytes: mergeCandidate,
+  candidate_sha256: createHash('sha256').update(mergeCandidate).digest('hex'),
+  engine_version: mergeJob.engineVersion,
+  failure_code: null,
+  file_type: mergeJob.fileType,
+  merge_schema_version: mergeJob.mergeSchemaVersion,
+  outcome: 'completed',
+  ours_source_sha256: mergeJob.oursArtifact.sha256,
+  parser_version: mergeJob.parserVersion,
+  stable_hash: '2'.repeat(64),
+  strategy: 'disjoint_word_text',
+  theirs_source_sha256: mergeJob.theirsArtifact.sha256,
+  warnings: [],
+};
+
+describe('merge processor', () => {
+  it('stores a content-addressed candidate before transactional completion', async () => {
+    const store = {
+      claimMerge: vi.fn().mockResolvedValue(mergeJob),
+      completeMerge: vi.fn().mockResolvedValue(undefined),
+      heartbeatMerge: vi.fn().mockResolvedValue(true),
+      listDispatchableMerges: vi.fn().mockResolvedValue([]),
+      markMergeDispatched: vi.fn().mockResolvedValue(undefined),
+      recordMergeFailure: vi.fn().mockResolvedValue(false),
+    };
+    const storage = {
+      putMergeCandidate: vi.fn().mockResolvedValue(undefined),
+      readArtifact: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3, 4])),
+    };
+    const engine = { merge: vi.fn().mockResolvedValue(mergeResult) };
+    const processor = new MergeProcessor(
+      store,
+      storage,
+      engine,
+      30_000,
+      60_000,
+    );
+
+    await processor.process(mergeJob.id);
+
+    expect(storage.readArtifact).toHaveBeenCalledTimes(3);
+    expect(storage.putMergeCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: expect.stringContaining(
+          `${mergeJob.id}/${mergeResult.candidate_sha256}.docx`,
+        ),
+        sha256: mergeResult.candidate_sha256,
+      }),
+    );
+    expect(store.completeMerge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateObjectKey: expect.stringContaining(
+          mergeResult.candidate_sha256!,
+        ),
+      }),
+    );
+    expect(store.recordMergeFailure).not.toHaveBeenCalled();
+  });
+
+  it('completes manual resolution without inventing a candidate', async () => {
+    const manual: MergeResult = {
+      ...mergeResult,
+      applied_paths: [],
+      candidate_byte_size: null,
+      candidate_bytes: null,
+      candidate_sha256: null,
+      failure_code: 'merge_changes_overlap',
+      outcome: 'manual_resolution_required',
+      strategy: null,
+    };
+    const store = {
+      claimMerge: vi.fn().mockResolvedValue(mergeJob),
+      completeMerge: vi.fn().mockResolvedValue(undefined),
+      heartbeatMerge: vi.fn().mockResolvedValue(true),
+      listDispatchableMerges: vi.fn().mockResolvedValue([]),
+      markMergeDispatched: vi.fn().mockResolvedValue(undefined),
+      recordMergeFailure: vi.fn().mockResolvedValue(false),
+    };
+    const storage = {
+      putMergeCandidate: vi.fn().mockResolvedValue(undefined),
+      readArtifact: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3, 4])),
+    };
+    const processor = new MergeProcessor(
+      store,
+      storage,
+      { merge: vi.fn().mockResolvedValue(manual) },
+      30_000,
+      60_000,
+    );
+
+    await processor.process(mergeJob.id);
+
+    expect(storage.putMergeCandidate).not.toHaveBeenCalled();
+    expect(store.completeMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ candidateObjectKey: null }),
+    );
   });
 });

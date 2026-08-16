@@ -8,6 +8,7 @@ export interface WorkerConfig {
   host: string;
   leaseMilliseconds: number;
   maxArtifactBytes: number;
+  organizationQuotaBytes: number;
   port: number;
   redisUrl: string;
   s3: {
@@ -68,6 +69,10 @@ export function loadWorkerConfig(): WorkerConfig {
     maxArtifactBytes: positiveInteger(
       'PROCESSING_MAX_ARTIFACT_BYTES',
       100 * 1024 * 1024,
+    ),
+    organizationQuotaBytes: positiveInteger(
+      'ORGANIZATION_STORAGE_QUOTA_BYTES',
+      5 * 1024 * 1024 * 1024,
     ),
     port: positiveInteger('WORKER_PORT', 3002),
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',

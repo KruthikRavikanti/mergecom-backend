@@ -13,6 +13,7 @@ import {
   Download,
   FileText,
   GitCompareArrows,
+  GitMerge,
   LoaderCircle,
   MessageSquarePlus,
   ShieldAlert,
@@ -27,6 +28,7 @@ import {
   type DocumentVersion,
   type ReviewRequest,
   useCreateComparisonMutation,
+  useCreateMergeMutation,
   useDocumentQuery,
   useDownloadVersionMutation,
   useProjectQuery,
@@ -125,6 +127,7 @@ export function DocumentHistoryPage() {
   const downloadVersion = useDownloadVersionMutation(user!);
   const restoreVersion = useRestoreVersionMutation(user!);
   const createComparison = useCreateComparisonMutation(user!);
+  const createMerge = useCreateMergeMutation(user!);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
   const [uploadPercent, setUploadPercent] = useState(0);
@@ -281,6 +284,26 @@ export function DocumentHistoryPage() {
       );
     } catch (error) {
       report(error, 'Comparison could not be started.');
+    }
+  }
+
+  async function mergeConflict(version: DocumentVersion) {
+    const headVersionId = versions.data?.branch.headVersionId;
+    if (!version.baseVersionId || !headVersionId) return;
+    try {
+      const merge = await createMerge.mutateAsync({
+        baseVersionId: version.baseVersionId,
+        documentId,
+        note: `Merge version ${version.displayNumber} into the latest team version`,
+        oursVersionId: headVersionId,
+        projectId,
+        theirsVersionId: version.id,
+      });
+      await navigate(
+        `/app/projects/${projectId}/documents/${documentId}/history/merges/${merge.id}`,
+      );
+    } catch (error) {
+      report(error, 'Merge could not be started.');
     }
   }
 
@@ -482,6 +505,18 @@ export function DocumentHistoryPage() {
                 review.version.id === version.id && review.status === 'open',
             );
             const isApproved = approvedVersionId === version.id;
+            const headVersion = versions.data.items.find(
+              (item) => item.id === versions.data?.branch.headVersionId,
+            );
+            const mergeEligible =
+              canWrite &&
+              version.status === 'conflicted' &&
+              Boolean(version.baseVersionId) &&
+              version.processing.state === 'completed' &&
+              version.artifact.scanStatus === 'clean' &&
+              headVersion?.status === 'ready' &&
+              headVersion.processing.state === 'completed' &&
+              headVersion.artifact.scanStatus === 'clean';
             return (
               <article
                 className="grid gap-4 border-b border-slate-200 p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
@@ -550,6 +585,15 @@ export function DocumentHistoryPage() {
                         <AlertTriangle aria-hidden="true" size={16} />
                         Based on an older team version; the latest was not
                         changed.
+                      </p>
+                    ) : null}
+                    {version.mergeParentVersionId ? (
+                      <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                        <GitMerge aria-hidden="true" size={16} />
+                        Merged from version{' '}
+                        {versions.data.items.find(
+                          (item) => item.id === version.mergeParentVersionId,
+                        )?.displayNumber ?? 'retained source'}
                       </p>
                     ) : null}
                     {version.processing.state === 'queued' ? (
@@ -639,6 +683,25 @@ export function DocumentHistoryPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {mergeEligible ? (
+                    <button
+                      className="button-primary"
+                      disabled={createMerge.isPending}
+                      type="button"
+                      onClick={() => void mergeConflict(version)}
+                    >
+                      {createMerge.isPending ? (
+                        <LoaderCircle
+                          aria-hidden="true"
+                          className="animate-spin"
+                          size={17}
+                        />
+                      ) : (
+                        <GitMerge aria-hidden="true" size={17} />
+                      )}
+                      Merge with latest
+                    </button>
+                  ) : null}
                   {openReview ? (
                     <Link
                       className="button-secondary"

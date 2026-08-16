@@ -16,7 +16,7 @@ The prototype demonstrates product intent but has no production trust boundary. 
 | Pull/download | Reconstructed or placeholder content | Authorized retrieval of exact immutable artifact bytes | 3-4 |
 | Restore | Destructive replacement | New version pointing to an authorized older artifact; history preserved | 4 |
 | Concurrency | Last writer replaces global file | Base version checks, stale-write rejection, idempotent commands | 4 |
-| Merge | Partial reconstruction | Three-way, conservative, validated merge or manual resolution | 8 |
+| Merge | Durable three-way operation over exact immutable inputs; exact-head strategies for all supported Office types; validated disjoint Word text merge; explicit retained manual outcomes | Broaden automatic coverage only with format-specific validation and no loss of unsupported package content | 8 complete |
 | Review/comments | Persisted immutable-version requests, assignments, append-only decisions/comments, exact change anchors, audits, and approval pointer | Notification delivery and merge handoff build on retained review outbox state | 7 complete |
 | Notifications | Mock UI and console behavior | Transactional outbox, retries, in-app/email preferences | 9 |
 | Security | Committed key, broad CORS, payload logs | Secret management, least privilege, scan/quarantine, safe logs, runbooks | 0 onward |

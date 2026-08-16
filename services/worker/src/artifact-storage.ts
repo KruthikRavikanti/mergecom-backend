@@ -108,6 +108,42 @@ export class ArtifactStorage {
     });
   }
 
+  public async putMergeCandidate(input: {
+    body: Uint8Array;
+    key: string;
+    sha256: string;
+    stableHash: string;
+  }): Promise<void> {
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Body: input.body,
+          Bucket: this.bucket,
+          ContentType: 'application/octet-stream',
+          IfNoneMatch: '*',
+          Key: input.key,
+          Metadata: {
+            'candidate-sha256': input.sha256,
+            'schema-kind': 'ooxml-merge-candidate',
+            'stable-hash': input.stableHash,
+          },
+        }),
+      );
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } })
+        .$metadata?.httpStatusCode;
+      if (status !== 412) throw error;
+      const existing = await this.readObject(input.key, this.maxArtifactBytes);
+      const existingHash = createHash('sha256').update(existing).digest('hex');
+      if (existingHash !== input.sha256) {
+        throw new PermanentProcessingError(
+          'merge_candidate_object_conflict',
+          'The immutable merge candidate key contains different bytes.',
+        );
+      }
+    }
+  }
+
   private async putImmutableJson(input: {
     body: Uint8Array;
     conflictCode: string;

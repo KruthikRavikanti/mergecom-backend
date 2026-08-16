@@ -10,7 +10,10 @@ import {
 } from './readiness';
 
 const config = loadWorkerConfig();
-const store = new ProcessingStore(config.databaseUrl);
+const store = new ProcessingStore(
+  config.databaseUrl,
+  config.organizationQuotaBytes,
+);
 const storage = new ArtifactStorage(config);
 const engine = new DocumentEngineClient(
   config.documentEngineUrl,

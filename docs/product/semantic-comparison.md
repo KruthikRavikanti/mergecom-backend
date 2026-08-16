@@ -63,5 +63,6 @@ The history UI permits comparison only for clean versions whose ingestion comple
 The result UI reports processing attempts, failures, equality, coverage, stable hash,
 warnings, and category-filtered persisted changes. Phase 7 can attach a review to a
 completed comparison and anchor discussion to its exact persisted changes. Comparison
-creation still does not mutate review or approval state. Merge generation and
-automatic conflict resolution remain later phases.
+creation still does not mutate review or approval state. Phase 8 reuses the same
+normalized change model inside a stricter three-input validation boundary; a saved
+comparison result is not itself accepted as merge evidence.

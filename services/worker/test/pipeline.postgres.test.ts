@@ -13,7 +13,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ArtifactStorage } from '../src/artifact-storage';
 import type { WorkerConfig } from '../src/config';
 import { DocumentEngineClient } from '../src/document-engine-client';
-import { ComparisonProcessor, DocumentProcessor } from '../src/pipeline';
+import {
+  ComparisonProcessor,
+  DocumentProcessor,
+  MergeProcessor,
+} from '../src/pipeline';
 import { ProcessingStore } from '../src/processing-store';
 
 const databaseUrl = process.env.TEST_WORKER_DATABASE_URL;
@@ -263,6 +267,186 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
       [comparisonId],
     );
     expect(comparisonEvents.rows[0]?.count).toBe(1);
+
+    const theirsVersionId = randomUUID();
+    const theirsJobId = randomUUID();
+    const mergeId = randomUUID();
+    await pool.query(
+      `insert into document_versions
+        (id, organization_id, document_id, branch_id, artifact_id, sequence,
+         display_number, parent_version_id, base_version_id, source, status,
+         note, conflict_reason, author_user_id)
+       values ($1, $2, $3, $4, $5, 3, 3, $6, $6, 'web_upload',
+               'conflicted', 'Retained stale edit',
+               'base_version_is_not_current_head', $7)`,
+      [
+        theirsVersionId,
+        organizationId,
+        documentId,
+        branchId,
+        artifactId,
+        versionId,
+        userId,
+      ],
+    );
+    await pool.query(
+      `insert into version_processing_jobs
+        (id, organization_id, version_id, job_type, status, attempts,
+         started_at, completed_at)
+       values ($1, $2, $3, 'semantic_ingestion', 'completed', 1, now(), now())`,
+      [theirsJobId, organizationId, theirsVersionId],
+    );
+    await pool.query(
+      `update document_branches set head_version_id = $1 where id = $2`,
+      [targetVersionId, branchId],
+    );
+    await pool.query(
+      `insert into merge_operations
+        (id, organization_id, document_id, branch_id, base_version_id,
+         ours_version_id, theirs_version_id, requested_by_user_id, note)
+       values ($1, $2, $3, $4, $5, $6, $7, $8,
+               'Merge retained exact-byte edit')`,
+      [
+        mergeId,
+        organizationId,
+        documentId,
+        branchId,
+        versionId,
+        targetVersionId,
+        theirsVersionId,
+        userId,
+      ],
+    );
+    const mergeProcessor = new MergeProcessor(
+      store,
+      new ArtifactStorage(config),
+      new DocumentEngineClient(engineUrl!, config.documentEngineToken),
+      config.leaseMilliseconds,
+      config.heartbeatMilliseconds,
+    );
+    await mergeProcessor.process(mergeId);
+    const merge = await pool.query<{
+      candidate_object_key: string;
+      result_version_id: string;
+      stable_hash: string;
+      status: string;
+      strategy: string;
+    }>(
+      `select status, strategy, stable_hash, candidate_object_key,
+              result_version_id
+         from merge_operations where id = $1`,
+      [mergeId],
+    );
+    expect(merge.rows[0]).toMatchObject({
+      status: 'completed',
+      strategy: 'identical_heads',
+    });
+    expect(merge.rows[0]?.stable_hash).toMatch(/^[0-9a-f]{64}$/u);
+    keys.push(merge.rows[0]!.candidate_object_key);
+    const mergedVersion = await pool.query<{
+      merge_parent_version_id: string;
+      parent_version_id: string;
+      source: string;
+      status: string;
+    }>(
+      `select source, status, parent_version_id, merge_parent_version_id
+         from document_versions where id = $1`,
+      [merge.rows[0]!.result_version_id],
+    );
+    expect(mergedVersion.rows[0]).toEqual({
+      merge_parent_version_id: theirsVersionId,
+      parent_version_id: targetVersionId,
+      source: 'merge',
+      status: 'pending_processing',
+    });
+    const resultJob = await pool.query<{ id: string }>(
+      `select id from version_processing_jobs where version_id = $1`,
+      [merge.rows[0]!.result_version_id],
+    );
+    await processor.process(resultJob.rows[0]!.id);
+    const ready = await pool.query<{ status: string }>(
+      `select status from document_versions where id = $1`,
+      [merge.rows[0]!.result_version_id],
+    );
+    expect(ready.rows[0]?.status).toBe('ready');
+    keys.push(
+      `organizations/${organizationId}/snapshots/${merge.rows[0]!.result_version_id}/schema-1.1.0-parser-1.1.0.json`,
+    );
+
+    await mergeProcessor.process(mergeId);
+    const mergeEvidence = await pool.query<{
+      events: number;
+      versions: number;
+    }>(
+      `select
+        (select count(*)::int from outbox_events
+          where aggregate_id = $1 and event_type = 'version.merge_finished') as events,
+        (select count(*)::int from document_versions
+          where source = 'merge' and base_version_id = $2) as versions`,
+      [mergeId, versionId],
+    );
+    expect(mergeEvidence.rows[0]).toEqual({ events: 1, versions: 1 });
+
+    const quotaMergeId = randomUUID();
+    await pool.query(
+      `insert into merge_operations
+        (id, organization_id, document_id, branch_id, base_version_id,
+         ours_version_id, theirs_version_id, requested_by_user_id, note)
+       values ($1, $2, $3, $4, $5, $6, $7, $8,
+               'Retain over-quota candidate')`,
+      [
+        quotaMergeId,
+        organizationId,
+        documentId,
+        branchId,
+        versionId,
+        merge.rows[0]!.result_version_id,
+        theirsVersionId,
+        userId,
+      ],
+    );
+    const quotaStore = new ProcessingStore(databaseUrl!, 1);
+    try {
+      await new MergeProcessor(
+        quotaStore,
+        new ArtifactStorage(config),
+        new DocumentEngineClient(engineUrl!, config.documentEngineToken),
+        config.leaseMilliseconds,
+        config.heartbeatMilliseconds,
+      ).process(quotaMergeId);
+    } finally {
+      await quotaStore.close();
+    }
+    const quotaMerge = await pool.query<{
+      candidate_object_key: string;
+      failure_code: string;
+      result_version_id: string | null;
+      status: string;
+    }>(
+      `select status, failure_code, candidate_object_key, result_version_id
+         from merge_operations where id = $1`,
+      [quotaMergeId],
+    );
+    expect(quotaMerge.rows[0]).toMatchObject({
+      failure_code: 'merge_quota_exceeded',
+      result_version_id: null,
+      status: 'manual_resolution_required',
+    });
+    keys.push(quotaMerge.rows[0]!.candidate_object_key);
+    const quotaEvidence = await pool.query<{
+      head_version_id: string;
+      versions: number;
+    }>(
+      `select b.head_version_id,
+              (select count(*)::int from document_versions
+                where source = 'merge' and base_version_id = $2) as versions
+         from document_branches b where b.id = $1`,
+      [branchId, versionId],
+    );
+    expect(quotaEvidence.rows[0]).toEqual({
+      head_version_id: merge.rows[0]!.result_version_id,
+      versions: 1,
+    });
   });
 });
 
@@ -280,6 +464,7 @@ function workerConfig(
     host: '127.0.0.1',
     leaseMilliseconds: 30_000,
     maxArtifactBytes: 100 * 1024 * 1024,
+    organizationQuotaBytes: 5 * 1024 * 1024 * 1024,
     port: 3002,
     redisUrl: 'redis://127.0.0.1:6379',
     s3: {

@@ -16,6 +16,7 @@ export type ProjectTeamMember = components['schemas']['ProjectTeamMember'];
 export type DocumentVersion = components['schemas']['DocumentVersion'];
 export type VersionPage = components['schemas']['VersionPage'];
 export type VersionComparison = components['schemas']['VersionComparison'];
+export type DocumentMerge = components['schemas']['DocumentMerge'];
 export type ComparisonChange = components['schemas']['ComparisonChange'];
 export type ReviewRequest = components['schemas']['ReviewRequest'];
 export type ReviewPage = components['schemas']['ReviewPage'];
@@ -84,6 +85,21 @@ export const queryKeys = {
       documentId,
       'comparisons',
       comparisonId,
+    ] as const,
+  merge: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    mergeId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'merges',
+      mergeId,
     ] as const,
   review: (
     organizationId: string,
@@ -424,6 +440,126 @@ export function useCreateComparisonMutation(currentUser: CurrentUser) {
         ),
         comparison,
       );
+    },
+  });
+}
+
+export function useDocumentMergeQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  mergeId: string,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId && projectId && documentId && mergeId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges/{mergeId}',
+        {
+          params: {
+            path: {
+              documentId,
+              mergeId,
+              organizationId: organizationId!,
+              projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Merge operation could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.merge(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      mergeId,
+    ),
+    refetchInterval: (query) =>
+      query.state.data &&
+      ['queued', 'retryable_failed', 'running'].includes(query.state.data.state)
+        ? 2_000
+        : false,
+  });
+}
+
+export function useCreateMergeMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      baseVersionId: string;
+      documentId: string;
+      note: string;
+      oursVersionId: string;
+      projectId: string;
+      theirsVersionId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges',
+        {
+          body: {
+            baseVersionId: input.baseVersionId,
+            note: input.note,
+            oursVersionId: input.oursVersionId,
+            theirsVersionId: input.theirsVersionId,
+          },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Merge could not be started.');
+      return data;
+    },
+    onSuccess: (merge, input) => {
+      queryClient.setQueryData(
+        queryKeys.merge(
+          activeOrganizationId(currentUser),
+          input.projectId,
+          input.documentId,
+          merge.id,
+        ),
+        merge,
+      );
+    },
+  });
+}
+
+export function useDownloadMergeCandidateMutation(currentUser: CurrentUser) {
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string;
+      mergeId: string;
+      projectId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges/{mergeId}/candidate/download',
+        {
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId, ...input },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(
+          error,
+          'Merge candidate download could not be authorized.',
+        );
+      window.location.assign(data.url);
+      return data;
     },
   });
 }

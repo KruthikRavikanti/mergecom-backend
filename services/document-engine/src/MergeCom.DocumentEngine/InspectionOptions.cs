@@ -28,5 +28,7 @@ public sealed class InspectionOptions
 
     public long MaxComparisonInputBytes { get; set; } = 8 * 1024 * 1024;
 
+    public long MaxMergeInputBytes { get; set; } = 300 * 1024 * 1024;
+
     public string TempRoot { get; set; } = Path.Combine(Path.GetTempPath(), "mergecom-document-engine");
 }

@@ -9,6 +9,7 @@ import { AdminPage } from '../features/admin/AdminPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DocumentHistoryPage } from '../features/history/DocumentHistoryPage';
 import { DocumentComparePage } from '../features/history/DocumentComparePage';
+import { DocumentMergePage } from '../features/history/DocumentMergePage';
 import { InviteAcceptancePage } from '../features/invitations/InviteAcceptancePage';
 import { ProjectPage } from '../features/projects/ProjectPage';
 import { DocumentReviewPage } from '../features/reviews/DocumentReviewPage';
@@ -54,6 +55,10 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
           {
             element: <DocumentComparePage />,
             path: 'projects/:projectId/documents/:documentId/history/comparisons/:comparisonId',
+          },
+          {
+            element: <DocumentMergePage />,
+            path: 'projects/:projectId/documents/:documentId/history/merges/:mergeId',
           },
           {
             element: <DocumentReviewPage />,

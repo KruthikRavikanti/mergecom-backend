@@ -9,7 +9,11 @@ import {
 import type { ProjectActor } from '../projects/types';
 import { VersionOperationError } from './store';
 import { VersionService } from './service';
-import type { DocumentVersionSummary, VersionComparison } from './types';
+import type {
+  DocumentMerge,
+  DocumentVersionSummary,
+  VersionComparison,
+} from './types';
 import { UploadValidationError } from './validation';
 
 const Id = Type.String({ format: 'uuid' });
@@ -41,6 +45,10 @@ const VersionParams = Type.Intersect([
 const ComparisonParams = Type.Intersect([
   DocumentParams,
   Type.Object({ comparisonId: Id }),
+]);
+const MergeParams = Type.Intersect([
+  DocumentParams,
+  Type.Object({ mergeId: Id }),
 ]);
 const VersionStatus = Type.Union([
   Type.Literal('pending_processing'),
@@ -225,6 +233,51 @@ const Comparison = Type.Object({
   updatedAt: DateTime,
   warnings: Type.Array(Type.String()),
 });
+const MergeVersionReference = Type.Intersect([
+  ComparisonVersionReference,
+  Type.Object({ status: VersionStatus }),
+]);
+const Merge = Type.Object({
+  appliedPaths: Type.Array(Type.String()),
+  attempts: Type.Integer({ minimum: 0 }),
+  baseVersion: MergeVersionReference,
+  branchId: Id,
+  candidate: Type.Union([
+    Type.Object({
+      byteSize: Type.Integer({ minimum: 1 }),
+      sha256: Type.String({ pattern: '^[0-9a-f]{64}$' }),
+    }),
+    Type.Null(),
+  ]),
+  createdAt: DateTime,
+  engineVersion: Type.String(),
+  failureCode: Type.Union([Type.String(), Type.Null()]),
+  id: Id,
+  maxAttempts: Type.Integer({ minimum: 1 }),
+  mergeSchemaVersion: Type.String(),
+  nextAttemptAt: Type.Union([DateTime, Type.Null()]),
+  note: Type.String(),
+  oursVersion: MergeVersionReference,
+  parserVersion: Type.String(),
+  resultVersionId: Type.Union([Id, Type.Null()]),
+  stableHash: Type.Union([
+    Type.String({ pattern: '^[0-9a-f]{64}$' }),
+    Type.Null(),
+  ]),
+  state: Type.Union([
+    Type.Literal('queued'),
+    Type.Literal('running'),
+    Type.Literal('retryable_failed'),
+    Type.Literal('permanently_failed'),
+    Type.Literal('manual_resolution_required'),
+    Type.Literal('completed'),
+  ]),
+  strategy: Type.Union([Type.String(), Type.Null()]),
+  supportTraceId: Id,
+  theirsVersion: MergeVersionReference,
+  updatedAt: DateTime,
+  warnings: Type.Array(Type.String()),
+});
 const Errors = {
   400: ErrorResponse,
   401: ErrorResponse,
@@ -275,6 +328,27 @@ function serializeComparison(comparison: VersionComparison) {
       createdAt: comparison.targetVersion.createdAt.toISOString(),
     },
     updatedAt: comparison.updatedAt.toISOString(),
+  };
+}
+
+function serializeMerge(merge: DocumentMerge) {
+  return {
+    ...merge,
+    baseVersion: {
+      ...merge.baseVersion,
+      createdAt: merge.baseVersion.createdAt.toISOString(),
+    },
+    createdAt: merge.createdAt.toISOString(),
+    nextAttemptAt: merge.nextAttemptAt?.toISOString() ?? null,
+    oursVersion: {
+      ...merge.oursVersion,
+      createdAt: merge.oursVersion.createdAt.toISOString(),
+    },
+    theirsVersion: {
+      ...merge.theirsVersion,
+      createdAt: merge.theirsVersion.createdAt.toISOString(),
+    },
+    updatedAt: merge.updatedAt.toISOString(),
   };
 }
 
@@ -388,6 +462,13 @@ async function sendVersionError(
         409,
         'comparison_unavailable',
         'Both versions must be fully processed, clean, and belong to this document.',
+      );
+    case 'merge_unavailable':
+      return sendApiError(
+        reply,
+        409,
+        'merge_unavailable',
+        'Merge inputs must be clean processed versions with a common base, and ours must still be the branch head.',
       );
   }
 }
@@ -782,6 +863,120 @@ export function registerVersionRoutes(
           requestId: request.id,
           targetId: request.params.comparisonId,
           targetType: 'version_comparison',
+        });
+      }
+    },
+  );
+
+  typed.post(
+    `${basePath}/merges`,
+    {
+      preHandler: mutations,
+      schema: {
+        body: Type.Object({
+          baseVersionId: Id,
+          note: Type.String({ maxLength: 500, minLength: 1 }),
+          oursVersionId: Id,
+          theirsVersionId: Id,
+        }),
+        headers: IdempotentHeaders,
+        params: DocumentParams,
+        response: { 200: Merge, 201: Merge, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const result = await runtime.versionService.createMerge({
+          actor: currentActor,
+          baseVersionId: request.body.baseVersionId,
+          documentId: request.params.documentId,
+          idempotencyKey: request.headers['idempotency-key'],
+          note: request.body.note.trim(),
+          oursVersionId: request.body.oursVersionId,
+          projectId: request.params.projectId,
+          requestId: request.id,
+          theirsVersionId: request.body.theirsVersionId,
+        });
+        return reply
+          .code(result.replayed ? 200 : 201)
+          .send(serializeMerge(result.merge));
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'merge.request_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.documentId,
+          targetType: 'document',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/merges/:mergeId`,
+    {
+      preHandler: reads,
+      schema: { params: MergeParams, response: { 200: Merge, ...Errors } },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return serializeMerge(
+          await runtime.versionService.getMerge({
+            actor: currentActor,
+            documentId: request.params.documentId,
+            mergeId: request.params.mergeId,
+            projectId: request.params.projectId,
+          }),
+        );
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'merge.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.mergeId,
+          targetType: 'merge_operation',
+        });
+      }
+    },
+  );
+
+  typed.post(
+    `${basePath}/merges/:mergeId/candidate/download`,
+    {
+      preHandler: mutations,
+      schema: {
+        headers: MutationHeaders,
+        params: MergeParams,
+        response: {
+          200: Type.Intersect([
+            Grant,
+            Type.Object({ filename: Type.String(), sha256: Type.String() }),
+          ]),
+          ...Errors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const grant =
+          await runtime.versionService.createMergeCandidateDownloadGrant({
+            actor: currentActor,
+            documentId: request.params.documentId,
+            mergeId: request.params.mergeId,
+            projectId: request.params.projectId,
+            requestId: request.id,
+          });
+        return { ...grant, expiresAt: grant.expiresAt.toISOString() };
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'merge.candidate_download_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.mergeId,
+          targetType: 'merge_operation',
         });
       }
     },

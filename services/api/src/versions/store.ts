@@ -2,6 +2,7 @@ import type { PageInput } from '../projects/store';
 import type {
   ArtifactSummary,
   BranchSummary,
+  DocumentMerge,
   VersionComparison,
   DocumentAccess,
   DocumentVersionSummary,
@@ -21,6 +22,7 @@ export type VersionOperationErrorCode =
   | 'invalid_base'
   | 'invalid_cursor'
   | 'invalid_state'
+  | 'merge_unavailable'
   | 'not_found'
   | 'quota_exceeded'
   | 'stale_head'
@@ -48,6 +50,13 @@ export interface AuthorizedArtifact {
   version: DocumentVersionSummary;
 }
 
+export interface AuthorizedMergeCandidate {
+  byteSize: number;
+  extension: string;
+  objectKey: string;
+  sha256: string;
+}
+
 export interface CreatedUploadRecord {
   branch: BranchSummary;
   record: StagedUploadRecord;
@@ -55,6 +64,11 @@ export interface CreatedUploadRecord {
 }
 
 export interface VersionStore {
+  appendMergeCandidateDownloadAudit(input: {
+    actor: VersionActor;
+    mergeId: string;
+    requestId: string;
+  }): Promise<void>;
   appendDownloadAudit(input: {
     actor: VersionActor;
     requestId: string;
@@ -80,6 +94,21 @@ export interface VersionStore {
     requestId: string;
     targetVersionId: string;
   }): Promise<{ comparison: VersionComparison; replayed: boolean }>;
+  createMerge(input: {
+    actor: VersionActor;
+    baseVersionId: string;
+    documentId: string;
+    engineVersion: string;
+    idempotencyKey: string;
+    mergeSchemaVersion: string;
+    note: string;
+    oursVersionId: string;
+    parserVersion: string;
+    projectId: string;
+    requestHash: string;
+    requestId: string;
+    theirsVersionId: string;
+  }): Promise<{ merge: DocumentMerge; replayed: boolean }>;
   createUpload(input: {
     actor: VersionActor;
     baseVersionId: string | null;
@@ -133,6 +162,18 @@ export interface VersionStore {
     documentId: string;
     projectId: string;
   }): Promise<VersionComparison>;
+  getMerge(input: {
+    actor: VersionActor;
+    documentId: string;
+    mergeId: string;
+    projectId: string;
+  }): Promise<DocumentMerge>;
+  getMergeCandidate(input: {
+    actor: VersionActor;
+    documentId: string;
+    mergeId: string;
+    projectId: string;
+  }): Promise<AuthorizedMergeCandidate>;
   getVersion(input: {
     actor: VersionActor;
     documentId: string;

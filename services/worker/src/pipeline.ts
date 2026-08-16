@@ -15,11 +15,14 @@ import {
 import {
   PermanentProcessingError,
   type ClaimedComparisonJob,
+  type ClaimedMergeJob,
   type ClaimedProcessingJob,
   type ComparisonResult,
   type DispatchableComparison,
   type DispatchableJob,
+  type DispatchableMerge,
   type InspectionResult,
+  type MergeResult,
 } from './types';
 
 interface StoreLike {
@@ -125,6 +128,58 @@ interface ComparisonEngineLike {
     baseArtifact: Uint8Array,
     targetArtifact: Uint8Array,
   ): Promise<ComparisonResult>;
+}
+
+interface MergeStoreLike {
+  claimMerge(
+    mergeId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<ClaimedMergeJob | null>;
+  completeMerge(input: {
+    candidateObjectKey: string | null;
+    leaseOwner: string;
+    merge: ClaimedMergeJob;
+    result: MergeResult;
+  }): Promise<void>;
+  heartbeatMerge(
+    mergeId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<boolean>;
+  listDispatchableMerges(limit?: number): Promise<DispatchableMerge[]>;
+  markMergeDispatched(merge: DispatchableMerge): Promise<void>;
+  recordMergeFailure(input: {
+    error: string;
+    failureCode: string;
+    leaseOwner: string;
+    merge: ClaimedMergeJob;
+    retryable: boolean;
+    retryAt: Date;
+  }): Promise<boolean>;
+}
+
+interface MergeStorageLike {
+  putMergeCandidate(input: {
+    body: Uint8Array;
+    key: string;
+    sha256: string;
+    stableHash: string;
+  }): Promise<void>;
+  readArtifact(input: {
+    byteSize: number;
+    objectKey: string;
+    sha256: string;
+  }): Promise<Uint8Array>;
+}
+
+interface MergeEngineLike {
+  merge(
+    job: ClaimedMergeJob,
+    baseArtifact: Uint8Array,
+    oursArtifact: Uint8Array,
+    theirsArtifact: Uint8Array,
+  ): Promise<MergeResult>;
 }
 
 export class DocumentProcessor {
@@ -297,8 +352,85 @@ export class ComparisonProcessor {
   }
 }
 
+export class MergeProcessor {
+  private readonly leaseOwner = `${hostname()}:${process.pid}:${randomUUID()}`;
+
+  public constructor(
+    private readonly store: MergeStoreLike,
+    private readonly storage: MergeStorageLike,
+    private readonly engine: MergeEngineLike,
+    private readonly leaseMilliseconds: number,
+    private readonly heartbeatMilliseconds: number,
+  ) {}
+
+  public async process(mergeId: string): Promise<void> {
+    const merge = await this.store.claimMerge(
+      mergeId,
+      this.leaseOwner,
+      this.leaseMilliseconds,
+    );
+    if (!merge) return;
+    const heartbeat = setInterval(() => {
+      void this.store
+        .heartbeatMerge(merge.id, this.leaseOwner, this.leaseMilliseconds)
+        .catch(() => false);
+    }, this.heartbeatMilliseconds);
+    heartbeat.unref();
+    try {
+      const [baseArtifact, oursArtifact, theirsArtifact] = await Promise.all([
+        this.storage.readArtifact(merge.baseArtifact),
+        this.storage.readArtifact(merge.oursArtifact),
+        this.storage.readArtifact(merge.theirsArtifact),
+      ]);
+      const result = await this.engine.merge(
+        merge,
+        baseArtifact,
+        oursArtifact,
+        theirsArtifact,
+      );
+      let candidateObjectKey: string | null = null;
+      if (result.candidate_bytes && result.candidate_sha256) {
+        candidateObjectKey = [
+          'organizations',
+          merge.organizationId,
+          'merge-candidates',
+          merge.id,
+          `${result.candidate_sha256}${merge.oursArtifact.extension}`,
+        ].join('/');
+        await this.storage.putMergeCandidate({
+          body: result.candidate_bytes,
+          key: candidateObjectKey,
+          sha256: result.candidate_sha256,
+          stableHash: result.stable_hash,
+        });
+      }
+      await this.store.completeMerge({
+        candidateObjectKey,
+        leaseOwner: this.leaseOwner,
+        merge,
+        result,
+      });
+    } catch (error) {
+      const permanent = error instanceof PermanentProcessingError;
+      const retryDelay = Math.min(60_000, 1_000 * 2 ** (merge.attempts - 1));
+      const retry = await this.store.recordMergeFailure({
+        error: errorMessage(error),
+        failureCode: permanent ? error.code : 'merge_dependency_unavailable',
+        leaseOwner: this.leaseOwner,
+        merge,
+        retryable: !permanent,
+        retryAt: new Date(Date.now() + retryDelay),
+      });
+      if (retry) throw error;
+    } finally {
+      clearInterval(heartbeat);
+    }
+  }
+}
+
 export class DocumentPipeline {
   private readonly comparisonProcessor: ComparisonProcessor;
+  private readonly mergeProcessor: MergeProcessor;
   private readonly processor: DocumentProcessor;
   private readonly queue: Queue<DocumentQueueJob>;
   private readonly worker: Worker<DocumentQueueJob>;
@@ -325,6 +457,13 @@ export class DocumentPipeline {
       config.leaseMilliseconds,
       config.heartbeatMilliseconds,
     );
+    this.mergeProcessor = new MergeProcessor(
+      store,
+      storage,
+      engine,
+      config.leaseMilliseconds,
+      config.heartbeatMilliseconds,
+    );
     this.queue = createDocumentQueue(config.redisUrl);
     this.worker = createDocumentWorker(
       config.redisUrl,
@@ -333,8 +472,11 @@ export class DocumentPipeline {
         if ('processingJobId' in job) {
           return this.processor.process(job.processingJobId);
         }
-        return job.kind === 'comparison'
-          ? this.comparisonProcessor.process(job.jobId)
+        if (job.kind === 'comparison') {
+          return this.comparisonProcessor.process(job.jobId);
+        }
+        return job.kind === 'merge'
+          ? this.mergeProcessor.process(job.jobId)
           : this.processor.process(job.jobId);
       },
     );
@@ -405,6 +547,28 @@ export class DocumentPipeline {
           },
         );
         await this.store.markComparisonDispatched(comparison);
+      }
+      for (const merge of await this.store.listDispatchableMerges()) {
+        const queueJobId = `merge-${merge.id}`;
+        const existing = await this.queue.getJob(queueJobId);
+        if (existing) {
+          const state = await existing.getState();
+          if (state === 'completed' || state === 'failed') {
+            await existing.remove();
+          }
+        }
+        await this.queue.add(
+          'conservative-merge',
+          { jobId: merge.id, kind: 'merge' },
+          {
+            attempts: merge.maxAttempts,
+            backoff: { delay: 1_000, type: 'exponential' },
+            jobId: queueJobId,
+            removeOnComplete: false,
+            removeOnFail: false,
+          },
+        );
+        await this.store.markMergeDispatched(merge);
       }
     } finally {
       this.dispatching = false;

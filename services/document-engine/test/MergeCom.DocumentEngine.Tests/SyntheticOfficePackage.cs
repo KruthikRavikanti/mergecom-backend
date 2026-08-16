@@ -40,6 +40,25 @@ internal sealed class SyntheticOfficePackage : IDisposable
         return fixture;
     }
 
+    public static SyntheticOfficePackage WordParagraphs(params string[] values)
+    {
+        var fixture = New(".docx");
+        using var document = WordprocessingDocument.Create(
+            fixture.Path,
+            WordprocessingDocumentType.Document);
+        var main = document.AddMainDocumentPart();
+        var body = new W.Body();
+        foreach (var value in values)
+        {
+            body.Append(new W.Paragraph(new W.Run(new W.Text(value))));
+        }
+
+        body.Append(new W.SectionProperties());
+        main.Document = new W.Document(body);
+        main.Document.Save();
+        return fixture;
+    }
+
     public static SyntheticOfficePackage WordWithNestedTable(string value)
     {
         var fixture = New(".docx");
@@ -151,9 +170,12 @@ internal sealed class SyntheticOfficePackage : IDisposable
         return fixture;
     }
 
-    public static SyntheticOfficePackage WordWithFeature(string name, byte[] content)
+    public static SyntheticOfficePackage WordWithFeature(
+        string name,
+        byte[] content,
+        string heading = "Synthetic heading")
     {
-        var fixture = Word();
+        var fixture = Word(heading);
         using var archive = ZipFile.Open(fixture.Path, ZipArchiveMode.Update);
         WriteEntry(archive, name, content);
         return fixture;

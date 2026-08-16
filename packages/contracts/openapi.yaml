@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: MergeCom API
   version: 0.7.0
-  description: Identity, project, immutable version, semantic comparison, and review workflow contracts.
+  description: Identity, project, immutable version, semantic comparison, conservative merge, and review workflow contracts.
 paths:
   /health/live:
     get:
@@ -1000,6 +1000,76 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/VersionComparison' }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: createDocumentMerge
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseVersionId, oursVersionId, theirsVersionId, note]
+              properties:
+                baseVersionId: { type: string, format: uuid }
+                oursVersionId: { type: string, format: uuid }
+                theirsVersionId: { type: string, format: uuid }
+                note: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Existing merge operation replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentMerge' }
+        '201':
+          description: Durable conservative merge requested.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentMerge' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges/{mergeId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/MergeId'
+    get:
+      operationId: getDocumentMerge
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Persisted merge lifecycle and immutable source references.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentMerge' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges/{mergeId}/candidate/download:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/MergeId'
+    post:
+      operationId: createMergeCandidateDownload
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Short-lived grant for an authorized retained merge candidate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DownloadGrant' }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -1329,6 +1399,11 @@ components:
       schema: { type: string, format: uuid }
     ComparisonId:
       name: comparisonId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MergeId:
+      name: mergeId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1884,6 +1959,99 @@ components:
         changes:
           type: array
           items: { $ref: '#/components/schemas/ComparisonChange' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MergeVersionReference:
+      allOf:
+        - $ref: '#/components/schemas/ComparisonVersionReference'
+        - type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [pending_processing, ready, conflicted, quarantined, failed]
+    MergeCandidate:
+      type: object
+      additionalProperties: false
+      required: [byteSize, sha256]
+      properties:
+        byteSize: { type: integer, minimum: 1 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    DocumentMerge:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          branchId,
+          baseVersion,
+          oursVersion,
+          theirsVersion,
+          note,
+          mergeSchemaVersion,
+          parserVersion,
+          engineVersion,
+          state,
+          attempts,
+          maxAttempts,
+          nextAttemptAt,
+          failureCode,
+          supportTraceId,
+          strategy,
+          stableHash,
+          warnings,
+          appliedPaths,
+          candidate,
+          resultVersionId,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        branchId: { type: string, format: uuid }
+        baseVersion: { $ref: '#/components/schemas/MergeVersionReference' }
+        oursVersion: { $ref: '#/components/schemas/MergeVersionReference' }
+        theirsVersion: { $ref: '#/components/schemas/MergeVersionReference' }
+        note: { type: string }
+        mergeSchemaVersion: { type: string }
+        parserVersion: { type: string }
+        engineVersion: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              queued,
+              running,
+              retryable_failed,
+              permanently_failed,
+              manual_resolution_required,
+              completed,
+            ]
+        attempts: { type: integer, minimum: 0 }
+        maxAttempts: { type: integer, minimum: 1 }
+        nextAttemptAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        failureCode:
+          oneOf: [{ type: string }, { type: 'null' }]
+        supportTraceId: { type: string, format: uuid }
+        strategy:
+          oneOf: [{ type: string }, { type: 'null' }]
+        stableHash:
+          oneOf:
+            - { type: string, pattern: '^[0-9a-f]{64}$' }
+            - { type: 'null' }
+        warnings:
+          type: array
+          items: { type: string }
+        appliedPaths:
+          type: array
+          items: { type: string }
+        candidate:
+          oneOf:
+            - { $ref: '#/components/schemas/MergeCandidate' }
+            - { type: 'null' }
+        resultVersionId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     ReviewPerson:

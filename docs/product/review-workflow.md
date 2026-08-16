@@ -78,4 +78,5 @@ Document history lists review requests and marks the current approved version.
 Eligible versions can be submitted directly, while a completed comparison can create
 a review that supports exact change discussions. The review route polls open state,
 shows current assignment validity and immutable decisions, exposes permitted actions,
-and retains closed discussion history. Merge remains Phase 8.
+and retains closed discussion history. Phase 8 separately permits a retained stale
+version to enter the conservative merge workflow.

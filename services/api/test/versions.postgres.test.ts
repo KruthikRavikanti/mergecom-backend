@@ -590,6 +590,115 @@ describe.runIf(runInfrastructureTests)(
       expect(rows.rows[0]?.comparisons).toBe(1);
     });
 
+    it('queues one graph-valid three-way merge and protects its retained candidate', async () => {
+      const owner = await login('alpha-owner');
+      const viewer = await login('alpha-viewer');
+      const basis = await push(
+        owner,
+        officeBytes('merge-base'),
+        null,
+        'Merge base',
+      );
+      const baseVersionId = basis.response.json().version.id as string;
+      const ours = await push(
+        owner,
+        officeBytes('merge-ours'),
+        baseVersionId,
+        'Current team edit',
+      );
+      const oursVersionId = ours.response.json().version.id as string;
+      const theirs = await push(
+        owner,
+        officeBytes('merge-theirs'),
+        baseVersionId,
+        'Stale contributor edit',
+      );
+      expect(theirs.response.statusCode).toBe(409);
+      const theirsVersionId = theirs.response.json().version.id as string;
+      await markVersionsProcessed([baseVersionId, oursVersionId]);
+      await database.pool.query(
+        `update version_processing_jobs set status = 'completed', completed_at = now()
+          where version_id = $1`,
+        [theirsVersionId],
+      );
+      await database.pool.query(
+        `update artifacts set scan_status = 'clean'
+          where id = (select artifact_id from document_versions where id = $1)`,
+        [theirsVersionId],
+      );
+
+      const idempotencyKey = randomUUID();
+      const body = {
+        baseVersionId,
+        note: 'Merge stale contributor work',
+        oursVersionId,
+        theirsVersionId,
+      };
+      const created = await app.inject({
+        body,
+        headers: headers(owner, idempotencyKey),
+        method: 'POST',
+        url: `${base()}/merges`,
+      });
+      expect(created.statusCode, created.payload).toBe(201);
+      expect(created.json()).toMatchObject({
+        baseVersion: { id: baseVersionId },
+        candidate: null,
+        oursVersion: { id: oursVersionId },
+        state: 'queued',
+        theirsVersion: { id: theirsVersionId, status: 'conflicted' },
+      });
+
+      const replay = await app.inject({
+        body,
+        headers: headers(owner, idempotencyKey),
+        method: 'POST',
+        url: `${base()}/merges`,
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json().id).toBe(created.json().id);
+      const read = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: `${base()}/merges/${created.json().id as string}`,
+      });
+      expect(read.statusCode, read.payload).toBe(200);
+      const denied = await app.inject({
+        headers: { cookie: viewer.cookie },
+        method: 'GET',
+        url: `${base()}/merges/${created.json().id as string}`,
+      });
+      expect(denied.statusCode).toBe(404);
+      const candidate = await app.inject({
+        headers: headers(owner),
+        method: 'POST',
+        url: `${base()}/merges/${created.json().id as string}/candidate/download`,
+      });
+      expect(candidate.statusCode).toBe(404);
+
+      const unavailable = await app.inject({
+        body: { ...body, oursVersionId: baseVersionId },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/merges`,
+      });
+      expect(unavailable.statusCode).toBe(409);
+      expect(unavailable.json().code).toBe('merge_unavailable');
+      const evidence = await database.pool.query<{
+        audits: number;
+        merges: number;
+        outbox: number;
+      }>(
+        `select
+          (select count(*)::int from merge_operations) as merges,
+          (select count(*)::int from audit_events
+            where action = 'merge.requested') as audits,
+          (select count(*)::int from outbox_events
+            where event_type = 'version.merge_requested') as outbox`,
+      );
+      expect(evidence.rows[0]).toEqual({ audits: 1, merges: 1, outbox: 1 });
+    });
+
     it('persists review decisions, anchored discussion, and a monotonic approved pointer', async () => {
       const owner = await login('alpha-owner');
       const reviewer = await login('alpha-reviewer');

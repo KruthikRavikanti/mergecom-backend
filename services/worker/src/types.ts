@@ -70,6 +70,28 @@ export interface ClaimedComparisonJob {
   traceId: string;
 }
 
+export interface ClaimedMergeJob {
+  attempts: number;
+  baseArtifact: ComparisonArtifact;
+  branchId: string;
+  documentId: string;
+  engineVersion: string;
+  fileType: DocumentFileType;
+  id: string;
+  maxAttempts: number;
+  mergeSchemaVersion: string;
+  note: string;
+  organizationId: string;
+  oursArtifact: ComparisonArtifact & {
+    detectedMediaType: string;
+    originalFilename: string;
+  };
+  parserVersion: string;
+  requestedByUserId: string;
+  theirsArtifact: ComparisonArtifact;
+  traceId: string;
+}
+
 export type ComparisonChangeType = 'added' | 'modified' | 'moved' | 'removed';
 export type ComparisonCategory =
   'content' | 'feature' | 'structure' | 'validation';
@@ -103,6 +125,25 @@ export interface ComparisonResult {
   warnings: string[];
 }
 
+export interface MergeResult {
+  applied_paths: string[];
+  base_source_sha256: string;
+  candidate_byte_size: number | null;
+  candidate_bytes: Uint8Array | null;
+  candidate_sha256: string | null;
+  engine_version: string;
+  failure_code: string | null;
+  file_type: DocumentFileType;
+  merge_schema_version: string;
+  outcome: 'completed' | 'manual_resolution_required';
+  ours_source_sha256: string;
+  parser_version: string;
+  stable_hash: string;
+  strategy: string | null;
+  theirs_source_sha256: string;
+  warnings: string[];
+}
+
 export interface DispatchableJob {
   id: string;
   maxAttempts: number;
@@ -110,6 +151,11 @@ export interface DispatchableJob {
 }
 
 export interface DispatchableComparison {
+  id: string;
+  maxAttempts: number;
+}
+
+export interface DispatchableMerge {
   id: string;
   maxAttempts: number;
 }

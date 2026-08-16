@@ -1,5 +1,24 @@
 # Phase status
 
+## Phase 8: conservative three-way merge
+
+Status: implementation complete on `phase-8/conservative-merge`; pending owner review.
+
+- [x] Merge requests bind one explicit common base, the current branch head as ours, and one retained conflicted version as theirs; ancestry and clean completed ingestion are rechecked under tenant and project authorization.
+- [x] Exact immutable bytes and source SHA-256 values cross a bounded, authenticated worker-to-engine protocol with parser, merge-schema, and engine version contracts.
+- [x] Identical-head, fast-forward-theirs, and retain-ours strategies preserve exact package bytes for Word, PowerPoint, and Excel when all three inspections have complete coverage.
+- [x] Divergent automatic merge is restricted to disjoint Word paragraph or table-cell text edits with unchanged text-node markup and unchanged supporting package parts.
+- [x] The engine copies ours, applies only validated theirs paths, reopens and validates the candidate, then proves its semantic changes equal the exact union of both source deltas.
+- [x] Unsupported formats, partial coverage, validation errors, changed package parts, overlapping paths, structural edits, changed markup, and candidate verification failures terminate as retained manual-resolution outcomes.
+- [x] A successful candidate atomically creates an immutable artifact and two-parent version, advances the branch by compare-and-swap, and enters normal semantic ingestion; a moved head or exceeded storage quota preserves the candidate without publishing it.
+- [x] PostgreSQL owns queue, lease, retry, terminal result, candidate evidence, audit, and outbox state; duplicate terminal delivery is a no-op and object writes are collision checked.
+- [x] Document history starts eligible conflict merges, identifies merge parents, and exposes durable pending, success, failure, and manual-resolution states with authorized exact downloads.
+- [x] Real PostgreSQL, object-storage, engine, worker, and desktop/mobile browser scenarios cover automatic disjoint merge, overlapping manual resolution, two-parent history, normal ingestion, replay, authorization, and retained candidates.
+
+The boundary is documented in `docs/product/conservative-merge.md`; operational
+inspection and recovery are in `docs/runbooks/merge-processing.md`, and command
+evidence is in `docs/verification/phase-8-command-results.md`.
+
 ## Phase 7: persisted review and approval workflow
 
 Status: implementation complete on `phase-7/review-workflow`; pending owner review.

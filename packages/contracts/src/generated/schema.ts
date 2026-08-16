@@ -662,6 +662,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createDocumentMerge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges/{mergeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                mergeId: components["parameters"]["MergeId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getDocumentMerge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges/{mergeId}/candidate/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                mergeId: components["parameters"]["MergeId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createMergeCandidateDownload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews": {
         parameters: {
             query?: never;
@@ -1154,6 +1216,45 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        MergeVersionReference: components["schemas"]["ComparisonVersionReference"] & {
+            /** @enum {string} */
+            status: "pending_processing" | "ready" | "conflicted" | "quarantined" | "failed";
+        };
+        MergeCandidate: {
+            byteSize: number;
+            sha256: string;
+        };
+        DocumentMerge: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            branchId: string;
+            baseVersion: components["schemas"]["MergeVersionReference"];
+            oursVersion: components["schemas"]["MergeVersionReference"];
+            theirsVersion: components["schemas"]["MergeVersionReference"];
+            note: string;
+            mergeSchemaVersion: string;
+            parserVersion: string;
+            engineVersion: string;
+            /** @enum {string} */
+            state: "queued" | "running" | "retryable_failed" | "permanently_failed" | "manual_resolution_required" | "completed";
+            attempts: number;
+            maxAttempts: number;
+            nextAttemptAt: string | null;
+            failureCode: string | null;
+            /** Format: uuid */
+            supportTraceId: string;
+            strategy: string | null;
+            stableHash: string | null;
+            warnings: string[];
+            appliedPaths: string[];
+            candidate: components["schemas"]["MergeCandidate"] | null;
+            resultVersionId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ReviewPerson: {
             /** Format: uuid */
             id: string;
@@ -1323,6 +1424,7 @@ export interface components {
         UploadId: string;
         VersionId: string;
         ComparisonId: string;
+        MergeId: string;
         ReviewRequestId: string;
         ThreadId: string;
         ProjectMembershipId: string;
@@ -2707,6 +2809,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createDocumentMerge: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    baseVersionId: string;
+                    /** Format: uuid */
+                    oursVersionId: string;
+                    /** Format: uuid */
+                    theirsVersionId: string;
+                    note: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Existing merge operation replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentMerge"];
+                };
+            };
+            /** @description Durable conservative merge requested. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentMerge"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getDocumentMerge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                mergeId: components["parameters"]["MergeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted merge lifecycle and immutable source references. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentMerge"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createMergeCandidateDownload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                mergeId: components["parameters"]["MergeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Short-lived grant for an authorized retained merge candidate. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadGrant"];
                 };
             };
             default: components["responses"]["ApiError"];
