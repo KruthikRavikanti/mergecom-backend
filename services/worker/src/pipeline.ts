@@ -180,6 +180,7 @@ interface MergeEngineLike {
     oursArtifact: Uint8Array,
     theirsArtifact: Uint8Array,
     powerPointAutomaticMergeEnabled?: boolean,
+    excelAutomaticMergeEnabled?: boolean,
   ): Promise<MergeResult>;
 }
 
@@ -364,6 +365,8 @@ export class MergeProcessor {
     private readonly heartbeatMilliseconds: number,
     private readonly powerPointAutomaticMergeEnabled = false,
     private readonly powerPointAutomaticMergePilotOrganizationIds: string[] = [],
+    private readonly excelAutomaticMergeEnabled = false,
+    private readonly excelAutomaticMergePilotOrganizationIds: string[] = [],
   ) {}
 
   public async process(mergeId: string): Promise<void> {
@@ -392,6 +395,10 @@ export class MergeProcessor {
         theirsArtifact,
         this.powerPointAutomaticMergeEnabled &&
           this.powerPointAutomaticMergePilotOrganizationIds.includes(
+            merge.organizationId,
+          ),
+        this.excelAutomaticMergeEnabled &&
+          this.excelAutomaticMergePilotOrganizationIds.includes(
             merge.organizationId,
           ),
       );
@@ -472,6 +479,8 @@ export class DocumentPipeline {
       config.heartbeatMilliseconds,
       config.powerPointAutomaticMergeEnabled,
       config.powerPointAutomaticMergePilotOrganizationIds,
+      config.excelAutomaticMergeEnabled,
+      config.excelAutomaticMergePilotOrganizationIds,
     );
     this.queue = createDocumentQueue(config.redisUrl);
     this.worker = createDocumentWorker(

@@ -273,11 +273,11 @@ const mergeJob: ClaimedMergeJob = {
   baseArtifact: comparisonJob.baseArtifact,
   branchId: '72000000-0000-4000-8000-000000000001',
   documentId: '82000000-0000-4000-8000-000000000001',
-  engineVersion: '1.0.0',
+  engineVersion: '1.2.0',
   fileType: 'word_document',
   id: '92000000-0000-4000-8000-000000000001',
   maxAttempts: 3,
-  mergeSchemaVersion: '1.0.0',
+  mergeSchemaVersion: '1.2.0',
   note: 'Merge approved edits',
   organizationId: job.organizationId,
   oursArtifact: {
@@ -362,6 +362,7 @@ describe('merge processor', () => {
       expect.any(Uint8Array),
       expect.any(Uint8Array),
       true,
+      false,
     );
     expect(storage.putMergeCandidate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -452,6 +453,45 @@ describe('merge processor', () => {
       expect.any(Uint8Array),
       expect.any(Uint8Array),
       false,
+      false,
+    );
+  });
+
+  it('requires both the Excel global flag and organization pilot membership', async () => {
+    const store = {
+      claimMerge: vi.fn().mockResolvedValue(mergeJob),
+      completeMerge: vi.fn().mockResolvedValue(undefined),
+      heartbeatMerge: vi.fn().mockResolvedValue(true),
+      listDispatchableMerges: vi.fn().mockResolvedValue([]),
+      markMergeDispatched: vi.fn().mockResolvedValue(undefined),
+      recordMergeFailure: vi.fn().mockResolvedValue(false),
+    };
+    const storage = {
+      putMergeCandidate: vi.fn().mockResolvedValue(undefined),
+      readArtifact: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3, 4])),
+    };
+    const engine = { merge: vi.fn().mockResolvedValue(mergeResult) };
+    const processor = new MergeProcessor(
+      store,
+      storage,
+      engine,
+      30_000,
+      60_000,
+      false,
+      [],
+      true,
+      [mergeJob.organizationId],
+    );
+
+    await processor.process(mergeJob.id);
+
+    expect(engine.merge).toHaveBeenCalledWith(
+      mergeJob,
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+      false,
+      true,
     );
   });
 });

@@ -129,3 +129,34 @@ Before adding a pilot organization, review its fixture evidence and confirm that
 document profile is limited to plain text-shape changes. Layout/master/theme changes,
 notes, grouped shapes, charts, media, relationships, macros, signatures, embedded
 objects, and unknown package parts remain blockers even when the pilot controls are on.
+
+## Excel pilot controls
+
+Excel analysis is always recorded for an engine-completed merge. Candidate generation
+requires both controls below and remains disabled by default:
+
+```bash
+EXCEL_AUTOMATIC_MERGE_ENABLED=true
+EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS=00000000-0000-4000-8000-000000000000
+```
+
+The allowlist is a comma-separated UUID list. Restart the worker after changing either
+value. To stop generation immediately, set the global flag to `false` and restart the
+worker; eligible analyses then end in manual resolution with
+`excel_automatic_merge_disabled`. Existing operations and candidates are immutable
+and must not be altered.
+
+Before adding an organization, confirm its expected workbooks are limited to value
+edits in existing literal cells. Formulas, shared strings, styles, sheet or cell
+additions/removals/moves, row/column or worksheet structure, defined names,
+tables/charts, drawings/media, external links, relationships, macros, signatures,
+embedded objects, and unknown parts remain blockers even when the pilot is enabled.
+
+Common Excel safety failure codes are `excel_changes_conflict`,
+`excel_change_unsupported`, `excel_cell_match_ambiguous`,
+`excel_cell_markup_unsupported`, `excel_worksheet_structure_changed`,
+`excel_supporting_parts_changed`, `excel_candidate_validation_failed`,
+`excel_candidate_preservation_failed`, and `excel_candidate_verification_failed`.
+Treat candidate validation, preservation, or verification failures as integrity
+signals: retain the source hashes and trace ID, do not publish the candidate, and
+escalate before retrying under a new merge request.

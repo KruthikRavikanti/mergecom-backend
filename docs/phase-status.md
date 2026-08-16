@@ -1,5 +1,24 @@
 # Phase status
 
+## Phase 11: Excel conflict analysis and safe merge
+
+Status: implementation complete on `phase-11/excel-merge`; pending owner review.
+
+- [x] Divergent Excel analysis persists cell, formula, worksheet, workbook, style, shared-string, table, chart, drawing, media, relationship, macro, signature, embedded-object, and unknown-package findings without exposing worksheet XML.
+- [x] Automatic eligibility is restricted to modified literal values in existing, stably matched cells with unchanged formulas, types, styles, cell order, worksheet structure, and supporting package parts.
+- [x] Disjoint cells on one worksheet, disjoint worksheets, and identical same-cell edits are supported; different same-cell edits and every structural or package change remain manual.
+- [x] A global kill switch and organization UUID allowlist gate Excel candidate generation independently of analysis; both default off.
+- [x] Candidates copy ours, apply only approved incoming cell values, pass bounded inspection, Open XML validation, exact semantic-union verification, and byte checks for every untouched package part.
+- [x] Merge schema and engine `1.2.0` are carried through API, worker, database defaults, web evidence, and downloaded candidates while comparison engine metadata remains correctly versioned at `1.0.0`.
+- [x] The web merge screen uses Excel-specific eligibility, blocker, strategy, and failure language, and the Office task pane supports Excel stale-workbook context.
+- [x] Engine fixtures cover same-cell conflict, compatible overlap, same-sheet and cross-sheet disjoint edits, formulas, added cells, hidden worksheet structure, package features, validation, and untouched-part byte preservation.
+- [x] Fresh and Phase 10 upgrade migrations, 32 real API tests, three real worker tests, and pilot-off/on desktop/mobile stale-base workflows pass.
+- [x] Pilot-on browser downloads contain both users' visible worksheet values and retained column geometry; pilot-off runs persist no candidate or result version.
+
+The support boundary is documented in `docs/product/conservative-merge.md`; pilot
+controls and recovery are in `docs/runbooks/merge-processing.md`, and command evidence
+is in `docs/verification/phase-11-command-results.md`.
+
 ## Phase 10: PowerPoint conflict analysis and safe merge
 
 Status: implementation complete on `phase-10/powerpoint-merge`; pending owner review.

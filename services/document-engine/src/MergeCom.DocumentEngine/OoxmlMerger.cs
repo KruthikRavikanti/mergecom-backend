@@ -9,8 +9,8 @@ namespace MergeCom.DocumentEngine;
 
 public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator comparator)
 {
-    public const string MergeSchemaVersion = "1.1.0";
-    public const string EngineVersion = "1.1.0";
+    public const string MergeSchemaVersion = "1.2.0";
+    public const string EngineVersion = "1.2.0";
 
     private static readonly JsonSerializerOptions StableJsonOptions = new()
     {
@@ -26,15 +26,22 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
         string oursSha256,
         string theirsSha256,
         string candidatePath,
-        bool powerPointAutomaticMergeEnabled = false)
+        bool powerPointAutomaticMergeEnabled = false,
+        bool excelAutomaticMergeEnabled = false)
     {
+        var automaticMergeEnabled = fileType switch
+        {
+            "presentation" => powerPointAutomaticMergeEnabled,
+            "spreadsheet" => excelAutomaticMergeEnabled,
+            _ => true,
+        };
         var inspector = new OoxmlInspector(options);
         var baseInspection = inspector.Inspect(basePath, fileType, baseSha256);
         var oursInspection = inspector.Inspect(oursPath, fileType, oursSha256);
         var theirsInspection = inspector.Inspect(theirsPath, fileType, theirsSha256);
         var inspections = new[] { baseInspection, oursInspection, theirsInspection };
         var analysis = MergeAnalysisBuilder.Rejected(
-            powerPointAutomaticMergeEnabled,
+            automaticMergeEnabled,
             "At least one source package could not be inspected safely.");
         if (inspections.Any(result => result.Outcome != "completed"))
         {
@@ -59,7 +66,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
             theirsInspection.Snapshot,
             oursComparison,
             theirsComparison,
-            powerPointAutomaticMergeEnabled);
+            automaticMergeEnabled);
 
         if (inspections.Any(result =>
                 result.Snapshot.UnsupportedFeatures.Count > 0
@@ -92,6 +99,29 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
         if (fileType == "presentation")
         {
             var outcome = new PowerPointMerger(options, comparator).Merge(
+                basePath,
+                oursPath,
+                theirsPath,
+                candidatePath,
+                baseInspection,
+                oursInspection,
+                theirsInspection,
+                oursComparison,
+                theirsComparison,
+                analysis);
+            return Build(
+                outcome.Outcome,
+                outcome.Strategy,
+                outcome.FailureCode,
+                outcome.Warnings,
+                outcome.AppliedPaths,
+                outcome.Analysis,
+                outcome.CandidateBytes);
+        }
+
+        if (fileType == "spreadsheet")
+        {
+            var outcome = new ExcelMerger(options, comparator).Merge(
                 basePath,
                 oursPath,
                 theirsPath,

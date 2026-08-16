@@ -343,7 +343,7 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
     );
     expect(merge.rows[0]).toMatchObject({
       analysis: {
-        automaticMergeEnabled: false,
+        automaticMergeEnabled: true,
         schemaVersion: '1.0.0',
       },
       status: 'completed',
@@ -468,6 +468,8 @@ function workerConfig(
     dispatchIntervalMilliseconds: 2_000,
     documentEngineToken: 'mergecom-local-document-engine-token',
     documentEngineUrl: engineUrl!,
+    excelAutomaticMergeEnabled: false,
+    excelAutomaticMergePilotOrganizationIds: [],
     heartbeatMilliseconds: 5_000,
     host: '127.0.0.1',
     leaseMilliseconds: 30_000,

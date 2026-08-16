@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
+  type DocumentKind,
   type DocumentMerge,
   queryKeys,
   useDocumentMergeQuery,
@@ -57,6 +58,29 @@ const failureLabels: Record<string, string> = {
     'A supporting package part changed outside automatic merge coverage.',
   merge_word_markup_unsupported:
     'A changed paragraph also changed unsupported markup.',
+  excel_automatic_merge_disabled:
+    'These changes are eligible, but automatic Excel merge is not enabled for this workspace.',
+  excel_candidate_path_missing: 'An approved Excel cell could not be located.',
+  excel_candidate_preservation_failed:
+    'An untouched workbook package part changed during generation.',
+  excel_candidate_validation_failed:
+    'The generated Excel workbook did not validate.',
+  excel_candidate_verification_failed:
+    'The generated Excel workbook did not match the analyzed changes.',
+  excel_cell_markup_unsupported:
+    'An Excel cell changed beyond its literal value.',
+  excel_cell_match_ambiguous:
+    'At least one Excel cell could not be matched confidently.',
+  excel_change_unsupported:
+    'At least one Excel edit is outside automatic merge coverage.',
+  excel_changes_conflict:
+    'Both versions changed the same Excel content incompatibly.',
+  excel_package_change_unsupported:
+    'An Excel package feature cannot be preserved automatically.',
+  excel_supporting_parts_changed:
+    'Workbook relationships or supporting content changed.',
+  excel_worksheet_structure_changed:
+    'Worksheet structure changed outside the approved cells.',
   powerpoint_automatic_merge_disabled:
     'These changes are eligible, but automatic PowerPoint merge is not enabled for this workspace.',
   powerpoint_candidate_path_missing:
@@ -81,6 +105,8 @@ const failureLabels: Record<string, string> = {
     'PowerPoint relationships or supporting content changed.',
 };
 const strategyLabels: Record<string, string> = {
+  disjoint_excel_cells: 'disjoint Excel cell values',
+  disjoint_excel_worksheets: 'disjoint Excel worksheet values',
   disjoint_powerpoint_shapes: 'disjoint PowerPoint shape text',
   disjoint_powerpoint_slides: 'disjoint PowerPoint slide text',
   disjoint_word_text: 'validated disjoint Word text',
@@ -329,7 +355,12 @@ export function DocumentMergePage() {
         </div>
       ) : null}
 
-      {result.analysis ? <MergeAnalysis analysis={result.analysis} /> : null}
+      {result.analysis ? (
+        <MergeAnalysis
+          analysis={result.analysis}
+          documentKind={document.data.kind}
+        />
+      ) : null}
 
       <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-200 pt-4 font-mono text-xs text-slate-500">
         <span>Merge schema {result.mergeSchemaVersion}</span>
@@ -376,9 +407,19 @@ const analysisGroups = [
 
 function MergeAnalysis({
   analysis,
+  documentKind,
 }: {
   analysis: NonNullable<DocumentMerge['analysis']>;
+  documentKind: DocumentKind;
 }) {
+  const summary = analysisSummary(analysis, documentKind);
+  const allowlistEvidence =
+    documentKind === 'spreadsheet'
+      ? 'All matched cells were stable, non-formula, value-only edits with unchanged surrounding markup and workbook structure.'
+      : documentKind === 'presentation'
+        ? 'All matched shapes were high confidence, text-only, and retained their original relationships.'
+        : 'All matched text targets retained their surrounding package structure.';
+
   return (
     <section
       className="mt-9 border-t border-slate-300 pt-6"
@@ -397,13 +438,7 @@ function MergeAnalysis({
           >
             Conflict analysis
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            {analysis.automaticMergeEligible
-              ? analysis.automaticMergeEnabled
-                ? 'Stable text targets and unchanged package relationships allowed automatic resolution.'
-                : 'The changes passed the safety allowlist, but workspace pilot access is disabled.'
-              : 'One or more semantic or package blockers require resolution in PowerPoint.'}
-          </p>
+          <p className="mt-1 text-sm text-slate-600">{summary}</p>
         </div>
       </div>
 
@@ -442,10 +477,7 @@ function MergeAnalysis({
             className="mt-0.5 shrink-0"
             size={18}
           />
-          <p>
-            All matched shapes were high confidence, text-only, and retained
-            their original relationships.
-          </p>
+          <p>{allowlistEvidence}</p>
         </div>
       ) : null}
 
@@ -495,6 +527,29 @@ function MergeAnalysis({
       })}
     </section>
   );
+}
+
+function analysisSummary(
+  analysis: NonNullable<DocumentMerge['analysis']>,
+  documentKind: DocumentKind,
+): string {
+  if (analysis.automaticMergeEligible) {
+    if (!analysis.automaticMergeEnabled) {
+      return documentKind === 'spreadsheet'
+        ? 'The cell changes passed the safety allowlist, but Excel pilot access is disabled.'
+        : 'The changes passed the safety allowlist, but workspace pilot access is disabled.';
+    }
+    return documentKind === 'spreadsheet'
+      ? 'Stable cell targets and unchanged workbook structure allowed automatic resolution.'
+      : 'Stable text targets and unchanged package relationships allowed automatic resolution.';
+  }
+  if (documentKind === 'spreadsheet') {
+    return 'One or more cell, worksheet, formula, or package blockers require resolution in Excel.';
+  }
+  if (documentKind === 'presentation') {
+    return 'One or more semantic or package blockers require resolution in PowerPoint.';
+  }
+  return 'One or more semantic or package blockers require resolution in Word.';
 }
 
 function categoryLabel(category: string): string {

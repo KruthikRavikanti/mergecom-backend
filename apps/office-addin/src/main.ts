@@ -5,15 +5,19 @@ if (!root) throw new Error('Office task pane root was not found.');
 
 const params = new URLSearchParams(window.location.search);
 const stale = params.get('state') === 'stale';
+const excel = params.get('host') === 'excel';
+const hostLabel = excel ? 'EXCEL' : 'POWERPOINT';
+const documentLabel = excel ? 'workbook' : 'presentation';
+const connectedLabel = excel ? 'Workbook connected' : 'Presentation connected';
 
 root.innerHTML = `
   <header class="brand"><span class="brand-mark">M</span><strong>MergeCom</strong></header>
   <main class="content">
-    <p class="eyebrow">POWERPOINT</p>
-    <h1>${stale ? 'A newer team version is available' : 'Presentation connected'}</h1>
+    <p class="eyebrow">${hostLabel}</p>
+    <h1>${stale ? 'A newer team version is available' : connectedLabel}</h1>
     <p class="summary">${
       stale
-        ? 'This presentation was opened from version 8. The team is now on version 9.'
+        ? `This ${documentLabel} was opened from version 8. The team is now on version 9.`
         : 'Working from team version 9.'
     }</p>
     ${
@@ -45,7 +49,7 @@ root.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((button) => {
         action === 'inspect'
           ? 'Opening conflict analysis...'
           : action === 'preserve'
-            ? 'Preserving this presentation as an incoming version...'
+            ? `Preserving this ${documentLabel} as an incoming version...`
             : 'Opening the latest team version...';
     }
   });

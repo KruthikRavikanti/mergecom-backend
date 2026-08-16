@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 using P = DocumentFormat.OpenXml.Presentation;
+using S = DocumentFormat.OpenXml.Spreadsheet;
 
 namespace MergeCom.DocumentEngine.Tests;
 
@@ -82,23 +83,172 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public void DivergentSpreadsheetChangesRequireManualResolution()
+    public void SameExcelCellConflictRequiresManualResolution()
     {
         using var basis = SyntheticOfficePackage.Spreadsheet("1");
         using var ours = SyntheticOfficePackage.Spreadsheet("2");
         using var theirs = SyntheticOfficePackage.Spreadsheet("3");
-        var result = Merger().Merge(
-            basis.Path,
-            ours.Path,
-            theirs.Path,
-            "spreadsheet",
-            Sha256(basis.Bytes),
-            Sha256(ours.Bytes),
-            Sha256(theirs.Bytes),
-            Path.Combine(Path.GetTempPath(), $"candidate-{Guid.NewGuid():N}.xlsx"));
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
 
         Assert.Equal("manual_resolution_required", result.Outcome);
-        Assert.Equal("merge_format_requires_manual_resolution", result.FailureCode);
+        Assert.Equal("excel_changes_conflict", result.FailureCode);
+        Assert.Equal(1, result.Analysis.Summary["true_conflict"]);
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void EligibleExcelChangesRemainManualWhenKillSwitchIsOff()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, false);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Equal("excel_automatic_merge_disabled", result.FailureCode);
+        Assert.True(result.Analysis.AutomaticMergeEligible);
+        Assert.False(result.Analysis.AutomaticMergeEnabled);
+        Assert.All(result.Analysis.Items, item => Assert.False(item.AutomaticallyResolved));
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void SameWorksheetDisjointExcelCellsProduceValidatedCandidate()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("completed", result.Outcome);
+        Assert.Equal("disjoint_excel_cells", result.Strategy);
+        Assert.Equal(2, result.Analysis.Summary["non_overlapping"]);
+        Assert.All(result.Analysis.Items, item => Assert.True(item.AutomaticallyResolved));
+        Assert.Equal(["2", "20"], SpreadsheetValues(result.CandidateBytes!));
+    }
+
+    [Fact]
+    public void CompatibleExcelOverlapAndDisjointCellProduceValidatedCandidate()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("2", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("completed", result.Outcome);
+        Assert.Equal("disjoint_excel_cells", result.Strategy);
+        Assert.Equal(1, result.Analysis.Summary["compatible_overlap"]);
+        Assert.Equal(1, result.Analysis.Summary["non_overlapping"]);
+        Assert.Equal(["2", "20"], SpreadsheetValues(result.CandidateBytes!));
+    }
+
+    [Fact]
+    public void DisjointExcelWorksheetsProduceValidatedCandidate()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetSheets(["1"], ["10"]);
+        using var ours = SyntheticOfficePackage.SpreadsheetSheets(["2"], ["10"]);
+        using var theirs = SyntheticOfficePackage.SpreadsheetSheets(["1"], ["20"]);
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("completed", result.Outcome);
+        Assert.Equal("disjoint_excel_worksheets", result.Strategy);
+        Assert.Equal(["2", "20"], SpreadsheetValues(result.CandidateBytes!));
+    }
+
+    [Fact]
+    public void ExcelWorksheetStructureChangesRequireManualResolution()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10");
+        using (var document = SpreadsheetDocument.Open(ours.Path, true))
+        {
+            document.WorkbookPart!.WorksheetParts.Single().Worksheet!
+                .Descendants<S.Row>().Single().Hidden = true;
+        }
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Equal("excel_worksheet_structure_changed", result.FailureCode);
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void ExcelCandidatePreservesEveryUntouchedPartByteForByte()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+        var oursParts = PackageHashes(ours.Bytes);
+        var candidateParts = PackageHashes(result.CandidateBytes!);
+
+        Assert.Equal(oursParts.Keys.Order(), candidateParts.Keys.Order());
+        foreach (var part in oursParts.Keys.Where(part => part != "xl/worksheets/sheet1.xml"))
+        {
+            Assert.True(
+                oursParts[part] == candidateParts[part],
+                $"Untouched part changed: {part}");
+        }
+    }
+
+    [Fact]
+    public void ExcelFormulaChangesRequireManualResolution()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetFormula("1+1", "2", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetFormula("1+2", "3", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetFormula("1+1", "2", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.Analysis.Items, item => item.Category == "formula");
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void AddedExcelCellRequiresManualResolution()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10", "30");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.FailureCode, new[]
+        {
+            "excel_change_unsupported",
+            "excel_cell_match_ambiguous",
+        });
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Theory]
+    [InlineData("xl/styles.xml", "style")]
+    [InlineData("xl/sharedStrings.xml", "shared_strings")]
+    [InlineData("xl/tables/table1.xml", "table")]
+    [InlineData("xl/charts/chart1.xml", "chart")]
+    [InlineData("xl/drawings/drawing1.xml", "drawing")]
+    [InlineData("xl/externalLinks/externalLink1.xml", "external_link")]
+    [InlineData("xl/embeddings/object1.bin", "embedded_object")]
+    [InlineData("xl/vbaProject.bin", "macros")]
+    [InlineData("_xmlsignatures/sig1.xml", "signatures")]
+    [InlineData("xl/custom/unknown.xml", "unknown")]
+    public void ChangedExcelPackageFeaturesAreClassifiedAndBlocked(
+        string part,
+        string category)
+    {
+        var content = part.EndsWith(".xml", StringComparison.Ordinal)
+            ? "<root />"u8.ToArray()
+            : [0x01, 0x02, 0x03];
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetWithFeature(part, content, "2", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        var result = MergeSpreadsheet(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.Analysis.Items, item => item.Category == category);
+        Assert.Contains(result.Analysis.Blockers, blocker => blocker.Category == category);
+        Assert.Null(result.CandidateBytes);
     }
 
     [Fact]
@@ -350,7 +500,7 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("completed", json.RootElement.GetProperty("outcome").GetString());
-        Assert.Equal("1.1.0", json.RootElement.GetProperty("merge_schema_version").GetString());
+        Assert.Equal("1.2.0", json.RootElement.GetProperty("merge_schema_version").GetString());
         Assert.Equal(
             "1.0.0",
             json.RootElement.GetProperty("analysis").GetProperty("schema_version").GetString());
@@ -395,6 +545,44 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
             json.RootElement.GetProperty("analysis").GetProperty("automatic_merge_eligible").GetBoolean());
     }
 
+    [Fact]
+    public async Task InternalEndpointHonorsExcelPilotGate()
+    {
+        using var basis = SyntheticOfficePackage.SpreadsheetCells("1", "10");
+        using var ours = SyntheticOfficePackage.SpreadsheetCells("2", "10");
+        using var theirs = SyntheticOfficePackage.SpreadsheetCells("1", "20");
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/v1/merges")
+        {
+            Content = new ByteArrayContent(
+                basis.Bytes.Concat(ours.Bytes).Concat(theirs.Bytes).ToArray()),
+        };
+        request.Headers.Add("X-MergeCom-Internal-Token", Token);
+        request.Headers.Add("X-MergeCom-Trace-Id", Guid.NewGuid().ToString());
+        request.Headers.Add("X-MergeCom-File-Type", "spreadsheet");
+        request.Headers.Add("X-MergeCom-Extension", ".xlsx");
+        request.Headers.Add("X-MergeCom-Base-Sha256", Sha256(basis.Bytes));
+        request.Headers.Add("X-MergeCom-Ours-Sha256", Sha256(ours.Bytes));
+        request.Headers.Add("X-MergeCom-Theirs-Sha256", Sha256(theirs.Bytes));
+        request.Headers.Add("X-MergeCom-Base-Size", basis.Bytes.Length.ToString());
+        request.Headers.Add("X-MergeCom-Ours-Size", ours.Bytes.Length.ToString());
+        request.Headers.Add("X-MergeCom-Theirs-Size", theirs.Bytes.Length.ToString());
+        request.Headers.Add("X-MergeCom-Excel-Automatic-Merge", "true");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("completed", json.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal(
+            "disjoint_excel_cells",
+            json.RootElement.GetProperty("strategy").GetString());
+        Assert.True(
+            json.RootElement.GetProperty("analysis").GetProperty("automatic_merge_enabled").GetBoolean());
+        Assert.True(
+            json.RootElement.GetProperty("analysis").GetProperty("automatic_merge_eligible").GetBoolean());
+    }
+
     private static OoxmlMerger Merger()
     {
         var options = new InspectionOptions();
@@ -427,6 +615,33 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
         }
     }
 
+    private static MergeResult MergeSpreadsheet(
+        SyntheticOfficePackage basis,
+        SyntheticOfficePackage ours,
+        SyntheticOfficePackage theirs,
+        bool automaticMergeEnabled)
+    {
+        var candidatePath = Path.Combine(Path.GetTempPath(), $"candidate-{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            return Merger().Merge(
+                basis.Path,
+                ours.Path,
+                theirs.Path,
+                "spreadsheet",
+                Sha256(basis.Bytes),
+                Sha256(ours.Bytes),
+                Sha256(theirs.Bytes),
+                candidatePath,
+                false,
+                automaticMergeEnabled);
+        }
+        finally
+        {
+            File.Delete(candidatePath);
+        }
+    }
+
     private static string[] PresentationText(byte[] bytes)
     {
         using var document = PresentationDocument.Open(new MemoryStream(bytes), false);
@@ -445,6 +660,15 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
                     .Descendants<DocumentFormat.OpenXml.Drawing.Text>();
             })
             .Select(text => text.Text)
+            .ToArray();
+    }
+
+    private static string[] SpreadsheetValues(byte[] bytes)
+    {
+        using var document = SpreadsheetDocument.Open(new MemoryStream(bytes), false);
+        return document.WorkbookPart!.WorksheetParts
+            .SelectMany(part => part.Worksheet!.Descendants<S.Cell>())
+            .Select(cell => cell.CellValue?.Text ?? cell.InlineString?.InnerText ?? string.Empty)
             .ToArray();
     }
 

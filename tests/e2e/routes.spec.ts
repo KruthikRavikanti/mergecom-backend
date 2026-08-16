@@ -4,14 +4,17 @@ const organizationId = '10000000-0000-4000-8000-000000000001';
 const projectId = '40000000-0000-4000-8000-000000000001';
 const folderId = '50000000-0000-4000-8000-000000000001';
 const documentId = '60000000-0000-4000-8000-000000000001';
+const excelDocumentId = '60000000-0000-4000-8000-000000000002';
 const projectsPath = `/v1/organizations/${organizationId}/projects`;
 const projectPath = `${projectsPath}/${projectId}`;
 const documentPath = `${projectPath}/documents/${documentId}`;
+const excelDocumentPath = `${projectPath}/documents/${excelDocumentId}`;
 const versionPath = `${documentPath}/versions`;
 const reviewsPath = `${documentPath}/reviews`;
 const notificationsPath = `/v1/organizations/${organizationId}/notifications`;
 const reviewId = '92000000-0000-4000-8000-000000000001';
 const mergeId = '94000000-0000-4000-8000-000000000001';
+const excelMergeId = '94000000-0000-4000-8000-000000000002';
 const reviewerUserId = '20000000-0000-4000-8000-000000000002';
 
 const currentUser = {
@@ -75,6 +78,16 @@ test.beforeEach(async ({ page }) => {
       name: 'Confidential Information Memorandum.pptx',
       sortOrder: 0,
       updatedAt: '2026-08-15T12:00:00.000Z',
+    },
+    {
+      archivedAt: null,
+      createdAt: '2026-08-01T12:00:00.000Z',
+      folderId: null,
+      id: excelDocumentId,
+      kind: 'spreadsheet',
+      name: 'Operating Model.xlsx',
+      sortOrder: 1,
+      updatedAt: '2026-08-16T15:00:00.000Z',
     },
   ];
   const versions = [
@@ -291,11 +304,11 @@ test.beforeEach(async ({ page }) => {
     branchId: '81000000-0000-4000-8000-000000000001',
     candidate: null,
     createdAt: '2026-08-16T15:00:00.000Z',
-    engineVersion: '1.1.0',
+    engineVersion: '1.2.0',
     failureCode: 'powerpoint_changes_conflict',
     id: mergeId,
     maxAttempts: 3,
-    mergeSchemaVersion: '1.1.0',
+    mergeSchemaVersion: '1.2.0',
     nextAttemptAt: null,
     note: 'Merge incoming valuation edits',
     oursVersion: {
@@ -324,6 +337,65 @@ test.beforeEach(async ({ page }) => {
     },
     updatedAt: '2026-08-16T15:00:02.000Z',
     warnings: [],
+  };
+  const excelMerge = {
+    ...merge,
+    analysis: {
+      automaticMergeEligible: true,
+      automaticMergeEnabled: false,
+      blockers: [],
+      items: [
+        {
+          automaticallyResolved: false,
+          category: 'cell',
+          classification: 'non_overlapping',
+          confidence: 'high',
+          explanation:
+            'Only the latest team version changed this stable literal cell.',
+          id: '5'.repeat(64),
+          label: 'Forecast!A1',
+          oursChange: 'modified',
+          path: '/workbook/sheets/1/cells/A1',
+          theirsChange: null,
+        },
+        {
+          automaticallyResolved: false,
+          category: 'cell',
+          classification: 'non_overlapping',
+          confidence: 'high',
+          explanation:
+            'Only the incoming version changed this stable literal cell.',
+          id: '6'.repeat(64),
+          label: 'Forecast!B1',
+          oursChange: null,
+          path: '/workbook/sheets/1/cells/B1',
+          theirsChange: 'modified',
+        },
+      ],
+      schemaVersion: '1.0.0',
+      summary: {
+        ambiguous: 0,
+        compatible_overlap: 0,
+        non_overlapping: 2,
+        true_conflict: 0,
+        unsupported: 0,
+      },
+    },
+    baseVersion: {
+      ...merge.baseVersion,
+      note: 'Common workbook base',
+    },
+    failureCode: 'excel_automatic_merge_disabled',
+    id: excelMergeId,
+    note: 'Merge incoming forecast edit',
+    oursVersion: {
+      ...merge.oursVersion,
+      note: 'Latest team workbook',
+    },
+    theirsVersion: {
+      ...merge.theirsVersion,
+      note: 'Incoming forecast update',
+    },
   };
   const notificationItems = [
     {
@@ -590,6 +662,10 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: documents[0], status: 200 });
       return;
     }
+    if (path === excelDocumentPath && method === 'GET') {
+      await route.fulfill({ json: documents[1], status: 200 });
+      return;
+    }
     if (path === versionPath && method === 'GET') {
       await route.fulfill({
         json: {
@@ -607,6 +683,13 @@ test.beforeEach(async ({ page }) => {
     }
     if (path === `${documentPath}/merges/${mergeId}` && method === 'GET') {
       await route.fulfill({ json: merge, status: 200 });
+      return;
+    }
+    if (
+      path === `${excelDocumentPath}/merges/${excelMergeId}` &&
+      method === 'GET'
+    ) {
+      await route.fulfill({ json: excelMerge, status: 200 });
       return;
     }
     if (path === reviewsPath && method === 'GET') {
@@ -849,6 +932,39 @@ test('groups PowerPoint conflict analysis without exposing raw package XML', asy
   await page.screenshot({
     fullPage: true,
     path: testInfo.outputPath('phase10-powerpoint-conflicts.png'),
+  });
+});
+
+test('explains pilot-gated Excel cell analysis on narrow screens', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ height: 844, width: 390 });
+  await startIdentitySession(page);
+  await page.goto(
+    `/app/projects/${projectId}/documents/${excelDocumentId}/history/merges/${excelMergeId}`,
+  );
+  await expect(
+    page.getByRole('heading', { name: 'Conflict analysis' }),
+  ).toBeVisible();
+  await expect(page.getByText('Forecast!A1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Forecast!B1', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      'The cell changes passed the safety allowlist, but Excel pilot access is disabled.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Download conflicting' }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath('phase11-excel-analysis-mobile.png'),
   });
 });
 

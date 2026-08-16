@@ -33,9 +33,10 @@ function secondsUntil(date: Date, maximum: number): number {
 }
 
 export const COMPARISON_SCHEMA_VERSION = '1.0.0';
-export const DOCUMENT_ENGINE_VERSION = '1.1.0';
+export const COMPARISON_ENGINE_VERSION = '1.0.0';
 export const DOCUMENT_PARSER_VERSION = '1.1.0';
-export const MERGE_SCHEMA_VERSION = '1.1.0';
+export const MERGE_ENGINE_VERSION = '1.2.0';
+export const MERGE_SCHEMA_VERSION = '1.2.0';
 
 export class VersionService {
   public constructor(
@@ -492,7 +493,7 @@ export class VersionService {
     return this.store.createComparison({
       ...input,
       comparisonSchemaVersion: COMPARISON_SCHEMA_VERSION,
-      engineVersion: DOCUMENT_ENGINE_VERSION,
+      engineVersion: COMPARISON_ENGINE_VERSION,
       parserVersion: DOCUMENT_PARSER_VERSION,
       requestHash: requestHash({
         baseVersionId: input.baseVersionId,
@@ -523,7 +524,7 @@ export class VersionService {
   }): Promise<{ merge: DocumentMerge; replayed: boolean }> {
     return this.store.createMerge({
       ...input,
-      engineVersion: DOCUMENT_ENGINE_VERSION,
+      engineVersion: MERGE_ENGINE_VERSION,
       mergeSchemaVersion: MERGE_SCHEMA_VERSION,
       parserVersion: DOCUMENT_PARSER_VERSION,
       requestHash: requestHash({

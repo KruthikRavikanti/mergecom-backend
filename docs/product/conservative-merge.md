@@ -13,7 +13,9 @@ source artifacts are clean with completed semantic ingestion.
 | Ours and theirs byte-identical | Yes | Yes | Yes | Exact ours |
 | Ours byte-identical to base | Yes | Yes | Yes | Exact theirs |
 | Theirs byte-identical to base | Yes | Yes | Yes | Exact ours |
-| Divergent disjoint text changes | Restricted | Pilot-gated | No | Validated candidate |
+| Divergent disjoint Word text | Restricted | No | No | Validated candidate |
+| Divergent stable shape text | No | Pilot-gated | No | Validated candidate |
+| Divergent existing literal cells | No | No | Pilot-gated | Validated candidate |
 
 Every exact strategy still requires complete inspection coverage and no validation or
 unsupported-feature findings in any input. Divergent Word merge requires both
@@ -58,6 +60,40 @@ the merge organization UUID in
 `POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS`. Analysis still reports whether a
 merge is technically eligible when either control is off. Both controls default off.
 
+### Excel pilot allowlist
+
+Excel conflict analysis runs independently of candidate generation. It groups stable
+worksheet and cell findings with formula, workbook, style, shared-string, table,
+chart, drawing, media, relationship, macro, signature, embedded-object, and unknown
+package blockers. Public results contain semantic labels and explanations, never raw
+worksheet XML, package bytes, or object keys.
+
+A divergent candidate is eligible only when both comparisons contain one or more
+modified `content` changes on existing `worksheet_cell` paths. Sheet order,
+relationship identity, the complete cell reference/order set, formulas, cell data
+types, style indexes, value-node count, and all non-value cell markup must match
+across base, ours, and theirs. The complete worksheet XML must also be identical after
+blanking only the approved changed values. This rejects row/column, dimension, view,
+merge, validation, filter, hidden-state, and other worksheet structure changes.
+
+Both sides may edit different cells on one worksheet or cells on separate worksheets.
+Identical changes to one cell are compatible; different changes to one cell are a
+conflict. Shared-string and formula changes are not eligible. Every package entry
+outside `xl/worksheets/sheet*.xml`, including workbook metadata, relationships,
+content types, styles, shared strings, defined names, calculation chains, tables,
+charts, drawings, media, external links, macros, signatures, embedded objects, and
+unknown parts, must have identical decompressed SHA-256 hashes across all inputs.
+
+Candidate generation copies ours and replaces only approved incoming-only cells.
+Security inspection, Open XML validation, exact semantic-union comparison, and byte
+equality for every package part outside the modified worksheets must pass. A failed
+candidate is discarded while its analysis and blocker evidence remain durable.
+
+Generation additionally requires both `EXCEL_AUTOMATIC_MERGE_ENABLED=true` and the
+merge organization UUID in `EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS`. Analysis
+still reports technical eligibility when either control is off. Both controls default
+off.
+
 The engine copies the exact ours package and replaces only approved disjoint paths
 with elements cloned from theirs. It then reopens the candidate, runs Open XML
 validation and security inspection, and compares base to candidate. Publication is
@@ -98,12 +134,14 @@ outbox.
 
 ## Known limitations
 
-Divergent Excel edits require manual resolution. PowerPoint slide additions,
-deletions, moves/reorders, shape additions/removals/reorders, formatting or geometry,
-tables/charts, media, grouped shapes, notes, relationships, layouts/masters/themes,
-macros/signatures, embedded objects, and unknown parts are manual-only. Word
-additions, removals, moves, structural changes, formatting changes, tracked changes,
-auxiliary stories, and any changed supporting package part also require manual
-resolution. Automatic coverage should expand only when each new edit class has a
-deterministic three-way rule, package-preservation proof, candidate validation, and
-adversarial fixtures.
+Excel formulas, shared-string changes, added/removed/moved cells or sheets, row/column
+or worksheet structure, defined names, styles, tables/charts, drawings/media,
+external links, relationships, macros/signatures, embedded objects, and unknown parts
+are manual-only. PowerPoint slide additions, deletions, moves/reorders, shape
+additions/removals/reorders, formatting or geometry, tables/charts, media, grouped
+shapes, notes, relationships, layouts/masters/themes, macros/signatures, embedded
+objects, and unknown parts are also manual-only. Word additions, removals, moves,
+structural changes, formatting changes, tracked changes, auxiliary stories, and any
+changed supporting package part require manual resolution. Automatic coverage should
+expand only when each new edit class has a deterministic three-way rule,
+package-preservation proof, candidate validation, and adversarial fixtures.

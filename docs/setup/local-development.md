@@ -22,9 +22,11 @@ pnpm infra:up
 export DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom
 export AUTH_MODE=development
 export SMTP_URL=smtp://localhost:1025
-# PowerPoint candidate generation remains off unless both pilot controls are set.
+# PowerPoint and Excel candidate generation remain off unless both format controls are set.
 export POWERPOINT_AUTOMATIC_MERGE_ENABLED=false
 export POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS=
+export EXCEL_AUTOMATIC_MERGE_ENABLED=false
+export EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS=
 pnpm --filter @mergecom/api db:migrate
 pnpm --filter @mergecom/api db:seed
 pnpm dev

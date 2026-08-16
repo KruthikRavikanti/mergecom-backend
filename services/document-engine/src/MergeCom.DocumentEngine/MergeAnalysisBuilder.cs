@@ -38,10 +38,23 @@ internal static class MergeAnalysisBuilder
 
         if (fileType == "presentation")
         {
-            AddPresentationPackageChanges(
+            AddPackageChanges(
                 basePath,
                 oursPath,
                 theirsPath,
+                "PowerPoint",
+                IsSlideXml,
+                items,
+                blockers);
+        }
+        else if (fileType == "spreadsheet")
+        {
+            AddPackageChanges(
+                basePath,
+                oursPath,
+                theirsPath,
+                "Excel",
+                IsWorksheetXml,
                 items,
                 blockers);
         }
@@ -188,10 +201,12 @@ internal static class MergeAnalysisBuilder
             change.After,
         }, StableJsonOptions);
 
-    private static void AddPresentationPackageChanges(
+    private static void AddPackageChanges(
         string basePath,
         string oursPath,
         string theirsPath,
+        string formatLabel,
+        Func<string, bool> isModeledPart,
         ICollection<MergeAnalysisItem> items,
         ICollection<MergeAnalysisBlocker> blockers)
     {
@@ -202,7 +217,7 @@ internal static class MergeAnalysisBuilder
                      .Distinct(StringComparer.Ordinal)
                      .Order(StringComparer.Ordinal))
         {
-            if (IsSlideXml(part))
+            if (isModeledPart(part))
             {
                 continue;
             }
@@ -230,7 +245,7 @@ internal static class MergeAnalysisBuilder
                 category is "unknown" ? "low" : "high",
                 CategoryLabel(category),
                 path,
-                $"The {CategoryLabel(category).ToLowerInvariant()} package part changed and is outside the automatic PowerPoint allowlist.",
+                $"The {CategoryLabel(category).ToLowerInvariant()} package part changed and is outside the automatic {formatLabel} allowlist.",
                 oursChanged ? ChangeKind(before, oursHash) : null,
                 theirsChanged ? ChangeKind(before, theirsHash) : null,
                 false));
@@ -283,6 +298,15 @@ internal static class MergeAnalysisBuilder
     {
         if (change.EntityType == "slide") return "slide";
         if (change.EntityType == "slide_shape") return "shape";
+        if (change.EntityType == "worksheet") return "worksheet";
+        if (change.EntityType == "worksheet_cell")
+        {
+            return change.Before?.StartsWith('=') == true
+                || change.After?.StartsWith('=') == true
+                ? "formula"
+                : "cell";
+        }
+        if (change.EntityType == "defined_name") return "defined_name";
         if (change.Path.EndsWith("/macros", StringComparison.Ordinal)) return "macros";
         if (change.Path.EndsWith("/digital-signatures", StringComparison.Ordinal)) return "signatures";
         if (change.Path.EndsWith("/embedded-objects", StringComparison.Ordinal)) return "embedded_object";
@@ -300,8 +324,15 @@ internal static class MergeAnalysisBuilder
         if (value.Contains("slidemaster")) return "master";
         if (value.Contains("slidelayout")) return "layout";
         if (value.Contains("/theme/")) return "theme";
+        if (value.Contains("/tables/")) return "table";
         if (value.Contains("/charts/")) return "chart";
+        if (value.Contains("/drawings/")) return "drawing";
         if (value.Contains("/media/")) return "media";
+        if (value.Contains("/externallinks/")) return "external_link";
+        if (value.EndsWith("/sharedstrings.xml")) return "shared_strings";
+        if (value.EndsWith("/styles.xml")) return "style";
+        if (value.EndsWith("/calcchain.xml")) return "formula";
+        if (value == "xl/workbook.xml") return "workbook";
         if (value.EndsWith(".rels") || value == "[content_types].xml") return "relationships";
         if (value == "ppt/presentation.xml") return "slide";
         return "unknown";
@@ -315,6 +346,7 @@ internal static class MergeAnalysisBuilder
         if (feature.Contains("signature", StringComparison.Ordinal)) return "signatures";
         if (feature.Contains("embedded", StringComparison.Ordinal)) return "embedded_object";
         if (feature.Contains("external", StringComparison.Ordinal)) return "relationships";
+        if (feature.Contains("spreadsheet_table_chart", StringComparison.Ordinal)) return "table";
         return "unknown";
     }
 
@@ -333,7 +365,10 @@ internal static class MergeAnalysisBuilder
         => category switch
         {
             "embedded_object" => "Embedded object",
+            "defined_name" => "Defined name",
+            "external_link" => "External link",
             "relationships" => "Relationship",
+            "shared_strings" => "Shared strings",
             "signatures" => "Digital signature",
             _ => char.ToUpperInvariant(category[0]) + category[1..],
         };
@@ -343,6 +378,11 @@ internal static class MergeAnalysisBuilder
 
     private static bool IsSlideXml(string part)
         => part.StartsWith("ppt/slides/slide", StringComparison.Ordinal)
+            && part.EndsWith(".xml", StringComparison.Ordinal)
+            && !part.Contains("/_rels/", StringComparison.Ordinal);
+
+    private static bool IsWorksheetXml(string part)
+        => part.StartsWith("xl/worksheets/sheet", StringComparison.Ordinal)
             && part.EndsWith(".xml", StringComparison.Ordinal)
             && !part.Contains("/_rels/", StringComparison.Ordinal);
 

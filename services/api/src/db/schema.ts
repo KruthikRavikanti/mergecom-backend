@@ -1027,9 +1027,9 @@ export const mergeOperations = pgTable(
       .references(() => users.id, { onDelete: 'restrict' })
       .notNull(),
     note: text('note').notNull(),
-    mergeSchemaVersion: text('merge_schema_version').default('1.1.0').notNull(),
+    mergeSchemaVersion: text('merge_schema_version').default('1.2.0').notNull(),
     parserVersion: text('parser_version').default('1.1.0').notNull(),
-    engineVersion: text('engine_version').default('1.1.0').notNull(),
+    engineVersion: text('engine_version').default('1.2.0').notNull(),
     status: mergeOperationStatus('status').default('queued').notNull(),
     attempts: integer('attempts').default(0).notNull(),
     maxAttempts: integer('max_attempts').default(3).notNull(),

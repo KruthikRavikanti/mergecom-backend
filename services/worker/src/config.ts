@@ -4,6 +4,8 @@ export interface WorkerConfig {
   dispatchIntervalMilliseconds: number;
   documentEngineToken: string;
   documentEngineUrl: string;
+  excelAutomaticMergeEnabled: boolean;
+  excelAutomaticMergePilotOrganizationIds: string[];
   heartbeatMilliseconds: number;
   host: string;
   leaseMilliseconds: number;
@@ -105,6 +107,10 @@ export function loadWorkerConfig(): WorkerConfig {
     documentEngineToken,
     documentEngineUrl:
       process.env.DOCUMENT_ENGINE_URL ?? 'http://127.0.0.1:3003',
+    excelAutomaticMergeEnabled: booleanFlag('EXCEL_AUTOMATIC_MERGE_ENABLED'),
+    excelAutomaticMergePilotOrganizationIds: organizationAllowlist(
+      'EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS',
+    ),
     heartbeatMilliseconds,
     host: process.env.WORKER_HOST ?? '0.0.0.0',
     leaseMilliseconds,

@@ -129,6 +129,7 @@ export class DocumentEngineClient {
     oursArtifact: Uint8Array,
     theirsArtifact: Uint8Array,
     powerPointAutomaticMergeEnabled = false,
+    excelAutomaticMergeEnabled = false,
   ): Promise<MergeResult> {
     const body = new Uint8Array(
       baseArtifact.byteLength +
@@ -147,6 +148,9 @@ export class DocumentEngineClient {
           'X-MergeCom-Base-Sha256': job.baseArtifact.sha256,
           'X-MergeCom-Base-Size': String(baseArtifact.byteLength),
           'X-MergeCom-Extension': job.oursArtifact.extension,
+          'X-MergeCom-Excel-Automatic-Merge': String(
+            excelAutomaticMergeEnabled,
+          ),
           'X-MergeCom-File-Type': job.fileType,
           'X-MergeCom-Internal-Token': this.internalToken,
           'X-MergeCom-Ours-Sha256': job.oursArtifact.sha256,

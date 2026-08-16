@@ -221,6 +221,10 @@ static async Task<IResult> MergeAsync(
         request.Headers["X-MergeCom-PowerPoint-Automatic-Merge"].ToString(),
         "true",
         StringComparison.OrdinalIgnoreCase);
+    var excelAutomaticMergeEnabled = string.Equals(
+        request.Headers["X-MergeCom-Excel-Automatic-Merge"].ToString(),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
     var validBaseSize = long.TryParse(request.Headers["X-MergeCom-Base-Size"], out var baseSize);
     var validOursSize = long.TryParse(request.Headers["X-MergeCom-Ours-Size"], out var oursSize);
     var validTheirsSize = long.TryParse(request.Headers["X-MergeCom-Theirs-Size"], out var theirsSize);
@@ -285,7 +289,8 @@ static async Task<IResult> MergeAsync(
                 oursSha256,
                 theirsSha256,
                 candidatePath,
-                powerPointAutomaticMergeEnabled));
+                powerPointAutomaticMergeEnabled,
+                excelAutomaticMergeEnabled));
         }
     }
     catch (EndOfStreamException)

@@ -84,27 +84,70 @@ internal sealed class SyntheticOfficePackage : IDisposable
     }
 
     public static SyntheticOfficePackage Spreadsheet(string value = "7")
+        => SpreadsheetCells(value);
+
+    public static SyntheticOfficePackage SpreadsheetCells(params string[] values)
+        => SpreadsheetSheets(values);
+
+    public static SyntheticOfficePackage SpreadsheetSheets(params string[][] sheets)
     {
         var fixture = New(".xlsx");
         using var document = SpreadsheetDocument.Create(fixture.Path, SpreadsheetDocumentType.Workbook);
         var workbookPart = document.AddWorkbookPart();
+        document.ChangeIdOfPart(workbookPart, "rId1");
         workbookPart.Workbook = new S.Workbook();
-        var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
-        worksheetPart.Worksheet = new S.Worksheet(
-            new S.SheetDimension { Reference = "A1:C3" },
-            new S.SheetData(new S.Row(new S.Cell
-            {
-                CellReference = "A1",
-                CellValue = new S.CellValue(value),
-            })));
-        var sheets = workbookPart.Workbook.AppendChild(new S.Sheets());
-        sheets.Append(new S.Sheet
+        var sheetList = workbookPart.Workbook.AppendChild(new S.Sheets());
+        for (var sheetIndex = 0; sheetIndex < sheets.Length; sheetIndex++)
         {
-            Id = workbookPart.GetIdOfPart(worksheetPart),
-            Name = "Inputs",
-            SheetId = 1,
-        });
+            var worksheetPart = workbookPart.AddNewPart<WorksheetPart>($"rId{sheetIndex + 1}");
+            var cells = sheets[sheetIndex]
+                .Select((value, cellIndex) => new S.Cell
+                {
+                    CellReference = $"{ColumnName(cellIndex)}1",
+                    CellValue = new S.CellValue(value),
+                })
+                .ToArray();
+            worksheetPart.Worksheet = new S.Worksheet(
+                new S.SheetDimension
+                {
+                    Reference = cells.Length == 0
+                        ? "A1"
+                        : $"A1:{ColumnName(cells.Length - 1)}1",
+                },
+                new S.SheetData(new S.Row(cells)));
+            sheetList.Append(new S.Sheet
+            {
+                Id = workbookPart.GetIdOfPart(worksheetPart),
+                Name = $"Inputs {sheetIndex + 1}",
+                SheetId = (uint)(sheetIndex + 1),
+            });
+        }
         workbookPart.Workbook.Save();
+        return fixture;
+    }
+
+    public static SyntheticOfficePackage SpreadsheetFormula(
+        string formula,
+        string cachedValue,
+        string otherValue)
+    {
+        var fixture = SpreadsheetCells(cachedValue, otherValue);
+        using var document = SpreadsheetDocument.Open(fixture.Path, true);
+        var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+        worksheet.Descendants<S.Cell>().Single(cell => cell.CellReference == "A1")
+            .CellFormula = new S.CellFormula(formula);
+        worksheet.Save();
+        return fixture;
+    }
+
+    public static SyntheticOfficePackage SpreadsheetWithFeature(
+        string part,
+        byte[] content,
+        params string[] values)
+    {
+        var fixture = SpreadsheetCells(values);
+        using var archive = ZipFile.Open(fixture.Path, ZipArchiveMode.Update);
+        WriteEntry(archive, part, content);
         return fixture;
     }
 
@@ -383,6 +426,15 @@ internal sealed class SyntheticOfficePackage : IDisposable
 
     public static SyntheticOfficePackage WordWithRootRelationships(string relationships)
         => WordWithReplacedEntry("_rels/.rels", relationships);
+
+    private static string ColumnName(int zeroBasedIndex)
+    {
+        if (zeroBasedIndex is < 0 or >= 26)
+        {
+            throw new ArgumentOutOfRangeException(nameof(zeroBasedIndex));
+        }
+        return ((char)('A' + zeroBasedIndex)).ToString();
+    }
 
     public void Dispose()
     {
