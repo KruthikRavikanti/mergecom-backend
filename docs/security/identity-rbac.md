@@ -100,9 +100,11 @@ reduce access but cannot exceed the organization role's cap.
 
 Project leads manage project metadata and team assignments. Project leads and
 contributors create, rename, move, archive, restore, and delete folders or document
-records. Reviewers and viewers have read-only access. Owners and admins may create a
-project-scoped external invitation; acceptance creates both the organization
-membership and the capped project membership in one transaction.
+records. Reviewers and viewers have read-only access to project content. Active
+project leads and reviewers assigned to a review may append one decision, while
+non-viewer project members may participate in open review discussions. Owners and
+admins may create a project-scoped external invitation; acceptance creates both the
+organization membership and the capped project membership in one transaction.
 
 UI visibility is convenience only. Organization and project permissions are
 rechecked by API middleware and transactional mutations. Cross-tenant project paths

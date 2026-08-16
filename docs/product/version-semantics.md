@@ -55,7 +55,11 @@ A comparison is derived from two immutable versions and records engine/parser/sc
 
 ## Review and approval
 
-Review requests target one immutable version. Reviewer decisions are append-only records. Approval advances the document's approved-version pointer only after authorization and policy checks. Rejection does not delete the version. A later push does not revoke historical decisions, but it may make the approved version older than the latest version.
+Review requests target one clean, processed, immutable version that is newer than the current approved pointer. Assignments are fixed at request time and the version author cannot be assigned. Each assigned reviewer may append one decision while they retain an active project-lead or reviewer role.
+
+Any changes-requested decision closes the review. Approval requires every assignment to approve. It advances the document's approved-version pointer only after authorization, branch locking, and a sequence check; it never changes the branch head. A concurrent approval that has already advanced the pointer past the reviewed version makes the older review `superseded` rather than regressing the pointer. A later push does not revoke historical decisions and may leave the approved version older than the latest version.
+
+Discussion comments and decisions are append-only. General threads and threads anchored to an exact persisted comparison change may be resolved while the review is open, but their evidence remains available after closure.
 
 ## Branches and stale bases
 
@@ -72,4 +76,3 @@ Otherwise the result is `manual_resolution_required`. Both input artifacts and a
 ## Deletion and retention
 
 Normal users archive documents and projects; they do not rewrite version history. Retention or legal deletion is a separately authorized administrative workflow that records audit evidence and respects policy/legal holds. Blob garbage collection occurs only after metadata proves no authorized version or retained record references the artifact.
-

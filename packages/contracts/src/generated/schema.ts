@@ -662,6 +662,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentReviews"];
+        put?: never;
+        post: operations["createReviewRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getReviewRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recordReviewDecision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelReviewRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createReviewThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads/{threadId}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+                threadId: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["addReviewComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads/{threadId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+                threadId: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveReviewThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}": {
         parameters: {
             query?: never;
@@ -1006,6 +1154,99 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        ReviewPerson: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ReviewVersionReference: {
+            /** Format: uuid */
+            id: string;
+            displayNumber: number;
+            note: string;
+            author: components["schemas"]["ReviewPerson"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReviewDecision: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            decision: "approved" | "changes_requested";
+            note: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReviewAssignment: {
+            reviewer: components["schemas"]["ReviewPerson"];
+            projectRole: ("project_lead" | "contributor" | "reviewer" | "viewer") | null;
+            decision: components["schemas"]["ReviewDecision"] | null;
+        };
+        ReviewThreadAnchor: {
+            /** Format: uuid */
+            comparisonId: string;
+            changeId: string;
+            /** @enum {string} */
+            category: "content" | "feature" | "structure" | "validation";
+            label: string;
+            path: string;
+        };
+        ReviewComment: {
+            /** Format: uuid */
+            id: string;
+            author: components["schemas"]["ReviewPerson"];
+            body: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReviewThread: {
+            /** Format: uuid */
+            id: string;
+            anchor: components["schemas"]["ReviewThreadAnchor"] | null;
+            /** @enum {string} */
+            status: "open" | "resolved";
+            createdBy: components["schemas"]["ReviewPerson"];
+            resolvedBy: components["schemas"]["ReviewPerson"] | null;
+            resolvedAt: string | null;
+            comments: components["schemas"]["ReviewComment"][];
+            canResolve: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ReviewCapabilities: {
+            canCancel: boolean;
+            canComment: boolean;
+            canDecide: boolean;
+        };
+        ReviewRequest: {
+            /** Format: uuid */
+            id: string;
+            version: components["schemas"]["ReviewVersionReference"];
+            comparisonId: string | null;
+            requestedBy: components["schemas"]["ReviewPerson"];
+            message: string;
+            /** @enum {string} */
+            status: "open" | "approved" | "changes_requested" | "cancelled" | "superseded";
+            approvedVersion: {
+                /** Format: uuid */
+                id: string;
+                displayNumber: number;
+            } | null;
+            assignments: components["schemas"]["ReviewAssignment"][];
+            threads: components["schemas"]["ReviewThread"][];
+            capabilities: components["schemas"]["ReviewCapabilities"];
+            closedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ReviewPage: {
+            items: components["schemas"]["ReviewRequest"][];
+            nextCursor: string | null;
+        };
         SignedBlobGrant: {
             /** Format: uri */
             url: string;
@@ -1082,6 +1323,8 @@ export interface components {
         UploadId: string;
         VersionId: string;
         ComparisonId: string;
+        ReviewRequestId: string;
+        ThreadId: string;
         ProjectMembershipId: string;
         IdempotencyKey: string;
     };
@@ -2464,6 +2707,275 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listDocumentReviews: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Review requests for immutable versions of this document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createReviewRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    versionId: string;
+                    comparisonId: string | null;
+                    reviewerUserIds: string[];
+                    message: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Existing idempotent review request replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            /** @description Review request created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getReviewRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Review request, assignments, immutable decisions, and discussion threads. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    recordReviewDecision: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "approved" | "changes_requested";
+                    note: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable reviewer decision recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    cancelReviewRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open review cancelled without changing its target version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createReviewThread: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    anchor: components["schemas"]["ReviewThreadAnchor"] | null;
+                    body: string;
+                };
+            };
+        };
+        responses: {
+            /** @description General or comparison-change discussion created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    addReviewComment: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+                threadId: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    body: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Append-only thread comment created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    resolveReviewThread: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                reviewRequestId: components["parameters"]["ReviewRequestId"];
+                threadId: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discussion resolved while preserving all comments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequest"];
                 };
             };
             default: components["responses"]["ApiError"];

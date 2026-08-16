@@ -11,6 +11,7 @@ import { DocumentHistoryPage } from '../features/history/DocumentHistoryPage';
 import { DocumentComparePage } from '../features/history/DocumentComparePage';
 import { InviteAcceptancePage } from '../features/invitations/InviteAcceptancePage';
 import { ProjectPage } from '../features/projects/ProjectPage';
+import { DocumentReviewPage } from '../features/reviews/DocumentReviewPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { TeamPage } from '../features/team/TeamPage';
 import { HomePage } from '../pages/HomePage';
@@ -53,6 +54,10 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
           {
             element: <DocumentComparePage />,
             path: 'projects/:projectId/documents/:documentId/history/comparisons/:comparisonId',
+          },
+          {
+            element: <DocumentReviewPage />,
+            path: 'projects/:projectId/documents/:documentId/history/reviews/:reviewRequestId',
           },
           { element: <TeamPage />, path: 'team' },
           { element: <SettingsPage />, path: 'settings' },

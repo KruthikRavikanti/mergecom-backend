@@ -9,10 +9,12 @@ import {
   AlertTriangle,
   ArrowLeft,
   Clock3,
+  ClipboardCheck,
   Download,
   FileText,
   GitCompareArrows,
   LoaderCircle,
+  MessageSquarePlus,
   ShieldAlert,
   RotateCcw,
   Upload,
@@ -23,15 +25,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   type DocumentKind,
   type DocumentVersion,
+  type ReviewRequest,
   useCreateComparisonMutation,
   useDocumentQuery,
   useDownloadVersionMutation,
   useProjectQuery,
   usePushVersionMutation,
   useRestoreVersionMutation,
+  useReviewsQuery,
   useVersionsQuery,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
+import { ReviewRequestDialog } from '../reviews/ReviewRequestDialog';
 import { readFormString } from '../../services/contact';
 
 const kindLabels: Record<DocumentKind, string> = {
@@ -89,6 +94,20 @@ const processingClasses: Record<
   retryable_failed: 'border-amber-300 bg-amber-50 text-amber-900',
   running: 'border-sky-300 bg-sky-50 text-sky-900',
 };
+const reviewStatusLabels: Record<ReviewRequest['status'], string> = {
+  approved: 'Approved',
+  cancelled: 'Cancelled',
+  changes_requested: 'Changes requested',
+  open: 'Open',
+  superseded: 'Superseded',
+};
+const reviewStatusClasses: Record<ReviewRequest['status'], string> = {
+  approved: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+  cancelled: 'border-slate-300 bg-slate-100 text-slate-700',
+  changes_requested: 'border-red-300 bg-red-50 text-red-800',
+  open: 'border-sky-300 bg-sky-50 text-sky-900',
+  superseded: 'border-amber-300 bg-amber-50 text-amber-900',
+};
 
 type UploadStage =
   'conflict' | 'failed' | 'finalizing' | 'hashing' | 'idle' | 'uploading';
@@ -101,6 +120,7 @@ export function DocumentHistoryPage() {
   const project = useProjectQuery(organizationId, projectId);
   const document = useDocumentQuery(organizationId, projectId, documentId);
   const versions = useVersionsQuery(organizationId, projectId, documentId);
+  const reviews = useReviewsQuery(organizationId, projectId, documentId);
   const pushVersion = usePushVersionMutation(user!);
   const downloadVersion = useDownloadVersionMutation(user!);
   const restoreVersion = useRestoreVersionMutation(user!);
@@ -111,6 +131,9 @@ export function DocumentHistoryPage() {
   const [restoreTarget, setRestoreTarget] = useState<DocumentVersion | null>(
     null,
   );
+  const [reviewTarget, setReviewTarget] = useState<DocumentVersion | null>(
+    null,
+  );
   const [selectedVersionIds, setSelectedVersionIds] = useState<string[]>([]);
   const [toast, setToast] = useState<{
     kind: ToastKind;
@@ -118,10 +141,21 @@ export function DocumentHistoryPage() {
   } | null>(null);
   const uploadAbort = useRef<AbortController | null>(null);
 
-  if (!user || project.isLoading || document.isLoading || versions.isLoading) {
+  if (
+    !user ||
+    project.isLoading ||
+    document.isLoading ||
+    versions.isLoading ||
+    reviews.isLoading
+  ) {
     return <LoadingState label="Loading document history" />;
   }
-  if (project.isError || document.isError || versions.isError) {
+  if (
+    project.isError ||
+    document.isError ||
+    versions.isError ||
+    reviews.isError
+  ) {
     return (
       <ErrorState
         message="The document history could not be loaded."
@@ -129,11 +163,12 @@ export function DocumentHistoryPage() {
           void project.refetch();
           void document.refetch();
           void versions.refetch();
+          void reviews.refetch();
         }}
       />
     );
   }
-  if (!project.data || !document.data || !versions.data) {
+  if (!project.data || !document.data || !versions.data || !reviews.data) {
     return <ErrorState message="This document is unavailable." />;
   }
 
@@ -258,6 +293,12 @@ export function DocumentHistoryPage() {
       version.artifact.scanStatus === 'clean' &&
       (version.status === 'ready' || version.status === 'conflicted'),
   ).length;
+  const approvedVersionId = reviews.data.items.find(
+    (review) => review.approvedVersion,
+  )?.approvedVersion?.id;
+  const approvedSequence =
+    versions.data.items.find((version) => version.id === approvedVersionId)
+      ?.sequence ?? 0;
 
   const busy = ['hashing', 'uploading', 'finalizing'].includes(uploadStage);
   const uploadCanBeCancelled = ['hashing', 'uploading'].includes(uploadStage);
@@ -312,6 +353,59 @@ export function DocumentHistoryPage() {
           </button>
         ) : null}
       </div>
+
+      <div className="mt-7 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-950">Reviews</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Decisions stay attached to the version reviewed.
+          </p>
+        </div>
+        <span className="text-sm font-semibold text-slate-500">
+          {reviews.data.items.length}
+        </span>
+      </div>
+
+      {reviews.data.items.length ? (
+        <div className="mt-4 border-y border-slate-200 bg-white">
+          {reviews.data.items.map((review) => (
+            <Link
+              className="grid gap-3 border-b border-slate-200 p-4 transition last:border-b-0 hover:bg-slate-50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+              key={review.id}
+              to={`/app/projects/${projectId}/documents/${documentId}/history/reviews/${review.id}`}
+            >
+              <span className="flex min-w-0 items-start gap-3">
+                <ClipboardCheck
+                  aria-hidden="true"
+                  className="mt-0.5 shrink-0 text-slate-500"
+                  size={19}
+                />
+                <span className="min-w-0">
+                  <span className="block font-bold text-slate-950">
+                    Version {review.version.displayNumber}
+                  </span>
+                  <span className="mt-1 block break-words text-sm text-slate-700">
+                    {review.message}
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Requested by {review.requestedBy.name} /{' '}
+                    {dateFormatter.format(new Date(review.createdAt))}
+                  </span>
+                </span>
+              </span>
+              <span
+                className={`w-fit rounded border px-2 py-0.5 text-xs font-bold ${reviewStatusClasses[review.status]}`}
+              >
+                {reviewStatusLabels[review.status]}
+              </span>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 border-y border-dashed border-slate-300 py-5 text-sm text-slate-600">
+          No reviews have been requested.
+        </div>
+      )}
 
       <div className="mt-7 flex items-center justify-between gap-4">
         <div>
@@ -377,6 +471,17 @@ export function DocumentHistoryPage() {
               version.artifact.scanStatus === 'clean' &&
               (version.status === 'ready' || version.status === 'conflicted');
             const comparisonSelected = selectedVersionIds.includes(version.id);
+            const reviewEligible =
+              canWrite &&
+              version.processing.state === 'completed' &&
+              version.artifact.scanStatus === 'clean' &&
+              version.status === 'ready' &&
+              version.sequence > approvedSequence;
+            const openReview = reviews.data.items.find(
+              (review) =>
+                review.version.id === version.id && review.status === 'open',
+            );
+            const isApproved = approvedVersionId === version.id;
             return (
               <article
                 className="grid gap-4 border-b border-slate-200 p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
@@ -410,6 +515,11 @@ export function DocumentHistoryPage() {
                       {isHead ? (
                         <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
                           Latest
+                        </span>
+                      ) : null}
+                      {isApproved ? (
+                        <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800">
+                          Approved
                         </span>
                       ) : null}
                       <span
@@ -529,6 +639,24 @@ export function DocumentHistoryPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {openReview ? (
+                    <Link
+                      className="button-secondary"
+                      to={`/app/projects/${projectId}/documents/${documentId}/history/reviews/${openReview.id}`}
+                    >
+                      <ClipboardCheck aria-hidden="true" size={17} />
+                      Open review
+                    </Link>
+                  ) : reviewEligible ? (
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => setReviewTarget(version)}
+                    >
+                      <MessageSquarePlus aria-hidden="true" size={17} />
+                      Request review
+                    </button>
+                  ) : null}
                   <button
                     aria-label={`Download version ${version.displayNumber}`}
                     className="button-secondary"
@@ -694,6 +822,26 @@ export function DocumentHistoryPage() {
           </div>
         </form>
       </Dialog>
+      {reviewTarget ? (
+        <ReviewRequestDialog
+          comparisonId={null}
+          documentId={documentId}
+          onClose={() => setReviewTarget(null)}
+          onCreated={(review) =>
+            void navigate(
+              `/app/projects/${projectId}/documents/${documentId}/history/reviews/${review.id}`,
+            )
+          }
+          open
+          projectId={projectId}
+          user={user}
+          version={{
+            authorUserId: reviewTarget.author.id,
+            displayNumber: reviewTarget.displayNumber,
+            id: reviewTarget.id,
+          }}
+        />
+      ) : null}
       {toast ? <Toast kind={toast.kind} message={toast.message} /> : null}
     </section>
   );

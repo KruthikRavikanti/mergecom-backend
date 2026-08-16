@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MergeCom API
-  version: 0.6.0
-  description: Identity, project, immutable artifact, version, and semantic comparison contracts.
+  version: 0.7.0
+  description: Identity, project, immutable version, semantic comparison, and review workflow contracts.
 paths:
   /health/live:
     get:
@@ -1000,6 +1000,217 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/VersionComparison' }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: listDocumentReviews
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Review requests for immutable versions of this document.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+    post:
+      operationId: createReviewRequest
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [versionId, comparisonId, reviewerUserIds, message]
+              properties:
+                versionId: { type: string, format: uuid }
+                comparisonId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+                reviewerUserIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+                message:
+                  { type: string, minLength: 1, maxLength: 2000, pattern: '\S' }
+      responses:
+        '200':
+          description: Existing idempotent review request replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        '201':
+          description: Review request created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ReviewRequestId'
+    get:
+      operationId: getReviewRequest
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Review request, assignments, immutable decisions, and discussion threads.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/decisions:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ReviewRequestId'
+    post:
+      operationId: recordReviewDecision
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision, note]
+              properties:
+                decision: { type: string, enum: [approved, changes_requested] }
+                note:
+                  { type: string, minLength: 1, maxLength: 2000, pattern: '\S' }
+      responses:
+        '200':
+          description: Immutable reviewer decision recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ReviewRequestId'
+    post:
+      operationId: cancelReviewRequest
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Open review cancelled without changing its target version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ReviewRequestId'
+    post:
+      operationId: createReviewThread
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [anchor, body]
+              properties:
+                anchor:
+                  oneOf:
+                    - $ref: '#/components/schemas/ReviewThreadAnchor'
+                    - { type: 'null' }
+                body:
+                  { type: string, minLength: 1, maxLength: 2000, pattern: '\S' }
+      responses:
+        '201':
+          description: General or comparison-change discussion created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads/{threadId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ReviewRequestId'
+      - $ref: '#/components/parameters/ThreadId'
+    post:
+      operationId: addReviewComment
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [body]
+              properties:
+                body:
+                  { type: string, minLength: 1, maxLength: 2000, pattern: '\S' }
+      responses:
+        '201':
+          description: Append-only thread comment created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads/{threadId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ReviewRequestId'
+      - $ref: '#/components/parameters/ThreadId'
+    post:
+      operationId: resolveReviewThread
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Discussion resolved while preserving all comments.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewRequest' }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -1118,6 +1329,16 @@ components:
       schema: { type: string, format: uuid }
     ComparisonId:
       name: comparisonId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReviewRequestId:
+      name: reviewRequestId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ThreadId:
+      name: threadId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1583,8 +1804,8 @@ components:
           { type: string, enum: [content, feature, structure, validation] }
         impact: { type: string, enum: [high, medium, low] }
         entityType: { type: string }
-        label: { type: string }
-        path: { type: string }
+        label: { type: string, minLength: 1, maxLength: 500 }
+        path: { type: string, minLength: 1, maxLength: 1000 }
         before:
           oneOf: [{ type: string }, { type: 'null' }]
         after:
@@ -1665,6 +1886,172 @@ components:
           items: { $ref: '#/components/schemas/ComparisonChange' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ReviewPerson:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    ReviewVersionReference:
+      type: object
+      additionalProperties: false
+      required: [id, displayNumber, note, author, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        displayNumber: { type: integer, minimum: 1 }
+        note: { type: string }
+        author: { $ref: '#/components/schemas/ReviewPerson' }
+        createdAt: { type: string, format: date-time }
+    ReviewDecision:
+      type: object
+      additionalProperties: false
+      required: [id, decision, note, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        decision: { type: string, enum: [approved, changes_requested] }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReviewAssignment:
+      type: object
+      additionalProperties: false
+      required: [reviewer, projectRole, decision]
+      properties:
+        reviewer: { $ref: '#/components/schemas/ReviewPerson' }
+        projectRole:
+          oneOf:
+            - {
+                type: string,
+                enum: [project_lead, contributor, reviewer, viewer],
+              }
+            - { type: 'null' }
+        decision:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewDecision'
+            - { type: 'null' }
+    ReviewThreadAnchor:
+      type: object
+      additionalProperties: false
+      required: [comparisonId, changeId, category, label, path]
+      properties:
+        comparisonId: { type: string, format: uuid }
+        changeId: { type: string, pattern: '^[0-9a-f]{64}$' }
+        category:
+          { type: string, enum: [content, feature, structure, validation] }
+        label: { type: string }
+        path: { type: string }
+    ReviewComment:
+      type: object
+      additionalProperties: false
+      required: [id, author, body, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        author: { $ref: '#/components/schemas/ReviewPerson' }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReviewThread:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          anchor,
+          status,
+          createdBy,
+          resolvedBy,
+          resolvedAt,
+          comments,
+          canResolve,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        anchor:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewThreadAnchor'
+            - { type: 'null' }
+        status: { type: string, enum: [open, resolved] }
+        createdBy: { $ref: '#/components/schemas/ReviewPerson' }
+        resolvedBy:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewPerson'
+            - { type: 'null' }
+        resolvedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewComment' }
+        canResolve: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReviewCapabilities:
+      type: object
+      additionalProperties: false
+      required: [canCancel, canComment, canDecide]
+      properties:
+        canCancel: { type: boolean }
+        canComment: { type: boolean }
+        canDecide: { type: boolean }
+    ReviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          version,
+          comparisonId,
+          requestedBy,
+          message,
+          status,
+          approvedVersion,
+          assignments,
+          threads,
+          capabilities,
+          closedAt,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        version: { $ref: '#/components/schemas/ReviewVersionReference' }
+        comparisonId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        requestedBy: { $ref: '#/components/schemas/ReviewPerson' }
+        message: { type: string }
+        status:
+          type: string
+          enum: [open, approved, changes_requested, cancelled, superseded]
+        approvedVersion:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [id, displayNumber]
+              properties:
+                id: { type: string, format: uuid }
+                displayNumber: { type: integer, minimum: 1 }
+            - { type: 'null' }
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewAssignment' }
+        threads:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewThread' }
+        capabilities: { $ref: '#/components/schemas/ReviewCapabilities' }
+        closedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReviewPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewRequest' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
     SignedBlobGrant:
       type: object
       additionalProperties: false

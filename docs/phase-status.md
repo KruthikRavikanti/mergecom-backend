@@ -1,5 +1,24 @@
 # Phase status
 
+## Phase 7: persisted review and approval workflow
+
+Status: implementation complete on `phase-7/review-workflow`; pending owner review.
+
+- [x] Review requests target one clean, processed, immutable version and optionally one completed comparison whose target is that version.
+- [x] Contributors and project leads can request review from active project leads or reviewers; a version author cannot review their own version.
+- [x] Assignments are fixed at request time, current project scope is rechecked at decision time, and each assigned reviewer can append exactly one immutable decision.
+- [x] Any changes-requested decision closes the review; unanimous approval closes it and advances a separate approved-version pointer without moving the branch head.
+- [x] Branch locking and sequence checks prevent concurrent reviews from regressing the approved pointer; an older winning review is retained as superseded.
+- [x] General and exact comparison-change threads persist append-only comments, preserve immutable anchors, and can be resolved only while the review remains open.
+- [x] Review creation, decisions, cancellation, threads, comments, and resolution are idempotent, tenant scoped, audited, and emit transactional outbox events.
+- [x] The web app exposes review discovery from history, request flows with and without a comparison, assignment and decision state, discussion/reply controls, approval actions, and the approved version marker.
+- [x] Real PostgreSQL tests cover tenant denial, authorization, replay, append-only enforcement, anchored discussion, approval, changes requested, pointer monotonicity, and closed-review behavior.
+- [x] Live desktop and mobile Playwright covers upload, comparison, review request, identity handoff, anchored discussion, reply, approval, and approved-version rendering.
+
+The lifecycle is documented in `docs/product/review-workflow.md`; operational
+inspection and recovery are in `docs/runbooks/review-workflow.md`, and command
+evidence is in `docs/verification/phase-7-command-results.md`.
+
 ## Phase 6: deterministic semantic comparison
 
 Status: implementation complete on `phase-6/semantic-comparison`; pending owner review.

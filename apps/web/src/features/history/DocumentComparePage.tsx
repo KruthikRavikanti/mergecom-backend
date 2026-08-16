@@ -3,22 +3,27 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  ClipboardCheck,
   CircleAlert,
   EqualNot,
   FileDiff,
   LoaderCircle,
+  MessageSquarePlus,
   ShieldAlert,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
   type ComparisonChange,
   useDocumentQuery,
   useProjectQuery,
+  useReviewsQuery,
   useVersionComparisonQuery,
+  useVersionsQuery,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
+import { ReviewRequestDialog } from '../reviews/ReviewRequestDialog';
 
 type ChangeFilter = 'all' | ComparisonChange['category'];
 
@@ -48,6 +53,7 @@ const impactClasses: Record<ComparisonChange['impact'], string> = {
 export function DocumentComparePage() {
   const { comparisonId = '', documentId = '', projectId = '' } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const organizationId = user?.activeOrganization?.id;
   const project = useProjectQuery(organizationId, projectId);
   const document = useDocumentQuery(organizationId, projectId, documentId);
@@ -57,17 +63,28 @@ export function DocumentComparePage() {
     documentId,
     comparisonId,
   );
+  const versions = useVersionsQuery(organizationId, projectId, documentId);
+  const reviews = useReviewsQuery(organizationId, projectId, documentId);
   const [filter, setFilter] = useState<ChangeFilter>('all');
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   if (
     !user ||
     project.isLoading ||
     document.isLoading ||
-    comparison.isLoading
+    comparison.isLoading ||
+    versions.isLoading ||
+    reviews.isLoading
   ) {
     return <LoadingState label="Loading comparison" />;
   }
-  if (project.isError || document.isError || comparison.isError) {
+  if (
+    project.isError ||
+    document.isError ||
+    comparison.isError ||
+    versions.isError ||
+    reviews.isError
+  ) {
     return (
       <ErrorState
         message="The version comparison could not be loaded."
@@ -75,11 +92,19 @@ export function DocumentComparePage() {
           void project.refetch();
           void document.refetch();
           void comparison.refetch();
+          void versions.refetch();
+          void reviews.refetch();
         }}
       />
     );
   }
-  if (!project.data || !document.data || !comparison.data) {
+  if (
+    !project.data ||
+    !document.data ||
+    !comparison.data ||
+    !versions.data ||
+    !reviews.data
+  ) {
     return <ErrorState message="This comparison is unavailable." />;
   }
 
@@ -91,6 +116,26 @@ export function DocumentComparePage() {
     result.state,
   );
   const failed = ['permanently_failed', 'quarantined'].includes(result.state);
+  const targetVersion = versions.data.items.find(
+    (version) => version.id === result.targetVersion.id,
+  );
+  const openReview = reviews.data.items.find(
+    (review) =>
+      review.version.id === result.targetVersion.id && review.status === 'open',
+  );
+  const approvedVersionId = reviews.data.items.find(
+    (review) => review.approvedVersion,
+  )?.approvedVersion?.id;
+  const approvedSequence =
+    versions.data.items.find((version) => version.id === approvedVersionId)
+      ?.sequence ?? 0;
+  const canRequestReview =
+    result.state === 'completed' &&
+    targetVersion?.processing.state === 'completed' &&
+    targetVersion.artifact.scanStatus === 'clean' &&
+    targetVersion.status === 'ready' &&
+    targetVersion.sequence > approvedSequence &&
+    ['project_lead', 'contributor'].includes(project.data.accessRole);
 
   return (
     <section>
@@ -102,13 +147,33 @@ export function DocumentComparePage() {
         {document.data.name}
       </Link>
 
-      <div className="mt-5 border-b border-slate-200 pb-6">
-        <p className="text-sm font-bold text-red-700">VERSION COMPARISON</p>
-        <h1 className="page-title mt-1 break-words">
-          Version {result.baseVersion.displayNumber} to version{' '}
-          {result.targetVersion.displayNumber}
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">{project.data.name}</p>
+      <div className="mt-5 flex flex-col gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-red-700">VERSION COMPARISON</p>
+          <h1 className="page-title mt-1 break-words">
+            Version {result.baseVersion.displayNumber} to version{' '}
+            {result.targetVersion.displayNumber}
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">{project.data.name}</p>
+        </div>
+        {openReview ? (
+          <Link
+            className="button-secondary shrink-0"
+            to={`/app/projects/${projectId}/documents/${documentId}/history/reviews/${openReview.id}`}
+          >
+            <ClipboardCheck aria-hidden="true" size={17} />
+            Open review
+          </Link>
+        ) : canRequestReview ? (
+          <button
+            className="button-primary shrink-0"
+            type="button"
+            onClick={() => setReviewOpen(true)}
+          >
+            <MessageSquarePlus aria-hidden="true" size={17} />
+            Request review
+          </button>
+        ) : null}
       </div>
 
       <div className="grid border-b border-slate-200 bg-white md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-stretch">
@@ -276,6 +341,26 @@ export function DocumentComparePage() {
             </div>
           )}
         </>
+      ) : null}
+      {reviewOpen && targetVersion ? (
+        <ReviewRequestDialog
+          comparisonId={result.id}
+          documentId={documentId}
+          onClose={() => setReviewOpen(false)}
+          onCreated={(review) =>
+            void navigate(
+              `/app/projects/${projectId}/documents/${documentId}/history/reviews/${review.id}`,
+            )
+          }
+          open
+          projectId={projectId}
+          user={user}
+          version={{
+            authorUserId: targetVersion.author.id,
+            displayNumber: targetVersion.displayNumber,
+            id: targetVersion.id,
+          }}
+        />
       ) : null}
     </section>
   );

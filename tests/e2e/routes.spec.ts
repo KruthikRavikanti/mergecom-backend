@@ -8,6 +8,9 @@ const projectsPath = `/v1/organizations/${organizationId}/projects`;
 const projectPath = `${projectsPath}/${projectId}`;
 const documentPath = `${projectPath}/documents/${documentId}`;
 const versionPath = `${documentPath}/versions`;
+const reviewsPath = `${documentPath}/reviews`;
+const reviewId = '92000000-0000-4000-8000-000000000001';
+const reviewerUserId = '20000000-0000-4000-8000-000000000002';
 
 const currentUser = {
   activeOrganization: {
@@ -172,6 +175,43 @@ test.beforeEach(async ({ page }) => {
       status: 'pending_processing',
     },
   ];
+  const review = {
+    approvedVersion: null,
+    assignments: [
+      {
+        decision: null,
+        projectRole: 'reviewer',
+        reviewer: { id: reviewerUserId, name: 'Riley Morgan' },
+      },
+    ],
+    capabilities: {
+      canCancel: true,
+      canComment: true,
+      canDecide: false,
+    },
+    closedAt: null,
+    comparisonId: null,
+    createdAt: '2026-08-15T14:10:00.000Z',
+    id: reviewId,
+    message: 'Confirm that the updated disclosure is ready for circulation.',
+    requestedBy: {
+      id: currentUser.user.id,
+      name: currentUser.user.displayName,
+    },
+    status: 'open',
+    threads: [],
+    updatedAt: '2026-08-15T14:10:00.000Z',
+    version: {
+      author: {
+        id: currentUser.user.id,
+        name: currentUser.user.displayName,
+      },
+      createdAt: '2026-08-15T14:00:00.000Z',
+      displayNumber: 2,
+      id: '90000000-0000-4000-8000-000000000002',
+      note: 'Work prepared from the earlier client draft',
+    },
+  };
   let headVersionId = versions[1]!.id;
 
   await page.route('**/*', async (route) => {
@@ -361,6 +401,17 @@ test.beforeEach(async ({ page }) => {
       });
       return;
     }
+    if (path === reviewsPath && method === 'GET') {
+      await route.fulfill({
+        json: { items: [review], nextCursor: null },
+        status: 200,
+      });
+      return;
+    }
+    if (path === `${reviewsPath}/${reviewId}` && method === 'GET') {
+      await route.fulfill({ json: review, status: 200 });
+      return;
+    }
     if (path === `${documentPath}/uploads` && method === 'POST') {
       await route.fulfill({
         json: {
@@ -439,6 +490,16 @@ test.beforeEach(async ({ page }) => {
               role: 'project_lead',
               userId: '20000000-0000-4000-8000-000000000001',
             },
+            {
+              addedAt: '2026-08-01T12:00:00.000Z',
+              email: 'riley@mergecom.test',
+              id: '70000000-0000-4000-8000-000000000002',
+              name: 'Riley Morgan',
+              organizationMembershipId: '30000000-0000-4000-8000-000000000002',
+              organizationRole: 'reviewer',
+              role: 'reviewer',
+              userId: reviewerUserId,
+            },
           ],
           nextCursor: null,
         },
@@ -489,6 +550,10 @@ const authenticatedRoutes = [
   {
     heading: 'Confidential Information Memorandum.pptx',
     path: `/app/projects/${projectId}/documents/${documentId}/history`,
+  },
+  {
+    heading: 'Version 2',
+    path: `/app/projects/${projectId}/documents/${documentId}/history/reviews/${reviewId}`,
   },
   { heading: 'Team', path: '/app/team' },
   { heading: 'Settings', path: '/app/settings' },

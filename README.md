@@ -1,9 +1,9 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 6
-adds durable, directional comparison of two immutable versions with typed Office-aware
-changes, separate byte and semantic equality, explicit partial coverage, and a
-polling comparison UI. Review decisions, comments, merge, and Office host behavior
+MergeCom is a document version review workspace for Microsoft Office files. Phase 7
+adds persisted review requests for immutable versions, explicit reviewer assignments,
+append-only decisions and comments, comparison-change discussions, and a separate
+monotonic approved-version pointer. Merge, notifications, and Office host behavior
 remain deferred.
 
 ## Repository map
@@ -87,6 +87,7 @@ See [local setup](docs/setup/local-development.md),
 [artifact versioning](docs/product/artifact-versioning.md),
 [secure OOXML ingestion](docs/product/ooxml-ingestion.md),
 [semantic comparison](docs/product/semantic-comparison.md),
+[review workflow](docs/product/review-workflow.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.
 

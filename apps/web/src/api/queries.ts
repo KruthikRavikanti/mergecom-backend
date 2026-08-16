@@ -17,6 +17,9 @@ export type DocumentVersion = components['schemas']['DocumentVersion'];
 export type VersionPage = components['schemas']['VersionPage'];
 export type VersionComparison = components['schemas']['VersionComparison'];
 export type ComparisonChange = components['schemas']['ComparisonChange'];
+export type ReviewRequest = components['schemas']['ReviewRequest'];
+export type ReviewPage = components['schemas']['ReviewPage'];
+export type ReviewThreadAnchor = components['schemas']['ReviewThreadAnchor'];
 export type FinalizeVersionResult =
   components['schemas']['FinalizeVersionResult'];
 
@@ -81,6 +84,30 @@ export const queryKeys = {
       documentId,
       'comparisons',
       comparisonId,
+    ] as const,
+  review: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    reviewRequestId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'reviews',
+      reviewRequestId,
+    ] as const,
+  reviews: (organizationId: string, projectId: string, documentId: string) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'reviews',
     ] as const,
   projectTeam: (organizationId: string, projectId: string) =>
     ['projects', organizationId, projectId, 'team'] as const,
@@ -398,6 +425,362 @@ export function useCreateComparisonMutation(currentUser: CurrentUser) {
         comparison,
       );
     },
+  });
+}
+
+export function useReviewsQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId && projectId && documentId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews',
+        {
+          params: {
+            path: { documentId, organizationId: organizationId!, projectId },
+            query: { limit: 50 },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Reviews could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.reviews(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+    ),
+    refetchInterval: (query) =>
+      query.state.data?.items.some((review) => review.status === 'open')
+        ? 5_000
+        : false,
+  });
+}
+
+export function useReviewQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  reviewRequestId: string,
+) {
+  return useQuery({
+    enabled: Boolean(
+      organizationId && projectId && documentId && reviewRequestId,
+    ),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}',
+        {
+          params: {
+            path: {
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+              reviewRequestId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Review could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.review(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      reviewRequestId,
+    ),
+    refetchInterval: (query) =>
+      query.state.data?.status === 'open' ? 5_000 : false,
+  });
+}
+
+function updateReviewCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  organizationId: string,
+  input: { documentId: string; projectId: string },
+  review: ReviewRequest,
+) {
+  queryClient.setQueryData(
+    queryKeys.review(
+      organizationId,
+      input.projectId,
+      input.documentId,
+      review.id,
+    ),
+    review,
+  );
+  return queryClient.invalidateQueries({
+    queryKey: queryKeys.reviews(
+      organizationId,
+      input.projectId,
+      input.documentId,
+    ),
+  });
+}
+
+export function useCreateReviewMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      comparisonId: string | null;
+      documentId: string;
+      message: string;
+      projectId: string;
+      reviewerUserIds: string[];
+      versionId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews',
+        {
+          body: {
+            comparisonId: input.comparisonId,
+            message: input.message,
+            reviewerUserIds: input.reviewerUserIds,
+            versionId: input.versionId,
+          },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Review could not be requested.');
+      return data;
+    },
+    onSuccess: (review, input) =>
+      updateReviewCache(
+        queryClient,
+        activeOrganizationId(currentUser),
+        input,
+        review,
+      ),
+  });
+}
+
+export function useRecordReviewDecisionMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      decision: 'approved' | 'changes_requested';
+      documentId: string;
+      note: string;
+      projectId: string;
+      reviewRequestId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/decisions',
+        {
+          body: { decision: input.decision, note: input.note },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+              reviewRequestId: input.reviewRequestId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Decision could not be recorded.');
+      return data;
+    },
+    onSuccess: (review, input) =>
+      updateReviewCache(
+        queryClient,
+        activeOrganizationId(currentUser),
+        input,
+        review,
+      ),
+  });
+}
+
+export function useCancelReviewMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string;
+      projectId: string;
+      reviewRequestId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/cancel',
+        {
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+              reviewRequestId: input.reviewRequestId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Review could not be cancelled.');
+      return data;
+    },
+    onSuccess: (review, input) =>
+      updateReviewCache(
+        queryClient,
+        activeOrganizationId(currentUser),
+        input,
+        review,
+      ),
+  });
+}
+
+export function useCreateReviewThreadMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      anchor: ReviewThreadAnchor | null;
+      body: string;
+      documentId: string;
+      projectId: string;
+      reviewRequestId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads',
+        {
+          body: { anchor: input.anchor, body: input.body },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+              reviewRequestId: input.reviewRequestId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Discussion could not be started.');
+      return data;
+    },
+    onSuccess: (review, input) =>
+      updateReviewCache(
+        queryClient,
+        activeOrganizationId(currentUser),
+        input,
+        review,
+      ),
+  });
+}
+
+export function useAddReviewCommentMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      body: string;
+      documentId: string;
+      projectId: string;
+      reviewRequestId: string;
+      threadId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads/{threadId}/comments',
+        {
+          body: { body: input.body },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+              reviewRequestId: input.reviewRequestId,
+              threadId: input.threadId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Comment could not be added.');
+      return data;
+    },
+    onSuccess: (review, input) =>
+      updateReviewCache(
+        queryClient,
+        activeOrganizationId(currentUser),
+        input,
+        review,
+      ),
+  });
+}
+
+export function useResolveReviewThreadMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string;
+      projectId: string;
+      reviewRequestId: string;
+      threadId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/reviews/{reviewRequestId}/threads/{threadId}/resolve',
+        {
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+              reviewRequestId: input.reviewRequestId,
+              threadId: input.threadId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Discussion could not be resolved.');
+      return data;
+    },
+    onSuccess: (review, input) =>
+      updateReviewCache(
+        queryClient,
+        activeOrganizationId(currentUser),
+        input,
+        review,
+      ),
   });
 }
 

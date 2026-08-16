@@ -26,6 +26,7 @@ const ownerA = '22000000-0000-4000-8000-000000000001';
 const contributorA = '22000000-0000-4000-8000-000000000002';
 const viewerA = '22000000-0000-4000-8000-000000000003';
 const ownerB = '22000000-0000-4000-8000-000000000004';
+const reviewerA = '22000000-0000-4000-8000-000000000005';
 const projectA = '42000000-0000-4000-8000-000000000001';
 const projectRestricted = '42000000-0000-4000-8000-000000000002';
 const documentA = '62000000-0000-4000-8000-000000000001';
@@ -159,6 +160,12 @@ describe.runIf(runInfrastructureTests)(
         ],
         [viewerA, 'Alpha Viewer', 'alpha-viewer@mergecom.test', 'alpha-viewer'],
         [ownerB, 'Beta Owner', 'beta-owner@mergecom.test', 'beta-owner'],
+        [
+          reviewerA,
+          'Alpha Reviewer',
+          'alpha-reviewer@mergecom.test',
+          'alpha-reviewer',
+        ],
       ] as const;
       for (const [id, name, email, subject] of users) {
         await database.pool.query(
@@ -181,8 +188,17 @@ describe.runIf(runInfrastructureTests)(
         ('32000000-0000-4000-8000-000000000001', $1, $2, 'owner', 'active'),
         ('32000000-0000-4000-8000-000000000002', $1, $3, 'contributor', 'active'),
         ('32000000-0000-4000-8000-000000000003', $1, $4, 'viewer', 'active'),
-        ('32000000-0000-4000-8000-000000000004', $5, $6, 'owner', 'active')`,
-        [organizationA, ownerA, contributorA, viewerA, organizationB, ownerB],
+        ('32000000-0000-4000-8000-000000000004', $5, $6, 'owner', 'active'),
+        ('32000000-0000-4000-8000-000000000005', $1, $7, 'reviewer', 'active')`,
+        [
+          organizationA,
+          ownerA,
+          contributorA,
+          viewerA,
+          organizationB,
+          ownerB,
+          reviewerA,
+        ],
       );
       await database.pool.query(
         `insert into projects
@@ -196,7 +212,11 @@ describe.runIf(runInfrastructureTests)(
         (organization_id, project_id, organization_membership_id, role,
          added_by_user_id)
        values ($1, $2, '32000000-0000-4000-8000-000000000002',
-               'contributor', $3)`,
+               'contributor', $3),
+              ($1, $2, '32000000-0000-4000-8000-000000000001',
+               'project_lead', $3),
+              ($1, $2, '32000000-0000-4000-8000-000000000005',
+               'reviewer', $3)`,
         [organizationA, projectA, ownerA],
       );
       await database.pool.query(
@@ -568,6 +588,397 @@ describe.runIf(runInfrastructureTests)(
         `select count(*)::int as comparisons from version_comparisons`,
       );
       expect(rows.rows[0]?.comparisons).toBe(1);
+    });
+
+    it('persists review decisions, anchored discussion, and a monotonic approved pointer', async () => {
+      const owner = await login('alpha-owner');
+      const reviewer = await login('alpha-reviewer');
+      const contributor = await login('alpha-contributor');
+      const viewer = await login('alpha-viewer');
+      const first = await push(
+        owner,
+        officeBytes('review-base'),
+        null,
+        'Review base',
+      );
+      const baseVersionId = first.response.json().version.id as string;
+      const second = await push(
+        owner,
+        officeBytes('review-target'),
+        baseVersionId,
+        'Review target',
+      );
+      const targetVersionId = second.response.json().version.id as string;
+      await markVersionsProcessed([baseVersionId, targetVersionId]);
+
+      const comparisonResponse = await app.inject({
+        body: { baseVersionId, targetVersionId },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/comparisons`,
+      });
+      expect(comparisonResponse.statusCode, comparisonResponse.payload).toBe(
+        201,
+      );
+      const comparisonId = comparisonResponse.json().id as string;
+      const changeId = 'a'.repeat(64);
+      await database.pool.query(
+        `update version_comparisons
+            set status = 'completed', completed_at = now(),
+                result_object_key = $2, result_sha256 = $3, stable_hash = $4,
+                byte_equal = false, semantic_equal = false,
+                completeness = 'complete', summary = $5, changes = $6,
+                updated_at = now()
+          where id = $1`,
+        [
+          comparisonId,
+          `organizations/${organizationA}/comparisons/${comparisonId}/result.json`,
+          'b'.repeat(64),
+          'c'.repeat(64),
+          JSON.stringify({ content: 1, modified: 1, total: 1 }),
+          JSON.stringify([
+            {
+              after: 'Annual operating review',
+              before: 'Quarterly operating review',
+              category: 'content',
+              changeType: 'modified',
+              entityType: 'paragraph',
+              id: changeId,
+              impact: 'medium',
+              label: 'Paragraph',
+              path: '/body/p/1',
+            },
+          ]),
+        ],
+      );
+
+      const createKey = randomUUID();
+      const reviewBody = {
+        comparisonId,
+        message: 'Please verify the operating review update.',
+        reviewerUserIds: [reviewerA],
+        versionId: targetVersionId,
+      };
+      const created = await app.inject({
+        body: reviewBody,
+        headers: headers(owner, createKey),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      expect(created.statusCode, created.payload).toBe(201);
+      expect(created.json()).toMatchObject({
+        assignments: [
+          {
+            decision: null,
+            reviewer: { id: reviewerA, name: 'Alpha Reviewer' },
+          },
+        ],
+        comparisonId,
+        status: 'open',
+        version: { id: targetVersionId },
+      });
+      const reviewRequestId = created.json().id as string;
+      const replay = await app.inject({
+        body: reviewBody,
+        headers: headers(owner, createKey),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      expect(replay.statusCode, replay.payload).toBe(200);
+      expect(replay.json().id).toBe(reviewRequestId);
+
+      const deniedDecision = await app.inject({
+        body: { decision: 'approved', note: 'Not assigned.' },
+        headers: headers(contributor, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/decisions`,
+      });
+      expect(deniedDecision.statusCode).toBe(403);
+      const hidden = await app.inject({
+        headers: { cookie: viewer.cookie },
+        method: 'GET',
+        url: `${base()}/reviews/${reviewRequestId}`,
+      });
+      expect(hidden.statusCode).toBe(404);
+
+      const thread = await app.inject({
+        body: {
+          anchor: {
+            category: 'content',
+            changeId,
+            comparisonId,
+            label: 'Paragraph',
+            path: '/body/p/1',
+          },
+          body: 'Please confirm this wording with the client.',
+        },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/threads`,
+      });
+      expect(thread.statusCode, thread.payload).toBe(201);
+      expect(thread.json().threads[0]).toMatchObject({
+        anchor: { changeId, path: '/body/p/1' },
+        comments: [{ body: 'Please confirm this wording with the client.' }],
+        status: 'open',
+      });
+      const threadId = thread.json().threads[0].id as string;
+      const reply = await app.inject({
+        body: { body: 'Confirmed against the signed brief.' },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/threads/${threadId}/comments`,
+      });
+      expect(reply.statusCode, reply.payload).toBe(201);
+      expect(reply.json().threads[0].comments).toHaveLength(2);
+      const resolved = await app.inject({
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/threads/${threadId}/resolve`,
+      });
+      expect(resolved.statusCode, resolved.payload).toBe(200);
+      expect(resolved.json().threads[0].status).toBe('resolved');
+      const openThread = await app.inject({
+        body: {
+          anchor: null,
+          body: 'Retain this open question with the completed review.',
+        },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/threads`,
+      });
+      expect(openThread.statusCode, openThread.payload).toBe(201);
+      const openThreadId = openThread.json().threads[1].id as string;
+
+      const approved = await app.inject({
+        body: {
+          decision: 'approved',
+          note: 'Wording and source were verified.',
+        },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/decisions`,
+      });
+      expect(approved.statusCode, approved.payload).toBe(200);
+      expect(approved.json()).toMatchObject({
+        approvedVersion: { id: targetVersionId },
+        assignments: [{ decision: { decision: 'approved' } }],
+        status: 'approved',
+      });
+      expect(approved.json().threads[1]).toMatchObject({
+        canResolve: false,
+        status: 'open',
+      });
+      const resolveClosed = await app.inject({
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${reviewRequestId}/threads/${openThreadId}/resolve`,
+      });
+      expect(resolveClosed.statusCode).toBe(409);
+      expect(resolveClosed.json().code).toBe('review_closed');
+      const branch = await database.pool.query<{ approved_version_id: string }>(
+        `select approved_version_id from document_branches
+          where document_id = $1 and is_default = true`,
+        [documentA],
+      );
+      expect(branch.rows[0]?.approved_version_id).toBe(targetVersionId);
+      await expect(
+        database.pool.query(
+          `update review_decisions set note = 'changed' where review_request_id = $1`,
+          [reviewRequestId],
+        ),
+      ).rejects.toMatchObject({ code: '55000' });
+
+      const third = await push(
+        owner,
+        officeBytes('review-third'),
+        targetVersionId,
+        'Third version',
+      );
+      const thirdVersionId = third.response.json().version.id as string;
+      await markVersionsProcessed([thirdVersionId]);
+      const followUp = await app.inject({
+        body: {
+          comparisonId: null,
+          message: 'Review the follow-up.',
+          reviewerUserIds: [reviewerA],
+          versionId: thirdVersionId,
+        },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      expect(followUp.statusCode, followUp.payload).toBe(201);
+      const changesRequested = await app.inject({
+        body: {
+          decision: 'changes_requested',
+          note: 'The total needs supporting detail.',
+        },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${followUp.json().id as string}/decisions`,
+      });
+      expect(changesRequested.statusCode, changesRequested.payload).toBe(200);
+      expect(changesRequested.json()).toMatchObject({
+        approvedVersion: { id: targetVersionId },
+        status: 'changes_requested',
+      });
+
+      const fourth = await push(
+        owner,
+        officeBytes('review-fourth'),
+        thirdVersionId,
+        'Fourth version',
+      );
+      const fourthVersionId = fourth.response.json().version.id as string;
+      const fifth = await push(
+        owner,
+        officeBytes('review-fifth'),
+        fourthVersionId,
+        'Fifth version',
+      );
+      const fifthVersionId = fifth.response.json().version.id as string;
+      await markVersionsProcessed([fourthVersionId, fifthVersionId]);
+      const fourthReview = await app.inject({
+        body: {
+          comparisonId: null,
+          message: 'Review the fourth version.',
+          reviewerUserIds: [reviewerA],
+          versionId: fourthVersionId,
+        },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      const fifthReview = await app.inject({
+        body: {
+          comparisonId: null,
+          message: 'Review the fifth version.',
+          reviewerUserIds: [reviewerA],
+          versionId: fifthVersionId,
+        },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      expect(fourthReview.statusCode, fourthReview.payload).toBe(201);
+      expect(fifthReview.statusCode, fifthReview.payload).toBe(201);
+      const newestApproval = await app.inject({
+        body: { decision: 'approved', note: 'Newest version is ready.' },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${fifthReview.json().id as string}/decisions`,
+      });
+      expect(newestApproval.statusCode, newestApproval.payload).toBe(200);
+      expect(newestApproval.json()).toMatchObject({
+        approvedVersion: { id: fifthVersionId },
+        status: 'approved',
+      });
+      const staleApproval = await app.inject({
+        body: { decision: 'approved', note: 'Older version is also valid.' },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${fourthReview.json().id as string}/decisions`,
+      });
+      expect(staleApproval.statusCode, staleApproval.payload).toBe(200);
+      expect(staleApproval.json()).toMatchObject({
+        approvedVersion: { id: fifthVersionId },
+        status: 'superseded',
+      });
+      const finalBranch = await database.pool.query<{
+        approved_version_id: string;
+      }>(
+        `select approved_version_id from document_branches
+          where document_id = $1 and is_default = true`,
+        [documentA],
+      );
+      expect(finalBranch.rows[0]?.approved_version_id).toBe(fifthVersionId);
+
+      const sixth = await push(
+        contributor,
+        officeBytes('review-sixth'),
+        fifthVersionId,
+        'Sixth version',
+      );
+      const sixthVersionId = sixth.response.json().version.id as string;
+      await markVersionsProcessed([sixthVersionId]);
+      const unanimousReview = await app.inject({
+        body: {
+          comparisonId: null,
+          message: 'Complete a two-person review.',
+          reviewerUserIds: [ownerA, reviewerA],
+          versionId: sixthVersionId,
+        },
+        headers: headers(contributor, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      expect(unanimousReview.statusCode, unanimousReview.payload).toBe(201);
+      const unanimousReviewId = unanimousReview.json().id as string;
+      const firstApproval = await app.inject({
+        body: { decision: 'approved', note: 'First approval.' },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${unanimousReviewId}/decisions`,
+      });
+      expect(firstApproval.statusCode, firstApproval.payload).toBe(200);
+      expect(firstApproval.json()).toMatchObject({
+        approvedVersion: { id: fifthVersionId },
+        status: 'open',
+      });
+      const unanimousApproval = await app.inject({
+        body: { decision: 'approved', note: 'Second approval.' },
+        headers: headers(reviewer, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews/${unanimousReviewId}/decisions`,
+      });
+      expect(unanimousApproval.statusCode, unanimousApproval.payload).toBe(200);
+      expect(unanimousApproval.json()).toMatchObject({
+        approvedVersion: { id: sixthVersionId },
+        status: 'approved',
+      });
+
+      const seventh = await push(
+        owner,
+        officeBytes('review-seventh'),
+        sixthVersionId,
+        'Seventh version',
+      );
+      const seventhVersionId = seventh.response.json().version.id as string;
+      await markVersionsProcessed([seventhVersionId]);
+      const cancellable = await app.inject({
+        body: {
+          comparisonId: null,
+          message: 'Cancel this review.',
+          reviewerUserIds: [reviewerA],
+          versionId: seventhVersionId,
+        },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/reviews`,
+      });
+      expect(cancellable.statusCode, cancellable.payload).toBe(201);
+      const cancelKey = randomUUID();
+      const cancelled = await app.inject({
+        headers: headers(owner, cancelKey),
+        method: 'POST',
+        url: `${base()}/reviews/${cancellable.json().id as string}/cancel`,
+      });
+      expect(cancelled.statusCode, cancelled.payload).toBe(200);
+      expect(cancelled.json().status).toBe('cancelled');
+      const cancelReplay = await app.inject({
+        headers: headers(owner, cancelKey),
+        method: 'POST',
+        url: `${base()}/reviews/${cancellable.json().id as string}/cancel`,
+      });
+      expect(cancelReplay.statusCode, cancelReplay.payload).toBe(200);
+      expect(cancelReplay.json().status).toBe('cancelled');
+      const audits = await database.pool.query<{ count: number }>(
+        `select count(*)::int as count from audit_events
+          where target_type in ('review_request', 'review_thread', 'review_comment')
+            and result = 'succeeded'`,
+      );
+      expect(audits.rows[0]?.count).toBeGreaterThanOrEqual(17);
     });
 
     it('uses branch locking so only one simultaneous push advances the head', async () => {

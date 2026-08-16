@@ -61,6 +61,7 @@ external links, embedded objects, and unsupported binary parts.
 
 The history UI permits comparison only for clean versions whose ingestion completed.
 The result UI reports processing attempts, failures, equality, coverage, stable hash,
-warnings, and category-filtered persisted changes. Phase 6 does not add review
-requests, comments, approval decisions, merge generation, or automatic conflict
-resolution; those remain later phases.
+warnings, and category-filtered persisted changes. Phase 7 can attach a review to a
+completed comparison and anchor discussion to its exact persisted changes. Comparison
+creation still does not mutate review or approval state. Merge generation and
+automatic conflict resolution remain later phases.

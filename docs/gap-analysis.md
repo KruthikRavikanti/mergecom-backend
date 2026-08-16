@@ -17,7 +17,7 @@ The prototype demonstrates product intent but has no production trust boundary. 
 | Restore | Destructive replacement | New version pointing to an authorized older artifact; history preserved | 4 |
 | Concurrency | Last writer replaces global file | Base version checks, stale-write rejection, idempotent commands | 4 |
 | Merge | Partial reconstruction | Three-way, conservative, validated merge or manual resolution | 8 |
-| Review/comments | Labels and local state | Persisted review requests, decisions, anchored threads, audit events | 7 |
+| Review/comments | Persisted immutable-version requests, assignments, append-only decisions/comments, exact change anchors, audits, and approval pointer | Notification delivery and merge handoff build on retained review outbox state | 7 complete |
 | Notifications | Mock UI and console behavior | Transactional outbox, retries, in-app/email preferences | 9 |
 | Security | Committed key, broad CORS, payload logs | Secret management, least privilege, scan/quarantine, safe logs, runbooks | 0 onward |
 | Compliance claims | Unsupported marketing text | Truthful language backed by implemented controls and evidence | 1 onward |
@@ -35,4 +35,3 @@ The prototype demonstrates product intent but has no production trust boundary. 
 ## Phase 1 entry gate
 
 Phase 1 can start when the Phase 0 branch has no tracked key, saved Office JSON, or dependency path; all ADRs are accepted; the history rewrite remains explicitly deferred; and the owner understands that the legacy server and reconstruction clients are migration evidence only.
-

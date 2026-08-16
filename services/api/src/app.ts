@@ -17,6 +17,9 @@ import { PostgresProjectStore } from './projects/postgres-store';
 import { registerProjectRoutes } from './projects/routes';
 import type { ProjectStore } from './projects/store';
 import { createPostgresReadinessProbe, type ReadinessProbe } from './readiness';
+import { PostgresReviewStore } from './reviews/postgres-store';
+import { registerReviewRoutes } from './reviews/routes';
+import type { ReviewStore } from './reviews/store';
 import type { BlobStore } from './storage/blob-store';
 import { S3BlobStore } from './storage/s3-blob-store';
 import { PostgresVersionStore } from './versions/postgres-store';
@@ -46,6 +49,7 @@ interface CreateAppOptions {
   logger?: boolean;
   projectStore?: ProjectStore;
   readinessProbe?: ReadinessProbe;
+  reviewStore?: ReviewStore;
   versionService?: VersionService;
   versionStore?: VersionStore;
 }
@@ -58,6 +62,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   const database =
     (!options.identityStore ||
       !options.projectStore ||
+      !options.reviewStore ||
       !options.versionStore) &&
     options.databaseUrl
       ? createDatabase(options.databaseUrl)
@@ -70,6 +75,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   const projectStore =
     options.projectStore ??
     (database ? new PostgresProjectStore(database.pool) : null);
+  const reviewStore =
+    options.reviewStore ??
+    (database ? new PostgresReviewStore(database.pool) : null);
   const blobStore =
     options.blobStore ??
     (config.blobStorage ? new S3BlobStore(config.blobStorage) : null);
@@ -114,7 +122,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'MergeCom API', version: '0.6.0' },
+      info: { title: 'MergeCom API', version: '0.7.0' },
       components: {
         securitySchemes: {
           sessionCookie: {
@@ -171,6 +179,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     }
     if (versionService) {
       registerVersionRoutes(app, { ...runtime, versionService });
+    }
+    if (reviewStore) {
+      registerReviewRoutes(app, { ...runtime, reviewStore });
     }
   }
 

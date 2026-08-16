@@ -85,6 +85,25 @@ export const outboxEventStatus = pgEnum('outbox_event_status', [
   'published',
   'failed',
 ]);
+export const reviewRequestStatus = pgEnum('review_request_status', [
+  'open',
+  'approved',
+  'changes_requested',
+  'cancelled',
+  'superseded',
+]);
+export const reviewDecision = pgEnum('review_decision', [
+  'approved',
+  'changes_requested',
+]);
+export const reviewThreadStatus = pgEnum('review_thread_status', [
+  'open',
+  'resolved',
+]);
+export const reviewAnchorType = pgEnum('review_anchor_type', [
+  'general',
+  'comparison_change',
+]);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true })
@@ -544,6 +563,11 @@ export const documentBranches = pgTable(
     name: text('name').notNull(),
     isDefault: boolean('is_default').default(false).notNull(),
     headVersionId: uuid('head_version_id'),
+    approvedVersionId: uuid('approved_version_id'),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedByUserId: uuid('approved_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
     createdByUserId: uuid('created_by_user_id')
       .references(() => users.id, { onDelete: 'restrict' })
       .notNull(),
@@ -561,6 +585,11 @@ export const documentBranches = pgTable(
       table.organizationId,
       table.documentId,
       table.id,
+    ),
+    check(
+      'document_branches_approval_pointer_ck',
+      sql`(${table.approvedVersionId} is null and ${table.approvedAt} is null and ${table.approvedByUserId} is null)
+          or (${table.approvedVersionId} is not null and ${table.approvedAt} is not null and ${table.approvedByUserId} is not null)`,
     ),
   ],
 );
@@ -913,6 +942,11 @@ export const versionComparisons = pgTable(
     uniqueIndex('version_comparisons_result_object_uq').on(
       table.resultObjectKey,
     ),
+    uniqueIndex('version_comparisons_organization_document_id_uq').on(
+      table.organizationId,
+      table.documentId,
+      table.id,
+    ),
     index('version_comparisons_document_created_idx').on(
       table.organizationId,
       table.documentId,
@@ -939,6 +973,223 @@ export const versionComparisons = pgTable(
     check(
       'version_comparisons_completeness_ck',
       sql`${table.completeness} is null or ${table.completeness} in ('complete', 'partial')`,
+    ),
+  ],
+);
+
+export const reviewRequests = pgTable(
+  'review_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    versionId: uuid('version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    comparisonId: uuid('comparison_id').references(
+      () => versionComparisons.id,
+      { onDelete: 'restrict' },
+    ),
+    requestedByUserId: uuid('requested_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    message: text('message').notNull(),
+    status: reviewRequestStatus('status').default('open').notNull(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedByUserId: uuid('closed_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('review_requests_open_version_uq')
+      .on(table.versionId)
+      .where(sql`${table.status} = 'open'`),
+    uniqueIndex('review_requests_organization_id_version_uq').on(
+      table.organizationId,
+      table.id,
+      table.versionId,
+    ),
+    uniqueIndex('review_requests_organization_id_uq').on(
+      table.organizationId,
+      table.id,
+    ),
+    index('review_requests_document_created_idx').on(
+      table.organizationId,
+      table.documentId,
+      table.createdAt,
+      table.id,
+    ),
+    index('review_requests_version_idx').on(table.versionId),
+    check(
+      'review_requests_terminal_state_ck',
+      sql`(${table.status} = 'open' and ${table.closedAt} is null and ${table.closedByUserId} is null)
+          or (${table.status} <> 'open' and ${table.closedAt} is not null and ${table.closedByUserId} is not null)`,
+    ),
+  ],
+);
+
+export const reviewAssignments = pgTable(
+  'review_assignments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    reviewRequestId: uuid('review_request_id')
+      .references(() => reviewRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    reviewerUserId: uuid('reviewer_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    assignedByUserId: uuid('assigned_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('review_assignments_request_reviewer_uq').on(
+      table.reviewRequestId,
+      table.reviewerUserId,
+    ),
+    uniqueIndex('review_assignments_organization_request_reviewer_uq').on(
+      table.organizationId,
+      table.reviewRequestId,
+      table.reviewerUserId,
+    ),
+    index('review_assignments_reviewer_idx').on(
+      table.organizationId,
+      table.reviewerUserId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const reviewDecisions = pgTable(
+  'review_decisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    reviewRequestId: uuid('review_request_id')
+      .references(() => reviewRequests.id, { onDelete: 'restrict' })
+      .notNull(),
+    versionId: uuid('version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    reviewerUserId: uuid('reviewer_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    decision: reviewDecision('decision').notNull(),
+    note: text('note').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('review_decisions_request_reviewer_uq').on(
+      table.reviewRequestId,
+      table.reviewerUserId,
+    ),
+    index('review_decisions_version_created_idx').on(
+      table.organizationId,
+      table.versionId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const reviewThreads = pgTable(
+  'review_threads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    reviewRequestId: uuid('review_request_id')
+      .references(() => reviewRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    comparisonId: uuid('comparison_id').references(
+      () => versionComparisons.id,
+      { onDelete: 'restrict' },
+    ),
+    anchorType: reviewAnchorType('anchor_type').notNull(),
+    anchorChangeId: text('anchor_change_id'),
+    anchorPath: text('anchor_path'),
+    anchorLabel: text('anchor_label'),
+    anchorCategory: text('anchor_category'),
+    status: reviewThreadStatus('status').default('open').notNull(),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    index('review_threads_request_created_idx').on(
+      table.reviewRequestId,
+      table.createdAt,
+      table.id,
+    ),
+    uniqueIndex('review_threads_organization_id_uq').on(
+      table.organizationId,
+      table.id,
+    ),
+    index('review_threads_anchor_idx').on(
+      table.comparisonId,
+      table.anchorChangeId,
+    ),
+    check(
+      'review_threads_anchor_ck',
+      sql`(${table.anchorType} = 'general' and ${table.comparisonId} is null
+            and ${table.anchorChangeId} is null and ${table.anchorPath} is null
+            and ${table.anchorLabel} is null and ${table.anchorCategory} is null)
+          or (${table.anchorType} = 'comparison_change' and ${table.comparisonId} is not null
+            and ${table.anchorChangeId} ~ '^[0-9a-f]{64}$' and ${table.anchorPath} is not null
+            and ${table.anchorLabel} is not null
+            and ${table.anchorCategory} in ('content', 'feature', 'structure', 'validation'))`,
+    ),
+    check(
+      'review_threads_resolution_ck',
+      sql`(${table.status} = 'open' and ${table.resolvedAt} is null and ${table.resolvedByUserId} is null)
+          or (${table.status} = 'resolved' and ${table.resolvedAt} is not null and ${table.resolvedByUserId} is not null)`,
+    ),
+  ],
+);
+
+export const reviewComments = pgTable(
+  'review_comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    threadId: uuid('thread_id')
+      .references(() => reviewThreads.id, { onDelete: 'cascade' })
+      .notNull(),
+    authorUserId: uuid('author_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('review_comments_thread_created_idx').on(
+      table.threadId,
+      table.createdAt,
+      table.id,
     ),
   ],
 );
