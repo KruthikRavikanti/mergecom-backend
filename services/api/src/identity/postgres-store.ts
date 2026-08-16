@@ -9,6 +9,7 @@ import {
   type InvitationRecord,
   type OidcTransactionInput,
   type OidcTransactionRecord,
+  type OfficeSessionExchange,
   type SessionMaterial,
 } from './store';
 import type {
@@ -85,6 +86,7 @@ export class PostgresIdentityStore implements IdentityStore {
          from sessions s
          join users u on u.id = s.user_id
         where s.token_hash = $1
+          and s.provider_session_id is distinct from 'mergecom:office-handoff'
           and s.revoked_at is null
           and s.expires_at > $2
           and s.absolute_expires_at > $2
@@ -181,6 +183,74 @@ export class PostgresIdentityStore implements IdentityStore {
       [handleHash, now],
     );
     return result.rows[0] ?? null;
+  }
+
+  public async createOfficeSessionHandoff(input: {
+    handoff: SessionMaterial;
+    now: Date;
+    sourceSessionId: string;
+  }): Promise<boolean> {
+    const result = await this.pool.query(
+      `insert into sessions
+        (user_id, active_organization_id, token_hash, csrf_token_hash,
+         provider_session_id, expires_at, absolute_expires_at)
+       select user_id, active_organization_id, $2, $3,
+              'mergecom:office-handoff', $4, $5
+         from sessions
+        where id = $1 and revoked_at is null
+          and expires_at > $6 and absolute_expires_at > $6`,
+      [
+        input.sourceSessionId,
+        input.handoff.tokenHash,
+        input.handoff.csrfTokenHash,
+        input.handoff.expiresAt,
+        input.handoff.absoluteExpiresAt,
+        input.now,
+      ],
+    );
+    return result.rowCount === 1;
+  }
+
+  public async consumeOfficeSessionHandoff(input: {
+    handoffTokenHash: string;
+    now: Date;
+    session: SessionMaterial;
+  }): Promise<OfficeSessionExchange | null> {
+    const result = await this.pool.query<{
+      active_organization_id: string | null;
+      session_id: string;
+      user_id: string;
+    }>(
+      `update sessions
+          set token_hash = $2, csrf_token_hash = $3,
+              provider_session_id = null, expires_at = $4,
+              absolute_expires_at = $5, last_seen_at = $6, updated_at = $6
+        where token_hash = $1
+          and provider_session_id = 'mergecom:office-handoff'
+          and revoked_at is null and expires_at > $6
+          and absolute_expires_at > $6
+          and exists (
+            select 1 from users u
+             where u.id = sessions.user_id and u.disabled_at is null
+          )
+      returning id as session_id, user_id, active_organization_id`,
+      [
+        input.handoffTokenHash,
+        input.session.tokenHash,
+        input.session.csrfTokenHash,
+        input.session.expiresAt,
+        input.session.absoluteExpiresAt,
+        input.now,
+      ],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          organizationId: row.active_organization_id,
+          sessionId: row.session_id,
+          userId: row.user_id,
+        }
+      : null;
   }
 
   public async authenticateIdentity(input: {

@@ -122,9 +122,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   });
 
   await app.register(cookie);
+  const allowedBrowserOrigins = [
+    ...new Set([config.webOrigin, config.officeAddinOrigin]),
+  ];
   await app.register(cors, {
     credentials: true,
-    origin: config.webOrigin,
+    origin: allowedBrowserOrigins,
   });
   await app.register(rateLimit, { global: false });
 

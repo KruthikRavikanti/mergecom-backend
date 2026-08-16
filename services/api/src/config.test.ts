@@ -21,4 +21,26 @@ describe('identity configuration', () => {
     expect(safeReturnTo('https://attacker.invalid')).toBe('/app');
     expect(safeReturnTo('//attacker.invalid')).toBe('/app');
   });
+
+  it('accepts only the exact Office authentication callback URL', () => {
+    const origin = 'https://office.mergecom.test';
+    expect(
+      safeReturnTo(
+        'https://office.mergecom.test/office-auth.html?callback=1',
+        origin,
+      ),
+    ).toBe('https://office.mergecom.test/office-auth.html?callback=1');
+    expect(
+      safeReturnTo(
+        'https://office.mergecom.test/office-auth.html?callback=1&next=evil',
+        origin,
+      ),
+    ).toBe('/app');
+    expect(
+      safeReturnTo(
+        'https://office.mergecom.test.evil/office-auth.html?callback=1',
+        origin,
+      ),
+    ).toBe('/app');
+  });
 });

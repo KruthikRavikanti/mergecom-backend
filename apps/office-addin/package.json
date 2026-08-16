@@ -20,6 +20,7 @@
     "vitest": "4.0.16"
   },
   "dependencies": {
+    "@mergecom/contracts": "workspace:*",
     "@mergecom/office-core": "workspace:*",
     "lucide": "1.31.0"
   }

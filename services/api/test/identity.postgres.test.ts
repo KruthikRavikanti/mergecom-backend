@@ -38,6 +38,7 @@ describe.runIf(runInfrastructureTests)('identity and tenant API', () => {
     exposeInvitationLinks: true,
     invitationMail: null,
     nodeEnv: 'test',
+    officeAddinOrigin: 'https://localhost:5176',
     oidc: null,
     sessionAbsoluteMilliseconds: 24 * 60 * 60 * 1000,
     sessionIdleMilliseconds: 60 * 60 * 1000,
@@ -320,11 +321,26 @@ describe.runIf(runInfrastructureTests)('identity and tenant API', () => {
 
     const role = await app.inject({
       body: { role: 'reviewer' },
-      headers: secureHeaders(owner),
+      headers: {
+        ...secureHeaders(owner),
+        origin: 'https://localhost:5176',
+      },
       method: 'PATCH',
       url: `/v1/organizations/${organizationA}/memberships/${viewerMembership}/role`,
     });
     expect(role.statusCode).toBe(204);
+
+    const hostileOrigin = await app.inject({
+      body: { role: 'viewer' },
+      headers: {
+        ...secureHeaders(owner),
+        origin: 'https://localhost.attacker.example',
+      },
+      method: 'PATCH',
+      url: `/v1/organizations/${organizationA}/memberships/${viewerMembership}/role`,
+    });
+    expect(hostileOrigin.statusCode).toBe(403);
+    expect(hostileOrigin.json().code).toBe('csrf_rejected');
 
     const suspend = await app.inject({
       body: { status: 'suspended' },
@@ -389,6 +405,65 @@ describe.runIf(runInfrastructureTests)('identity and tenant API', () => {
     ).toBe(401);
 
     const second = await login('alpha-owner');
+    const handoff = await app.inject({
+      headers: {
+        ...secureHeaders(second),
+        origin: 'https://localhost:5176',
+      },
+      method: 'POST',
+      url: '/auth/office/handoff',
+    });
+    expect(handoff.statusCode, handoff.payload).toBe(200);
+    const handoffCode = handoff.json().code as string;
+    expect(handoffCode).toMatch(/^office_handoff_[A-Za-z0-9_-]{43}$/u);
+    const unresolvedHandoff = await app.inject({
+      headers: { cookie: `mergecom_session=${handoffCode}` },
+      method: 'GET',
+      url: '/v1/me',
+    });
+    expect(unresolvedHandoff.statusCode).toBe(401);
+
+    const hostileExchange = await app.inject({
+      body: { code: handoffCode },
+      headers: { origin: 'https://localhost.attacker.example' },
+      method: 'POST',
+      url: '/auth/office/exchange',
+    });
+    expect(hostileExchange.statusCode).toBe(403);
+
+    const exchange = await app.inject({
+      body: { code: handoffCode },
+      headers: { origin: 'https://localhost:5176' },
+      method: 'POST',
+      url: '/auth/office/exchange',
+    });
+    expect(exchange.statusCode, exchange.payload).toBe(200);
+    const exchangeSetCookie = exchange.headers['set-cookie'];
+    const officeCookie = (
+      Array.isArray(exchangeSetCookie)
+        ? exchangeSetCookie[0]
+        : exchangeSetCookie
+    )?.split(';')[0];
+    expect(officeCookie).toBeTruthy();
+    expect(
+      (
+        await app.inject({
+          headers: { cookie: officeCookie! },
+          method: 'GET',
+          url: '/v1/me',
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const replay = await app.inject({
+      body: { code: handoffCode },
+      headers: { origin: 'https://localhost:5176' },
+      method: 'POST',
+      url: '/auth/office/exchange',
+    });
+    expect(replay.statusCode).toBe(400);
+    expect(replay.json().code).toBe('invalid_office_handoff');
+
     const rawToken = second.cookie.split('=').slice(1).join('=');
     await database.pool.query(
       `update sessions set expires_at = now() - interval '1 minute'

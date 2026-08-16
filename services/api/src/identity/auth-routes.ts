@@ -31,6 +31,9 @@ const DevelopmentIdentity = Type.Union([
   Type.Literal('beta-owner'),
 ]);
 
+const OFFICE_HANDOFF_PREFIX = 'office_handoff_';
+const OFFICE_HANDOFF_MILLISECONDS = 2 * 60 * 1000;
+
 export interface IdentityRuntime {
   config: ApiConfig;
   invitationMailer: InvitationMailer | null;
@@ -80,7 +83,10 @@ export function registerAuthRoutes(
         expiresAt: new Date(Date.now() + 10 * 60 * 1000),
         handleHash: hashToken(handle),
         nonce: authorization.nonce,
-        returnTo: safeReturnTo(request.query.returnTo),
+        returnTo: safeReturnTo(
+          request.query.returnTo,
+          runtime.config.officeAddinOrigin,
+        ),
         state: authorization.state,
       });
       return reply
@@ -103,6 +109,7 @@ export function registerAuthRoutes(
     async (request, reply) => {
       const loginUrl = new URL('/login', runtime.config.webOrigin);
       const handle = request.cookies[oidcCookieName(runtime.config)];
+      let transactionReturnTo: string | null = null;
       try {
         if (!handle || !runtime.oidcClient)
           throw new Error('Missing login state.');
@@ -111,6 +118,7 @@ export function registerAuthRoutes(
           new Date(),
         );
         if (!transaction) throw new Error('Expired or replayed login state.');
+        transactionReturnTo = transaction.returnTo;
         const callbackUrl = new URL(
           request.raw.url ?? '/auth/callback',
           runtime.config.apiPublicOrigin,
@@ -158,14 +166,145 @@ export function registerAuthRoutes(
           result: 'failed',
           targetType: 'identity',
         });
-        loginUrl.searchParams.set('error', 'authentication_failed');
+        const errorUrl = officeAuthenticationReturnUrl(
+          transactionReturnTo,
+          runtime.config.officeAddinOrigin,
+        );
+        (errorUrl ?? loginUrl).searchParams.set(
+          'error',
+          'authentication_failed',
+        );
         return reply
           .clearCookie(
             oidcCookieName(runtime.config),
             cookieOptions(runtime.config),
           )
-          .redirect(loginUrl.href);
+          .redirect((errorUrl ?? loginUrl).href);
       }
+    },
+  );
+
+  typed.post(
+    '/auth/office/handoff',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+      preHandler: [security.requireSession, security.requireCsrf],
+      schema: {
+        headers: Type.Object({ 'x-csrf-token': Type.String() }),
+        response: {
+          200: Type.Object({
+            code: Type.String(),
+            expiresAt: Type.String({ format: 'date-time' }),
+          }),
+          401: ErrorResponse,
+          403: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const context = request.sessionContext;
+      if (!context) return;
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + OFFICE_HANDOFF_MILLISECONDS);
+      const code = `${OFFICE_HANDOFF_PREFIX}${randomToken()}`;
+      const created = await runtime.store.createOfficeSessionHandoff({
+        handoff: {
+          absoluteExpiresAt: expiresAt,
+          csrfTokenHash: hashToken(randomToken()),
+          expiresAt,
+          tokenHash: hashToken(code),
+        },
+        now,
+        sourceSessionId: context.sessionId,
+      });
+      if (!created) {
+        return sendApiError(
+          reply,
+          401,
+          'unauthenticated',
+          'Authentication is required.',
+        );
+      }
+      await runtime.store.appendAuditEvent({
+        action: 'auth.office_handoff_created',
+        actorUserId: context.user.id,
+        organizationId: context.activeMembership?.organizationId,
+        requestId: request.id,
+        result: 'succeeded',
+        targetType: 'session',
+      });
+      return { code, expiresAt: expiresAt.toISOString() };
+    },
+  );
+
+  typed.post(
+    '/auth/office/exchange',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+      schema: {
+        body: Type.Object({
+          code: Type.String({ minLength: 50, maxLength: 100 }),
+        }),
+        response: {
+          200: Type.Object({ authenticated: Type.Literal(true) }),
+          400: ErrorResponse,
+          403: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.headers.origin !== runtime.config.officeAddinOrigin) {
+        return sendApiError(
+          reply,
+          403,
+          'origin_rejected',
+          'The Office session origin was rejected.',
+        );
+      }
+      if (!request.body.code.startsWith(OFFICE_HANDOFF_PREFIX)) {
+        await auditRejectedOfficeHandoff(runtime.store, request.id);
+        return sendApiError(
+          reply,
+          400,
+          'invalid_office_handoff',
+          'The Office session handoff is invalid or expired.',
+        );
+      }
+      const now = new Date();
+      const session = createSessionMaterial(
+        now,
+        runtime.config.sessionIdleMilliseconds,
+        runtime.config.sessionAbsoluteMilliseconds,
+      );
+      const exchange = await runtime.store.consumeOfficeSessionHandoff({
+        handoffTokenHash: hashToken(request.body.code),
+        now,
+        session: session.material,
+      });
+      if (!exchange) {
+        await auditRejectedOfficeHandoff(runtime.store, request.id);
+        return sendApiError(
+          reply,
+          400,
+          'invalid_office_handoff',
+          'The Office session handoff is invalid or expired.',
+        );
+      }
+      await runtime.store.appendAuditEvent({
+        action: 'auth.office_handoff_exchanged',
+        actorUserId: exchange.userId,
+        organizationId: exchange.organizationId,
+        requestId: request.id,
+        result: 'succeeded',
+        targetId: exchange.sessionId,
+        targetType: 'session',
+      });
+      return reply
+        .setCookie(sessionCookieName(runtime.config), session.token, {
+          ...cookieOptions(runtime.config),
+          maxAge: Math.floor(runtime.config.sessionAbsoluteMilliseconds / 1000),
+        })
+        .send({ authenticated: true as const });
     },
   );
 
@@ -251,4 +390,33 @@ export function registerAuthRoutes(
         .send({ redirectTo });
     },
   );
+}
+
+function officeAuthenticationReturnUrl(
+  returnTo: string | null,
+  officeAddinOrigin: string,
+): URL | null {
+  if (!returnTo) return null;
+  try {
+    const candidate = new URL(returnTo);
+    return candidate.origin === officeAddinOrigin &&
+      candidate.pathname === '/office-auth.html' &&
+      candidate.searchParams.get('callback') === '1'
+      ? candidate
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function auditRejectedOfficeHandoff(
+  store: IdentityStore,
+  requestId: string,
+): Promise<void> {
+  await store.appendAuditEvent({
+    action: 'auth.office_handoff_rejected',
+    requestId,
+    result: 'failed',
+    targetType: 'session',
+  });
 }

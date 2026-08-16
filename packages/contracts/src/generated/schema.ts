@@ -87,6 +87,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/office/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Creates a short-lived, one-use handoff from an authenticated browser session. */
+        post: operations["createOfficeSessionHandoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/office/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Atomically exchanges a one-use Office handoff for an HttpOnly session cookie. */
+        post: operations["exchangeOfficeSessionHandoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -1705,6 +1739,65 @@ export interface operations {
             };
             403: components["responses"]["ApiError"];
             404: components["responses"]["ApiError"];
+        };
+    };
+    createOfficeSessionHandoff: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Office session handoff created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                    };
+                };
+            };
+            401: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
+        };
+    };
+    exchangeOfficeSessionHandoff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Office session established. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        authenticated: true;
+                    };
+                };
+            };
+            400: components["responses"]["ApiError"];
+            403: components["responses"]["ApiError"];
         };
     };
     logout: {

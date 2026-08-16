@@ -9,6 +9,26 @@ const packageBytes = Uint8Array.from([
 ]);
 
 function createOfficeMock(overrides: Record<string, unknown> = {}) {
+  const savedSettings = new Map<string, unknown>();
+  const dialogHandlers = new Map<
+    string,
+    (event: { error?: number; message?: string }) => void
+  >();
+  const closeDialog = vi.fn();
+  const displayDialogAsync = vi.fn(
+    (_url: string, _options: object, callback: (result: object) => void) => {
+      callback({
+        status: 'succeeded',
+        value: {
+          addEventHandler: (
+            eventType: string,
+            handler: (event: { error?: number; message?: string }) => void,
+          ) => dialogHandlers.set(eventType, handler),
+          close: closeDialog,
+        },
+      });
+    },
+  );
   const closeAsync = vi.fn((callback: (result: object) => void) => {
     callback({ status: 'succeeded', value: undefined });
   });
@@ -41,6 +61,10 @@ function createOfficeMock(overrides: Record<string, unknown> = {}) {
   return {
     api: {
       AsyncResultStatus: { Succeeded: 'succeeded' },
+      EventType: {
+        DialogEventReceived: 'dialog-event',
+        DialogMessageReceived: 'dialog-message',
+      },
       FileType: { Compressed: 'compressed' },
       HostType: {
         Excel: 'Excel',
@@ -58,16 +82,31 @@ function createOfficeMock(overrides: Record<string, unknown> = {}) {
       context: {
         document: {
           getFileAsync,
+          settings: {
+            get: vi.fn((name: string) => savedSettings.get(name) ?? null),
+            remove: vi.fn((name: string) => savedSettings.delete(name)),
+            saveAsync: vi.fn((callback: (result: object) => void) => {
+              callback({ status: 'succeeded', value: undefined });
+            }),
+            set: vi.fn((name: string, value: unknown) => {
+              savedSettings.set(name, value);
+            }),
+          },
           url: 'https://contoso.example/files/Forecast%20Q3.xlsx',
         },
         requirements: { isSetSupported: vi.fn().mockReturnValue(true) },
+        ui: { displayDialogAsync, openBrowserWindow: vi.fn() },
       },
       onReady: vi.fn().mockResolvedValue({ host: 'Excel', platform: 'PC' }),
       ...overrides,
     },
     closeAsync,
+    closeDialog,
+    dialogHandlers,
+    displayDialogAsync,
     getFileAsync,
     getSliceAsync,
+    savedSettings,
   };
 }
 
@@ -138,6 +177,66 @@ describe('detectOfficeRuntime', () => {
     await expect(runtime.provider.openCompressedFile(1024)).rejects.toThrow(
       'Document is busy.',
     );
+  });
+
+  it('persists and clears non-secret document binding identifiers', async () => {
+    const office = createOfficeMock();
+    const runtime = await detectOfficeRuntime(office.api);
+    if (runtime === null) throw new Error('Expected an Office runtime.');
+    const binding = {
+      documentId: '60000000-0000-4000-8000-000000000002',
+      documentKind: 'spreadsheet' as const,
+      organizationId: '10000000-0000-4000-8000-000000000001',
+      projectId: '40000000-0000-4000-8000-000000000001',
+      schemaVersion: 1 as const,
+    };
+
+    await runtime.bindingStore.save(binding);
+    expect(runtime.bindingStore.load()).toEqual(binding);
+    await runtime.bindingStore.clear();
+    expect(runtime.bindingStore.load()).toBeNull();
+  });
+
+  it('accepts a valid one-use session code from the Office dialog', async () => {
+    const office = createOfficeMock();
+    const runtime = await detectOfficeRuntime(office.api);
+    if (runtime === null) throw new Error('Expected an Office runtime.');
+
+    const authentication = runtime.requestAuthentication(
+      'https://localhost:5176/office-auth.html',
+    );
+    expect(office.displayDialogAsync).toHaveBeenCalledWith(
+      'https://localhost:5176/office-auth.html',
+      { height: 60, promptBeforeOpen: false, width: 40 },
+      expect.any(Function),
+    );
+    office.dialogHandlers.get('dialog-message')?.({
+      message: JSON.stringify({
+        code: `office_handoff_${'a'.repeat(43)}`,
+        type: 'mergecom-office-session',
+      }),
+    });
+
+    await expect(authentication).resolves.toBe(
+      `office_handoff_${'a'.repeat(43)}`,
+    );
+    expect(office.closeDialog).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an invalid Office dialog message', async () => {
+    const office = createOfficeMock();
+    const runtime = await detectOfficeRuntime(office.api);
+    if (runtime === null) throw new Error('Expected an Office runtime.');
+
+    const authentication = runtime.requestAuthentication(
+      'https://localhost:5176/office-auth.html',
+    );
+    office.dialogHandlers.get('dialog-message')?.({
+      message: JSON.stringify({ code: 'stolen-session', type: 'other' }),
+    });
+
+    await expect(authentication).rejects.toThrow('invalid response');
+    expect(office.closeDialog).toHaveBeenCalledOnce();
   });
 });
 

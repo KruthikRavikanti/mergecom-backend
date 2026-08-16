@@ -5,6 +5,12 @@ import type {
   OfficePlatform,
 } from '@mergecom/office-core';
 
+import {
+  DOCUMENT_BINDING_SETTING,
+  type DocumentBindingStore,
+  parseDocumentBinding,
+} from './document-binding';
+
 type OfficeToken = number | string;
 
 interface OfficeErrorLike {
@@ -20,6 +26,14 @@ interface OfficeAsyncResult<T> {
 interface OfficeSliceLike {
   data: unknown;
   index: number;
+}
+
+interface OfficeDialogLike {
+  addEventHandler(
+    eventType: OfficeToken,
+    handler: (event: { error?: number; message?: string }) => void,
+  ): void;
+  close(): void;
 }
 
 interface OfficeFileLike {
@@ -38,11 +52,21 @@ interface OfficeDocumentLike {
     options: { sliceSize: number },
     callback: (result: OfficeAsyncResult<OfficeFileLike>) => void,
   ): void;
+  settings: {
+    get(name: string): unknown;
+    remove(name: string): void;
+    saveAsync(callback: (result: OfficeAsyncResult<void>) => void): void;
+    set(name: string, value: unknown): void;
+  };
   url: string | null;
 }
 
 interface OfficeApi {
   AsyncResultStatus: { Succeeded: OfficeToken };
+  EventType: {
+    DialogEventReceived: OfficeToken;
+    DialogMessageReceived: OfficeToken;
+  };
   FileType: { Compressed: OfficeToken };
   HostType: {
     Excel: OfficeToken;
@@ -62,6 +86,18 @@ interface OfficeApi {
     requirements: {
       isSetSupported(name: string, minimumVersion: string): boolean;
     };
+    ui?: {
+      displayDialogAsync?(
+        url: string,
+        options: {
+          height: number;
+          promptBeforeOpen: boolean;
+          width: number;
+        },
+        callback: (result: OfficeAsyncResult<OfficeDialogLike>) => void,
+      ): void;
+      openBrowserWindow(url: string): void;
+    };
   };
   onReady(): Promise<{
     host: OfficeToken | null;
@@ -70,11 +106,15 @@ interface OfficeApi {
 }
 
 export interface OfficeRuntime {
+  bindingStore: DocumentBindingStore;
   compressedFileAvailable: boolean;
+  documentUrl: string;
   fileName: string | null;
   host: OfficeHost;
   platform: OfficePlatform;
   provider: OfficeCompressedFileProvider;
+  openBrowserWindow(url: string): void;
+  requestAuthentication(url: string): Promise<string>;
 }
 
 const EXTENSIONS_BY_HOST: Readonly<Record<OfficeHost, readonly string[]>> = {
@@ -100,11 +140,20 @@ export async function detectOfficeRuntime(
   );
 
   return {
+    bindingStore: createDocumentBindingStore(office),
     compressedFileAvailable,
+    documentUrl: office.context.document.url ?? '',
     fileName: getSavedFileName(office.context.document.url, host),
     host,
     platform,
     provider: createCompressedFileProvider(office),
+    openBrowserWindow: (url) => {
+      if (!office.context.ui) {
+        throw new Error('This Office runtime cannot open the sign-in window.');
+      }
+      office.context.ui.openBrowserWindow(url);
+    },
+    requestAuthentication: (url) => requestAuthentication(office, url),
   };
 }
 
@@ -133,6 +182,136 @@ function createCompressedFileProvider(
         );
       }),
   };
+}
+
+function createDocumentBindingStore(office: OfficeApi): DocumentBindingStore {
+  const settings = office.context.document.settings;
+  return {
+    clear: async () => {
+      settings.remove(DOCUMENT_BINDING_SETTING);
+      await saveSettings(office);
+    },
+    load: () => parseDocumentBinding(settings.get(DOCUMENT_BINDING_SETTING)),
+    save: async (binding) => {
+      settings.set(DOCUMENT_BINDING_SETTING, binding);
+      await saveSettings(office);
+    },
+  };
+}
+
+function requestAuthentication(
+  office: OfficeApi,
+  url: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ui = office.context.ui;
+    if (!ui || typeof ui.displayDialogAsync !== 'function') {
+      reject(new Error('This Office runtime cannot open the sign-in dialog.'));
+      return;
+    }
+    ui.displayDialogAsync(
+      url,
+      { height: 60, promptBeforeOpen: false, width: 40 },
+      (result) => {
+        if (result.status !== office.AsyncResultStatus.Succeeded) {
+          reject(toOfficeError('Open Office sign-in dialog', result.error));
+          return;
+        }
+        const dialog = result.value;
+        let settled = false;
+        const finish = (operation: () => void) => {
+          if (settled) return;
+          settled = true;
+          dialog.close();
+          operation();
+        };
+        dialog.addEventHandler(
+          office.EventType.DialogMessageReceived,
+          (event) => {
+            try {
+              const message = parseAuthenticationMessage(event.message);
+              if (message.type === 'mergecom-office-auth-error') {
+                finish(() => reject(new Error(message.message)));
+                return;
+              }
+              finish(() => resolve(message.code));
+            } catch (error) {
+              finish(() =>
+                reject(
+                  error instanceof Error
+                    ? error
+                    : new Error('Office sign-in returned an invalid response.'),
+                ),
+              );
+            }
+          },
+        );
+        dialog.addEventHandler(
+          office.EventType.DialogEventReceived,
+          (event) => {
+            finish(() =>
+              reject(
+                new Error(
+                  event.error
+                    ? `Office sign-in dialog closed (${event.error}).`
+                    : 'Office sign-in dialog closed before authentication.',
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  });
+}
+
+type AuthenticationMessage =
+  | { code: string; type: 'mergecom-office-session' }
+  | { message: string; type: 'mergecom-office-auth-error' };
+
+function parseAuthenticationMessage(
+  value: string | undefined,
+): AuthenticationMessage {
+  if (!value || value.length > 500) {
+    throw new Error('Office sign-in returned an invalid response.');
+  }
+  const parsed: unknown = JSON.parse(value);
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    'type' in parsed &&
+    parsed.type === 'mergecom-office-session' &&
+    'code' in parsed &&
+    typeof parsed.code === 'string' &&
+    /^office_handoff_[A-Za-z0-9_-]{43}$/u.test(parsed.code)
+  ) {
+    return { code: parsed.code, type: parsed.type };
+  }
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    'type' in parsed &&
+    parsed.type === 'mergecom-office-auth-error' &&
+    'message' in parsed &&
+    typeof parsed.message === 'string' &&
+    parsed.message.length > 0 &&
+    parsed.message.length <= 200
+  ) {
+    return { message: parsed.message, type: parsed.type };
+  }
+  throw new Error('Office sign-in returned an invalid response.');
+}
+
+function saveSettings(office: OfficeApi): Promise<void> {
+  return new Promise((resolve, reject) => {
+    office.context.document.settings.saveAsync((result) => {
+      if (result.status === office.AsyncResultStatus.Succeeded) {
+        resolve();
+        return;
+      }
+      reject(toOfficeError('Save MergeCom document binding', result.error));
+    });
+  });
 }
 
 function wrapOfficeFile(

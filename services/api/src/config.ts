@@ -10,6 +10,7 @@ export interface ApiConfig {
     smtpUrl: string;
   } | null;
   nodeEnv: 'development' | 'production' | 'test';
+  officeAddinOrigin: string;
   oidc: {
     clientId: string;
     clientSecret?: string | undefined;
@@ -118,14 +119,19 @@ export function loadConfig(): ApiConfig {
   }
 
   const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
+  const officeAddinOrigin =
+    process.env.OFFICE_ADDIN_ORIGIN ?? 'https://localhost:5176';
   const apiPublicOrigin =
     process.env.API_PUBLIC_ORIGIN ?? 'http://localhost:3001';
   if (
     nodeEnv === 'production' &&
     (!webOrigin.startsWith('https://') ||
+      !officeAddinOrigin.startsWith('https://') ||
       !apiPublicOrigin.startsWith('https://'))
   ) {
-    throw new Error('Production web and API origins must use HTTPS.');
+    throw new Error(
+      'Production web, Office add-in, and API origins must use HTTPS.',
+    );
   }
 
   const exposeInvitationLinks = process.env.EXPOSE_INVITATION_LINKS
@@ -167,6 +173,7 @@ export function loadConfig(): ApiConfig {
         }
       : null,
     nodeEnv,
+    officeAddinOrigin,
     oidc:
       authMode === 'entra'
         ? {
@@ -183,8 +190,27 @@ export function loadConfig(): ApiConfig {
   };
 }
 
-export function safeReturnTo(value: string | undefined): string {
+export function safeReturnTo(
+  value: string | undefined,
+  officeAddinOrigin?: string,
+): string {
   if (!value) return '/app';
+  if (officeAddinOrigin) {
+    try {
+      const candidate = new URL(value);
+      if (
+        candidate.origin === officeAddinOrigin &&
+        candidate.pathname === '/office-auth.html' &&
+        candidate.searchParams.size === 1 &&
+        candidate.searchParams.get('callback') === '1' &&
+        candidate.hash === ''
+      ) {
+        return candidate.href;
+      }
+    } catch {
+      // Local application paths are validated below.
+    }
+  }
   if (!value.startsWith('/app') && !value.startsWith('/invite/')) return '/app';
   if (value.startsWith('//') || value.includes('\\')) return '/app';
   return value;

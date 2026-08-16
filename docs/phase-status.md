@@ -1,18 +1,60 @@
 # Phase status
 
+## Phase 13: Office document binding and exact version push
+
+Status: implementation complete on `phase-13/office-version-push`; pending owner
+review.
+
+- [x] The shared pane uses an Office dialog and two-minute atomic handoff to obtain
+  its own HttpOnly API session, shows explicit signed-out/workspace states, rejects
+  replay, and never stores an identity token.
+- [x] API CORS and CSRF accept only the configured web and exact Office origins;
+  hostile lookalike origins remain rejected.
+- [x] Linking embeds only versioned organization, project, document, and kind IDs in
+  the Office Settings property bag, then reauthorizes them against the active tenant
+  on every startup.
+- [x] Per-file base context uses a document-URL-scoped hashed local key, is accepted
+  only while the version remains authorized, and can be recovered for copies only by
+  an exact artifact hash match.
+- [x] Project and recursively nested document selection comes from the generated API
+  contract and excludes document kinds that do not match the active Office host.
+- [x] Exact capture drives idempotent single or multipart signed upload, progress,
+  cancellation, staged cleanup, finalize source `office_addin`, duplicate-byte
+  refusal, and required version notes.
+- [x] Created pushes advance the local base, while stale or unbased pushes are shown
+  as preserved conflicts and never as the latest version.
+- [x] The pane polls real processing state and opens authorized web history without
+  claiming to overwrite or replace the currently open Office file.
+- [x] Local HTTPS development proxies API and MinIO traffic without mixed content;
+  hosted signed URLs are not rewritten.
+- [x] Unit coverage exercises dialog validation, binding validation, base isolation,
+  grant rewriting, Office settings, exact single/multipart upload, provenance,
+  cancellation, and cleanup. Live desktop/mobile coverage exchanges and rejects
+  replayed handoffs, creates real records, and proves exact bytes survive Office
+  capture, MinIO upload, finalization, processing, and download.
+
+The contract is documented in `docs/product/office-version-push.md`; setup and
+failure recovery are in `docs/runbooks/office-addin.md`, and command evidence is in
+`docs/verification/phase-13-command-results.md`.
+
 ## Phase 12: Office host exact package capture
 
 Status: implementation complete on `phase-12/office-host-capture`; pending owner
 review.
 
-- [x] Word, Excel, and PowerPoint have separate schema-valid XML manifests with `ReadDocument` permission, the `CompressedFile` requirement, branded bitmap icons, and a trusted HTTPS task-pane source.
+- [x] Word, Excel, and PowerPoint have separate schema-valid XML manifests; Phase 13
+  corrected the whole-package permission to `ReadAllDocument` while retaining the
+  `CompressedFile` requirement, branded bitmap icons, and trusted HTTPS source.
 - [x] Office host and platform identity come from `Office.onReady`; query parameters only select the explicitly labeled non-Office browser preview.
 - [x] The shared capture primitive caps size before allocation, reads every slice in order, rejects wrong indexes, empty data, overruns, short totals, invalid ZIP signatures, and host/extension mismatches, and always closes the Office file handle.
 - [x] Captured package bytes receive a lowercase SHA-256, exact byte count, host, filename, and extension-derived media type before becoming available to a consumer.
 - [x] Runtime capability checks fail closed for unsupported platforms, missing compressed-file access, unsaved/unknown filenames, and `.xlsm` on Mac where Office omits VBA signature parts.
 - [x] iPad uses the documented 64 KiB slice limit; other accepted hosts use 4 MiB slices. Capture is capped at 100 MiB by default.
-- [x] Successful capture emits `mergecom:office-package-captured` and enables a local download of the same captured bytes; it does not claim that an API version was created.
-- [x] The prior query-only stale-base shell and destructive-sounding open actions are not treated as host integration. API session/upload, document binding, base-version state, and authorized open-latest behavior remain deferred.
+- [x] Successful capture emits `mergecom:office-package-captured`; Phase 13 now
+  consumes the exact result through API finalization instead of presenting a local
+  capture download as a version.
+- [x] API session/upload, document binding, and base-version state were deliberately
+  deferred here and completed in Phase 13. Authorized open-latest remains deferred.
 - [x] Core and adapter suites cover the byte boundary and callback bridge; HTTPS Playwright simulations cover success and explicit refusals on desktop and mobile without overflow.
 
 The behavior and support matrix are documented in

@@ -23,5 +23,5 @@
   <DefaultSettings>
     <SourceLocation DefaultValue="https://localhost:5176/" />
   </DefaultSettings>
-  <Permissions>ReadDocument</Permissions>
+  <Permissions>ReadAllDocument</Permissions>
 </OfficeApp>

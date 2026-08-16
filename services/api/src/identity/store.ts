@@ -31,6 +31,12 @@ export interface OidcTransactionRecord {
   state: string;
 }
 
+export interface OfficeSessionExchange {
+  organizationId: string | null;
+  sessionId: string;
+  userId: string;
+}
+
 export interface InvitationRecord {
   email: string;
   expiresAt: Date;
@@ -75,6 +81,11 @@ export interface IdentityStore {
     handleHash: string,
     now: Date,
   ): Promise<OidcTransactionRecord | null>;
+  consumeOfficeSessionHandoff(input: {
+    handoffTokenHash: string;
+    now: Date;
+    session: SessionMaterial;
+  }): Promise<OfficeSessionExchange | null>;
   createInvitation(input: {
     actorRole: OrganizationRole;
     actorUserId: string;
@@ -88,6 +99,11 @@ export interface IdentityStore {
     tokenHash: string;
   }): Promise<InvitationRecord>;
   createOidcTransaction(input: OidcTransactionInput): Promise<void>;
+  createOfficeSessionHandoff(input: {
+    handoff: SessionMaterial;
+    now: Date;
+    sourceSessionId: string;
+  }): Promise<boolean>;
   createSessionForDevelopmentIdentity(input: {
     now: Date;
     providerSubject: string;

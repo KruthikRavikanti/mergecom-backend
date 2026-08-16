@@ -79,6 +79,7 @@ function config(): ApiConfig {
     exposeInvitationLinks: true,
     invitationMail: null,
     nodeEnv: 'test',
+    officeAddinOrigin: 'https://localhost:5176',
     oidc: null,
     sessionAbsoluteMilliseconds: 24 * 60 * 60 * 1000,
     sessionIdleMilliseconds: 60 * 60 * 1000,

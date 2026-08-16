@@ -22,4 +22,35 @@ describe('API startup', () => {
       (await app.inject({ method: 'GET', url: '/health/ready' })).statusCode,
     ).toBe(200);
   });
+
+  it('allows only configured browser origins through CORS', async () => {
+    const app = await createApp({
+      readinessProbe: () => Promise.resolve({ database: 'ready' }),
+    });
+    apps.push(app);
+    await app.ready();
+
+    const office = await app.inject({
+      headers: {
+        origin: 'https://localhost:5176',
+        'access-control-request-method': 'POST',
+      },
+      method: 'OPTIONS',
+      url: '/v1/session/organization',
+    });
+    expect(office.statusCode).toBe(204);
+    expect(office.headers['access-control-allow-origin']).toBe(
+      'https://localhost:5176',
+    );
+
+    const hostile = await app.inject({
+      headers: {
+        origin: 'https://localhost.attacker.example',
+        'access-control-request-method': 'POST',
+      },
+      method: 'OPTIONS',
+      url: '/v1/session/organization',
+    });
+    expect(hostile.headers['access-control-allow-origin']).toBeUndefined();
+  });
 });

@@ -22,6 +22,7 @@ NODE_ENV=production
 AUTH_MODE=entra
 API_PUBLIC_ORIGIN=https://api.example.com
 WEB_ORIGIN=https://app.example.com
+OFFICE_ADDIN_ORIGIN=https://office.example.com
 OIDC_ISSUER=https://login.microsoftonline.com/TENANT_ID/v2.0
 OIDC_CLIENT_ID=APPLICATION_CLIENT_ID
 OIDC_CLIENT_SECRET=SECRET_MANAGER_VALUE
@@ -117,11 +118,17 @@ use the same not-found response as unknown resources.
 - Sessions have configurable idle and absolute expiry, are revoked on logout, and are
   revoked when the active membership is suspended or removed.
 - Mutations require the session-bound CSRF token returned by `/v1/me` and an exact
-  configured web origin.
+  configured web or Office add-in origin.
+- Office authentication uses the dialog API and an exact add-in callback URL. An
+  authenticated browser session may mint a two-minute, one-use, hash-only handoff;
+  the pane atomically rotates it into a normal HttpOnly session. A handoff cannot
+  resolve as a session before exchange, and replay is rejected.
 - Login, callback, local identity, invitation creation, and invitation acceptance have
-  endpoint rate limits.
+  endpoint rate limits. Office handoff creation and exchange are independently rate
+  limited.
 - Invitation and OIDC transaction values are stored only as SHA-256 hashes and are
-  consumed atomically to reject replay.
+  consumed atomically to reject replay; Office handoff codes follow the same
+  hash-only rule.
 - Production requires SMTP delivery and refuses to return invitation tokens. Local
   development may expose a one-time link for testing.
 
@@ -130,6 +137,7 @@ use the same not-found response as unknown resources.
 Audit records contain actor, organization, action, target identifier/type, result,
 request ID, timestamp, and low-risk policy metadata. They do not contain tokens,
   document contents, or invitation email bodies. Events cover organization creation,
-  login/logout/failure, invitation creation/acceptance/delivery failure, role changes,
-  suspension/reactivation/removal, project/folder/document mutations, project-team
-  changes, permission denial, and cross-tenant denial.
+  login/logout/failure, Office handoff creation/exchange/rejection, invitation
+  creation/acceptance/delivery failure, role changes, suspension/reactivation/removal,
+  project/folder/document mutations, project-team changes, permission denial, and
+  cross-tenant denial.

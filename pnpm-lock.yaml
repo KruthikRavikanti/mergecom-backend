@@ -50,6 +50,9 @@ importers:
 
   apps/office-addin:
     dependencies:
+      '@mergecom/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@mergecom/office-core':
         specifier: workspace:*
         version: link:../../packages/office-core

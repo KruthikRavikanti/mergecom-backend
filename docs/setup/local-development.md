@@ -76,6 +76,10 @@ at `https://localhost:5176`. Sideload exactly one host manifest from
 `manifest.powerpoint.xml`. See `docs/runbooks/office-addin.md` for the support matrix
 and refusal behavior.
 
+The API must use `OFFICE_ADDIN_ORIGIN=https://localhost:5176`. The task pane proxies
+`/api` to the local API and `/blob` to MinIO so its HTTPS runtime never sends mixed
+content. Sign in through the local web app, then retry the session in the pane.
+
 ## 6. Stop local infrastructure
 
 ```bash

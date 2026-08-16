@@ -87,10 +87,15 @@ export function createSecurityHandlers(runtime: SecurityRuntime) {
     const context = request.sessionContext;
     const csrfToken = request.headers['x-csrf-token'];
     const origin = request.headers.origin;
+    const allowedOrigins = new Set([
+      runtime.config.webOrigin,
+      runtime.config.officeAddinOrigin,
+    ]);
     if (
       !context ||
       typeof csrfToken !== 'string' ||
-      origin !== runtime.config.webOrigin ||
+      typeof origin !== 'string' ||
+      !allowedOrigins.has(origin) ||
       !secureEqual(csrfToken, context.csrfTokenHash)
     ) {
       sendApiError(

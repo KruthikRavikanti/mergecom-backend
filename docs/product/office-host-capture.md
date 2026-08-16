@@ -35,13 +35,14 @@ new platforms are refused until verified.
 On success the pane emits a `mergecom:office-package-captured` `CustomEvent`. Its
 detail is `{ bytes, descriptor }`, where `bytes` is the captured `Uint8Array` and the
 descriptor carries `contentLength`, `fileName`, `mediaType`, `sha256`, and
-`sourceHost`. The download control writes that same byte array to a local file.
+`sourceHost`. Phase 13 consumes this result through the immutable upload protocol;
+the task pane no longer presents a local capture as though it were a version.
 
 ## Deliberate limits
 
-- Capture does not upload to the API, create an immutable version, or associate a
-  document/base version. Those actions require an authenticated task-pane session
-  and an explicit binding contract.
+- The capture primitive itself does not authorize or persist a version. The Phase 13
+  task-pane workflow supplies the authenticated binding, base, upload, and finalize
+  boundaries described in `docs/product/office-version-push.md`.
 - Capture does not overwrite, clear, restore, or reopen the active Office document.
 - The browser preview has no file provider. Its host query parameter only changes
   preview copy and never enables capture.

@@ -2,7 +2,10 @@ import { readdir, readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const bundleRoot = fileURLToPath(new URL('../apps/web/dist/', import.meta.url));
+const bundleRoots = [
+  fileURLToPath(new URL('../apps/web/dist/', import.meta.url)),
+  fileURLToPath(new URL('../apps/office-addin/dist/', import.meta.url)),
+];
 const prohibited = [
   'Enter development demo',
   'mergecom.demo-session',
@@ -26,10 +29,12 @@ async function textFiles(directory) {
 }
 
 const matches = [];
-for (const path of await textFiles(bundleRoot)) {
-  const contents = await readFile(path, 'utf8');
-  for (const value of prohibited) {
-    if (contents.includes(value)) matches.push(`${value} in ${path}`);
+for (const bundleRoot of bundleRoots) {
+  for (const path of await textFiles(bundleRoot)) {
+    const contents = await readFile(path, 'utf8');
+    for (const value of prohibited) {
+      if (contents.includes(value)) matches.push(`${value} in ${path}`);
+    }
   }
 }
 
@@ -39,4 +44,6 @@ if (matches.length) {
   );
 }
 
-console.log('Production bundle excludes development authentication material.');
+console.log(
+  'Web and Office production bundles exclude development authentication material.',
+);
