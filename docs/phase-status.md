@@ -1,5 +1,25 @@
 # Phase status
 
+## Phase 12: Office host exact package capture
+
+Status: implementation complete on `phase-12/office-host-capture`; pending owner
+review.
+
+- [x] Word, Excel, and PowerPoint have separate schema-valid XML manifests with `ReadDocument` permission, the `CompressedFile` requirement, branded bitmap icons, and a trusted HTTPS task-pane source.
+- [x] Office host and platform identity come from `Office.onReady`; query parameters only select the explicitly labeled non-Office browser preview.
+- [x] The shared capture primitive caps size before allocation, reads every slice in order, rejects wrong indexes, empty data, overruns, short totals, invalid ZIP signatures, and host/extension mismatches, and always closes the Office file handle.
+- [x] Captured package bytes receive a lowercase SHA-256, exact byte count, host, filename, and extension-derived media type before becoming available to a consumer.
+- [x] Runtime capability checks fail closed for unsupported platforms, missing compressed-file access, unsaved/unknown filenames, and `.xlsm` on Mac where Office omits VBA signature parts.
+- [x] iPad uses the documented 64 KiB slice limit; other accepted hosts use 4 MiB slices. Capture is capped at 100 MiB by default.
+- [x] Successful capture emits `mergecom:office-package-captured` and enables a local download of the same captured bytes; it does not claim that an API version was created.
+- [x] The prior query-only stale-base shell and destructive-sounding open actions are not treated as host integration. API session/upload, document binding, base-version state, and authorized open-latest behavior remain deferred.
+- [x] Core and adapter suites cover the byte boundary and callback bridge; HTTPS Playwright simulations cover success and explicit refusals on desktop and mobile without overflow.
+
+The behavior and support matrix are documented in
+`docs/product/office-host-capture.md`; local certificates, manifest validation, and
+sideloading are in `docs/runbooks/office-addin.md`, and command evidence is in
+`docs/verification/phase-12-command-results.md`.
+
 ## Phase 11: Excel conflict analysis and safe merge
 
 Status: implementation complete on `phase-11/excel-merge`; pending owner review.

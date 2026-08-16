@@ -8,7 +8,7 @@ Phase 1 created the canonical repository structure and moved evidence without ca
 | `Mergecom V1/` | `legacy/office-spikes/word/` | Preserved as excluded evidence; body-clear restore and body OOXML remain prohibited product paths | 1 complete |
 | `Mergecom V1 PowerPoint/` | `legacy/office-spikes/powerpoint/` | Preserved as excluded evidence; reconstruction pull remains prohibited | 1 complete |
 | `Mergecom V2 Excel/` | `legacy/office-spikes/excel/` | Preserved as excluded evidence; worksheet replacement pull remains prohibited | 1 complete |
-| Three add-in webpack/manifests | `apps/office-addin/` | Shared task-pane shell created; active host manifests and adapters remain Phase 3 work | 1 foundation complete |
+| Three add-in webpack/manifests | `apps/office-addin/` | Replaced with one shared task pane, real Office.js host adapter, and separately validated Word, Excel, and PowerPoint manifests | 12 capture complete |
 | `server.js` | `legacy/server-prototype/` | Archived as behavior evidence; excluded from production workspace and CI | 1 complete |
 | Root Express dependencies | `services/api/` | Replaced with Fastify/TypeBox/OpenAPI/Drizzle identity, project-resource, and immutable artifact/version boundaries; filesystem handlers were not ported | 4 complete |
 | Global `saved_*.json` | none | Delete; no migration of document data | 0 |
@@ -16,7 +16,7 @@ Phase 1 created the canonical repository structure and moved evidence without ca
 | Four npm lockfiles | root `pnpm-lock.yaml` | Replaced by one pnpm lockfile; legacy projects are not installable workspace packages | 1 complete |
 | Tracked `node_modules` | none | Delete and ignore; install from lockfiles | 0 |
 | Prototype semantic JSON | `packages/contracts` and immutable normalized snapshots | Document metadata and versioned read-only OOXML inventories are contracted; editing semantics remain a Phase 6 redesign and the prototype shape is not a product contract | 5 ingestion complete |
-| Add-in push/pull | `packages/office-core` and API artifact flow | Immutable upload, base-aware push, and exact-byte download are implemented; Office host capture and binding remain later-phase work | 4 storage complete |
+| Add-in push/pull | `packages/office-core` and API artifact flow | Exact compressed host capture is implemented with capability refusals; task-pane API upload, document binding, base context, and authorized open remain later-phase work | 12 capture complete |
 | Browser mock identity/members/settings | PostgreSQL through `services/api` | Removed; immutable IdP mappings, server sessions, tenant checks, and RBAC are authoritative | 2 complete |
 | Browser mock projects/teams/documents | PostgreSQL through `services/api` | Removed; tenant-linked projects, explicit project memberships, nested folders, document records, archives, and audits are authoritative | 3 complete |
 | Browser review labels and local comments | PostgreSQL through `services/api` | Removed; immutable-version requests, fixed assignments, append-only decisions/comments, exact comparison anchors, audit/outbox evidence, and the approved pointer are authoritative | 7 complete |

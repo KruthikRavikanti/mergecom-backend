@@ -11,7 +11,7 @@ The prototype demonstrates product intent but has no production trust boundary. 
 | File storage | Partial JSON overwrites | Immutable exact Office package bytes in S3-compatible storage with SHA-256 | 3 |
 | API | Express filesystem prototype | Fastify TypeScript API with TypeBox schemas, OpenAPI, Drizzle, and idempotency | 2-3 |
 | Processing | Inline extraction in add-ins | BullMQ/Redis orchestration and isolated ASP.NET Core document engine jobs | 5 |
-| Office capture | Body or partial semantic reconstruction | Exact compressed package capture; semantic extraction only as derived data | 3-5 |
+| Office capture | Bounded exact compressed capture with explicit host/platform refusals; no reconstruction path is active | Bind captured bytes to authorized API upload and base-version context without weakening the capture invariant | 12 capture complete |
 | Compare | UI representation only | Versioned Office-aware normalized snapshots and persisted typed diffs | 6-7 |
 | Pull/download | Reconstructed or placeholder content | Authorized retrieval of exact immutable artifact bytes | 3-4 |
 | Restore | Destructive replacement | New version pointing to an authorized older artifact; history preserved | 4 |

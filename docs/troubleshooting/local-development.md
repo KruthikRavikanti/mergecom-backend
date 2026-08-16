@@ -21,7 +21,7 @@ retry the endpoint. Liveness may still return 200 because the process itself is 
 
 ## Ports are already in use
 
-The default ports are `5173`, `5174`, `3001`, `3002`, `3003`, `5432`, `6379`, `9000`,
+The default ports are `5173`, `5176`, `3001`, `3002`, `3003`, `5432`, `6379`, `9000`,
 `9001`, `1025`, and `8025`. Stop the conflicting process or update the corresponding
 service environment value and Compose mapping together.
 

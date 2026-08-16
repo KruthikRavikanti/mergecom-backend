@@ -61,7 +61,22 @@ Mailpit receives local invitation messages through `SMTP_URL`. Non-production ca
 also return the one-time acceptance URL to an authorized owner/admin when
 `EXPOSE_INVITATION_LINKS=true`.
 
-## 5. Stop local infrastructure
+## 5. Office task pane
+
+The Office task pane is served separately over trusted HTTPS:
+
+```bash
+pnpm --filter @mergecom/office-addin dev
+pnpm --filter @mergecom/office-addin manifest:validate
+```
+
+The server uses `office-addin-dev-certs` material outside the repository and listens
+at `https://localhost:5176`. Sideload exactly one host manifest from
+`apps/office-addin/manifest.word.xml`, `manifest.excel.xml`, or
+`manifest.powerpoint.xml`. See `docs/runbooks/office-addin.md` for the support matrix
+and refusal behavior.
+
+## 6. Stop local infrastructure
 
 ```bash
 pnpm infra:down

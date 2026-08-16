@@ -1,16 +1,16 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 9
-adds durable recipient notifications over the transactional outbox, with an in-app
-inbox, verified-address email delivery, channel preferences, leases, retries, and
-dead-letter evidence. Conservative three-way merge over exact immutable artifacts
-remains available. Office host behavior remains deferred.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 12
+adds real Word, Excel, and PowerPoint task-pane manifests and bounded exact package
+capture where the Office host can preserve the complete OOXML package. Unsupported
+host/platform combinations fail closed. API upload, document binding, and base-version
+synchronization from the task pane remain deferred.
 
 ## Repository map
 
 ```text
 apps/web/                    React web application
-apps/office-addin/           shared Office task-pane shell
+apps/office-addin/           shared Office task pane, host adapter, and manifests
 services/api/                Fastify HTTP API
 services/worker/             durable BullMQ/PostgreSQL processing pipeline
 services/document-engine/    bounded ASP.NET Core Open XML inspection engine
@@ -47,8 +47,8 @@ pnpm --filter @mergecom/api db:seed
 pnpm dev
 ```
 
-The web app is available at `http://localhost:5173`, the Office shell at
-`http://localhost:5174`, the API at `http://localhost:3001`, the worker health server
+The web app is available at `http://localhost:5173`, the Office task pane at
+`https://localhost:5176`, the API at `http://localhost:3001`, the worker health server
 at `http://localhost:3002`, and the document engine at `http://localhost:3003`.
 Mailpit is available at `http://localhost:8025` and the MinIO console at
 `http://localhost:9001`.
@@ -89,6 +89,7 @@ See [local setup](docs/setup/local-development.md),
 [semantic comparison](docs/product/semantic-comparison.md),
 [review workflow](docs/product/review-workflow.md),
 [conservative merge](docs/product/conservative-merge.md),
+[Office host capture](docs/product/office-host-capture.md),
 [notifications](docs/product/notifications.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.

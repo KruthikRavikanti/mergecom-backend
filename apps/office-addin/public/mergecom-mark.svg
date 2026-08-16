@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" role="img" aria-labelledby="title">
+  <title id="title">MergeCom</title>
+  <rect width="80" height="80" fill="#991b1b" />
+  <path d="M18 59V21h8l14 19 14-19h8v38h-9V36L40 53 27 36v23z" fill="#fff" />
+  <rect x="18" y="65" width="44" height="4" fill="#4ade80" />
+</svg>

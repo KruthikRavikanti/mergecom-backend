@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="TaskPaneApp">
+  <Id>213c4b8a-0c76-4863-b9e5-e56f4a31b3ba</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>MergeCom</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="MergeCom for PowerPoint" />
+  <Description DefaultValue="Capture the exact saved PowerPoint package for a MergeCom version." />
+  <IconUrl DefaultValue="https://localhost:5176/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:5176/icon-80.png" />
+  <SupportUrl DefaultValue="https://localhost:5176/" />
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="CompressedFile" />
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:5176/" />
+  </DefaultSettings>
+  <Permissions>ReadDocument</Permissions>
+</OfficeApp>

@@ -6,11 +6,21 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "clean": "rm -rf dist",
-    "dev": "vite --port 5174",
+    "dev": "vite --port 5176 --strictPort",
     "lint": "eslint src vite.config.ts",
+    "manifest:validate": "office-addin-manifest validate manifest.word.xml && office-addin-manifest validate manifest.excel.xml && office-addin-manifest validate manifest.powerpoint.xml",
+    "test:unit": "vitest run",
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {
-    "vite": "7.2.7"
+    "@types/office-js": "1.0.605",
+    "office-addin-dev-certs": "2.0.10",
+    "office-addin-manifest": "2.1.6",
+    "vite": "7.2.7",
+    "vitest": "4.0.16"
+  },
+  "dependencies": {
+    "@mergecom/office-core": "workspace:*",
+    "lucide": "1.31.0"
   }
 }
