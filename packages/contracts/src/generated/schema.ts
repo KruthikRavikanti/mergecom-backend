@@ -1330,11 +1330,42 @@ export interface components {
             byteSize: number;
             sha256: string;
         };
+        MergeAnalysisBlocker: {
+            code: string;
+            category: string;
+            path: string | null;
+            explanation: string;
+        };
+        MergeAnalysisItem: {
+            id: string;
+            /** @enum {string} */
+            classification: "non_overlapping" | "compatible_overlap" | "true_conflict" | "ambiguous" | "unsupported";
+            category: string;
+            /** @enum {string} */
+            confidence: "high" | "medium" | "low";
+            label: string;
+            path: string;
+            explanation: string;
+            oursChange: string | null;
+            theirsChange: string | null;
+            automaticallyResolved: boolean;
+        };
+        MergeAnalysis: {
+            schemaVersion: string;
+            automaticMergeEnabled: boolean;
+            automaticMergeEligible: boolean;
+            summary: {
+                [key: string]: number;
+            };
+            items: components["schemas"]["MergeAnalysisItem"][];
+            blockers: components["schemas"]["MergeAnalysisBlocker"][];
+        };
         DocumentMerge: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             branchId: string;
+            analysis: components["schemas"]["MergeAnalysis"] | null;
             baseVersion: components["schemas"]["MergeVersionReference"];
             oursVersion: components["schemas"]["MergeVersionReference"];
             theirsVersion: components["schemas"]["MergeVersionReference"];

@@ -1,5 +1,25 @@
 # Phase status
 
+## Phase 10: PowerPoint conflict analysis and safe merge
+
+Status: implementation complete on `phase-10/powerpoint-merge`; pending owner review.
+
+- [x] Every terminal merge persists a versioned semantic analysis with non-overlap, compatible overlap, true conflict, ambiguity, unsupported content, confidence, explanations, and explicit blockers.
+- [x] PowerPoint analysis classifies slide, shape, text, chart, media, master, layout, theme, notes, relationship, macro, signature, embedded-object, and unknown package changes without returning raw XML.
+- [x] Divergent automatic PowerPoint merge is restricted to modified text in stable, uniquely identified shapes with unchanged slide/shape order, unchanged text-node structure, unchanged non-text markup, and byte-identical supporting package parts.
+- [x] Disjoint slides and same-slide disjoint shapes are supported; same-target incompatibility, additions/deletions/moves, grouped shapes, charts/media, layouts/masters/themes, notes, relationships, macros/signatures, embedded objects, and unknown parts remain manual.
+- [x] A global kill switch and organization UUID allowlist gate candidate generation independently of analysis; both default off.
+- [x] Candidates start from ours, apply only approved incoming shape paths, pass security inspection, Open XML validation, relationship/content-type resolution, semantic-union verification, and untouched-part byte checks before publication.
+- [x] PostgreSQL retains the analysis and immutable base/ours/theirs provenance; successful publication continues to create one two-parent version and never replaces an input.
+- [x] The web merge screen groups findings, explains automatic eligibility and blockers, and provides base/latest/incoming downloads without exposing OOXML paths.
+- [x] The PowerPoint task pane surfaces stale-base context and inspect, preserve-incoming, and pull-latest host actions.
+- [x] Engine fixtures cover disjoint slides, same-slide shapes, same-shape conflicts, delete/edit, grouped shapes, chart/media, layouts/masters/themes, notes, macros/signatures, embedded and unknown parts, byte preservation, and corrupt candidates.
+- [x] Fresh and upgrade migrations, real API/worker/storage/engine integration, and desktop/mobile browser checks pass.
+
+The support boundary is documented in `docs/product/conservative-merge.md`; pilot
+controls and recovery are in `docs/runbooks/merge-processing.md`, and command evidence
+is in `docs/verification/phase-10-command-results.md`.
+
 ## Phase 9: durable notifications
 
 Status: implementation complete on `phase-9/notifications`; pending owner review.

@@ -143,6 +143,7 @@ interface ComparisonRow {
 }
 
 interface MergeRow {
+  analysis: DocumentMerge['analysis'];
   applied_paths: string[];
   attempts: number;
   available_at: Date;
@@ -337,6 +338,7 @@ function mapMerge(row: MergeRow): DocumentMerge {
     status: row[`${prefix}_status`],
   });
   return {
+    analysis: row.analysis,
     appliedPaths: row.applied_paths,
     attempts: row.attempts,
     baseVersion: version('base'),
@@ -466,7 +468,7 @@ const mergeColumns = `
   m.id, m.branch_id, m.base_version_id, m.ours_version_id,
   m.theirs_version_id, m.note, m.merge_schema_version, m.parser_version,
   m.engine_version, m.status, m.attempts, m.max_attempts, m.available_at,
-  m.failure_code, m.trace_id, m.strategy, m.stable_hash, m.warnings,
+  m.failure_code, m.trace_id, m.strategy, m.stable_hash, m.warnings, m.analysis,
   m.applied_paths, m.candidate_object_key, m.candidate_sha256,
   m.candidate_byte_size, m.result_version_id, m.created_at, m.updated_at,
   bv.display_number as base_display_number, bv.note as base_note,

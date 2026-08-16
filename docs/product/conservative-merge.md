@@ -13,7 +13,7 @@ source artifacts are clean with completed semantic ingestion.
 | Ours and theirs byte-identical | Yes | Yes | Yes | Exact ours |
 | Ours byte-identical to base | Yes | Yes | Yes | Exact theirs |
 | Theirs byte-identical to base | Yes | Yes | Yes | Exact ours |
-| Divergent disjoint text changes | Restricted | No | No | Validated Word candidate |
+| Divergent disjoint text changes | Restricted | Pilot-gated | No | Validated candidate |
 
 Every exact strategy still requires complete inspection coverage and no validation or
 unsupported-feature findings in any input. Divergent Word merge requires both
@@ -26,6 +26,37 @@ metadata entries must have identical decompressed content hashes across base, ou
 and theirs. This rejects changes to headers, footers, relationships, styles, themes,
 images, comments, numbering, embedded content, signatures, macros, and other
 supporting parts even when the normalized body diff appears disjoint.
+
+### PowerPoint pilot allowlist
+
+PowerPoint conflict analysis runs independently of candidate generation. It persists
+semantic findings as non-overlapping, compatible overlapping, true conflict,
+ambiguous, or unsupported, grouped across slide, shape, text, chart, media, master,
+layout, theme, notes, relationship, macro, signature, embedded-object, and unknown
+package categories. The public analysis contains labels, confidence, change direction,
+and explanations, never raw XML or object keys.
+
+A divergent candidate is eligible only when both sides contain one or more modified
+`slide_shape` content changes and every changed target is a plain PowerPoint text
+shape found by the same slide part URI and unique non-visual shape ID in all three
+inputs. Slide order, shape order, shape sets, text-node count, and all non-text shape
+markup must remain unchanged. The two sides may edit shapes on separate slides or
+different shapes on the same slide. Identical edits to the same target are compatible;
+different edits to the same target are conflicts.
+
+Every package entry outside `ppt/slides/slide*.xml`, including slide relationships,
+content types, media, charts, layouts, masters, themes, notes, macros, signatures,
+embedded objects, and unknown parts, must have identical decompressed SHA-256 hashes
+across base, ours, and theirs. Candidate generation copies ours and replaces only
+approved incoming shapes. Security preflight, Open XML validation, relationship and
+content-type resolution, exact semantic-union comparison, and byte equality for every
+untouched entry must all pass. A failed PowerPoint candidate is discarded while its
+analysis and blocker evidence remain durable.
+
+Generation additionally requires both `POWERPOINT_AUTOMATIC_MERGE_ENABLED=true` and
+the merge organization UUID in
+`POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS`. Analysis still reports whether a
+merge is technically eligible when either control is off. Both controls default off.
 
 The engine copies the exact ours package and replaces only approved disjoint paths
 with elements cloned from theirs. It then reopens the candidate, runs Open XML
@@ -67,9 +98,12 @@ outbox.
 
 ## Known limitations
 
-Divergent PowerPoint and Excel edits require manual resolution. Word additions,
-removals, moves, structural changes, formatting changes, tracked changes, auxiliary
-stories, and any changed supporting package part also require manual resolution.
-Automatic coverage should expand only when each new edit class has a deterministic
-three-way rule, package-preservation proof, candidate validation, and adversarial
-fixtures.
+Divergent Excel edits require manual resolution. PowerPoint slide additions,
+deletions, moves/reorders, shape additions/removals/reorders, formatting or geometry,
+tables/charts, media, grouped shapes, notes, relationships, layouts/masters/themes,
+macros/signatures, embedded objects, and unknown parts are manual-only. Word
+additions, removals, moves, structural changes, formatting changes, tracked changes,
+auxiliary stories, and any changed supporting package part also require manual
+resolution. Automatic coverage should expand only when each new edit class has a
+deterministic three-way rule, package-preservation proof, candidate validation, and
+adversarial fixtures.

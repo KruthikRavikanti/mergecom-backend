@@ -7,6 +7,8 @@ import type {
   DocumentFileType,
   InspectionResult,
   InspectionWarning,
+  MergeAnalysis,
+  MergeAnalysisClassification,
   MergeResult,
   SnapshotEnvelope,
 } from './types';
@@ -126,6 +128,7 @@ export class DocumentEngineClient {
     baseArtifact: Uint8Array,
     oursArtifact: Uint8Array,
     theirsArtifact: Uint8Array,
+    powerPointAutomaticMergeEnabled = false,
   ): Promise<MergeResult> {
     const body = new Uint8Array(
       baseArtifact.byteLength +
@@ -148,6 +151,9 @@ export class DocumentEngineClient {
           'X-MergeCom-Internal-Token': this.internalToken,
           'X-MergeCom-Ours-Sha256': job.oursArtifact.sha256,
           'X-MergeCom-Ours-Size': String(oursArtifact.byteLength),
+          'X-MergeCom-PowerPoint-Automatic-Merge': String(
+            powerPointAutomaticMergeEnabled,
+          ),
           'X-MergeCom-Theirs-Sha256': job.theirsArtifact.sha256,
           'X-MergeCom-Theirs-Size': String(theirsArtifact.byteLength),
           'X-MergeCom-Trace-Id': job.traceId,
@@ -363,6 +369,7 @@ function parseMergeResult(value: unknown, job: ClaimedMergeJob): MergeResult {
     if (typeof path !== 'string') return invalidContract();
     return path;
   });
+  const analysis = parseMergeAnalysis(value.analysis);
   let candidate: Uint8Array | null = null;
   if (value.candidate_bytes !== null) {
     if (typeof value.candidate_bytes !== 'string') return invalidContract();
@@ -386,6 +393,7 @@ function parseMergeResult(value: unknown, job: ClaimedMergeJob): MergeResult {
     return invalidContract();
   }
   return {
+    analysis,
     applied_paths: appliedPaths,
     base_source_sha256: job.baseArtifact.sha256,
     candidate_byte_size: value.candidate_byte_size as number | null,
@@ -402,6 +410,101 @@ function parseMergeResult(value: unknown, job: ClaimedMergeJob): MergeResult {
     strategy: value.strategy,
     theirs_source_sha256: job.theirsArtifact.sha256,
     warnings,
+  };
+}
+
+function parseMergeAnalysis(value: unknown): MergeAnalysis {
+  if (
+    !isObject(value) ||
+    value.schema_version !== '1.0.0' ||
+    typeof value.automatic_merge_enabled !== 'boolean' ||
+    typeof value.automatic_merge_eligible !== 'boolean' ||
+    !isObject(value.summary) ||
+    !Array.isArray(value.items) ||
+    !Array.isArray(value.blockers)
+  ) {
+    return invalidContract();
+  }
+  const classifications: MergeAnalysisClassification[] = [
+    'ambiguous',
+    'compatible_overlap',
+    'non_overlapping',
+    'true_conflict',
+    'unsupported',
+  ];
+  const summaryValue = value.summary;
+  const summary = Object.fromEntries(
+    classifications.map((classification) => {
+      const count = summaryValue[classification];
+      if (!Number.isSafeInteger(count) || Number(count) < 0) {
+        return invalidContract();
+      }
+      return [classification, Number(count)];
+    }),
+  ) as MergeAnalysis['summary'];
+  const items = value.items.map((item) => {
+    if (
+      !isObject(item) ||
+      !isSha256(item.id) ||
+      !classifications.includes(
+        item.classification as MergeAnalysisClassification,
+      ) ||
+      typeof item.category !== 'string' ||
+      !['high', 'low', 'medium'].includes(String(item.confidence)) ||
+      typeof item.label !== 'string' ||
+      typeof item.path !== 'string' ||
+      typeof item.explanation !== 'string' ||
+      !nullableString(item.ours_change) ||
+      !nullableString(item.theirs_change) ||
+      typeof item.automatically_resolved !== 'boolean'
+    ) {
+      return invalidContract();
+    }
+    return {
+      automatically_resolved: item.automatically_resolved,
+      category: item.category,
+      classification: item.classification as MergeAnalysisClassification,
+      confidence: item.confidence as 'high' | 'low' | 'medium',
+      explanation: item.explanation,
+      id: item.id,
+      label: item.label,
+      ours_change: item.ours_change,
+      path: item.path,
+      theirs_change: item.theirs_change,
+    };
+  });
+  const blockers = value.blockers.map((blocker) => {
+    if (
+      !isObject(blocker) ||
+      typeof blocker.code !== 'string' ||
+      typeof blocker.category !== 'string' ||
+      !nullableString(blocker.path) ||
+      typeof blocker.explanation !== 'string'
+    ) {
+      return invalidContract();
+    }
+    return {
+      category: blocker.category,
+      code: blocker.code,
+      explanation: blocker.explanation,
+      path: blocker.path,
+    };
+  });
+  for (const classification of classifications) {
+    if (
+      summary[classification] !==
+      items.filter((item) => item.classification === classification).length
+    ) {
+      return invalidContract();
+    }
+  }
+  return {
+    automatic_merge_eligible: value.automatic_merge_eligible,
+    automatic_merge_enabled: value.automatic_merge_enabled,
+    blockers,
+    items,
+    schema_version: value.schema_version,
+    summary,
   };
 }
 

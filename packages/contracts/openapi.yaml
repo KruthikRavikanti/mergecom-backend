@@ -2135,6 +2135,83 @@ components:
       properties:
         byteSize: { type: integer, minimum: 1 }
         sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    MergeAnalysisBlocker:
+      type: object
+      additionalProperties: false
+      required: [code, category, path, explanation]
+      properties:
+        code: { type: string }
+        category: { type: string }
+        path:
+          oneOf: [{ type: string }, { type: 'null' }]
+        explanation: { type: string }
+    MergeAnalysisItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          classification,
+          category,
+          confidence,
+          label,
+          path,
+          explanation,
+          oursChange,
+          theirsChange,
+          automaticallyResolved,
+        ]
+      properties:
+        id: { type: string, pattern: '^[0-9a-f]{64}$' }
+        classification:
+          type: string
+          enum:
+            [
+              non_overlapping,
+              compatible_overlap,
+              true_conflict,
+              ambiguous,
+              unsupported,
+            ]
+        category: { type: string }
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        label: { type: string }
+        path: { type: string }
+        explanation: { type: string }
+        oursChange:
+          oneOf: [{ type: string }, { type: 'null' }]
+        theirsChange:
+          oneOf: [{ type: string }, { type: 'null' }]
+        automaticallyResolved: { type: boolean }
+    MergeAnalysis:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          automaticMergeEnabled,
+          automaticMergeEligible,
+          summary,
+          items,
+          blockers,
+        ]
+      properties:
+        schemaVersion: { type: string }
+        automaticMergeEnabled: { type: boolean }
+        automaticMergeEligible: { type: boolean }
+        summary:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MergeAnalysisItem' }
+        blockers:
+          type: array
+          items: { $ref: '#/components/schemas/MergeAnalysisBlocker' }
     DocumentMerge:
       type: object
       additionalProperties: false
@@ -2163,10 +2240,15 @@ components:
           resultVersionId,
           createdAt,
           updatedAt,
+          analysis,
         ]
       properties:
         id: { type: string, format: uuid }
         branchId: { type: string, format: uuid }
+        analysis:
+          oneOf:
+            - { $ref: '#/components/schemas/MergeAnalysis' }
+            - { type: 'null' }
         baseVersion: { $ref: '#/components/schemas/MergeVersionReference' }
         oursVersion: { $ref: '#/components/schemas/MergeVersionReference' }
         theirsVersion: { $ref: '#/components/schemas/MergeVersionReference' }

@@ -9,8 +9,8 @@ namespace MergeCom.DocumentEngine;
 
 public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator comparator)
 {
-    public const string MergeSchemaVersion = "1.0.0";
-    public const string EngineVersion = "1.0.0";
+    public const string MergeSchemaVersion = "1.1.0";
+    public const string EngineVersion = "1.1.0";
 
     private static readonly JsonSerializerOptions StableJsonOptions = new()
     {
@@ -25,13 +25,17 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
         string baseSha256,
         string oursSha256,
         string theirsSha256,
-        string candidatePath)
+        string candidatePath,
+        bool powerPointAutomaticMergeEnabled = false)
     {
         var inspector = new OoxmlInspector(options);
         var baseInspection = inspector.Inspect(basePath, fileType, baseSha256);
         var oursInspection = inspector.Inspect(oursPath, fileType, oursSha256);
         var theirsInspection = inspector.Inspect(theirsPath, fileType, theirsSha256);
         var inspections = new[] { baseInspection, oursInspection, theirsInspection };
+        var analysis = MergeAnalysisBuilder.Rejected(
+            powerPointAutomaticMergeEnabled,
+            "At least one source package could not be inspected safely.");
         if (inspections.Any(result => result.Outcome != "completed"))
         {
             return Manual("merge_source_rejected", [
@@ -39,11 +43,33 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
             ]);
         }
 
+        var oursComparison = comparator.Compare(
+            baseInspection.Snapshot,
+            oursInspection.Snapshot);
+        var theirsComparison = comparator.Compare(
+            baseInspection.Snapshot,
+            theirsInspection.Snapshot);
+        analysis = MergeAnalysisBuilder.Build(
+            fileType,
+            basePath,
+            oursPath,
+            theirsPath,
+            baseInspection.Snapshot,
+            oursInspection.Snapshot,
+            theirsInspection.Snapshot,
+            oursComparison,
+            theirsComparison,
+            powerPointAutomaticMergeEnabled);
+
         if (inspections.Any(result =>
                 result.Snapshot.UnsupportedFeatures.Count > 0
                 || result.Snapshot.ValidationErrors.Count > 0))
         {
-            return Manual("merge_coverage_incomplete", [
+            return Manual(
+                fileType == "presentation"
+                    ? "powerpoint_package_change_unsupported"
+                    : "merge_coverage_incomplete",
+                [
                 "Automatic merge requires complete semantic coverage and validation-clean inputs.",
             ]);
         }
@@ -63,12 +89,29 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
             return ExactCandidate(oursPath, "retain_ours", []);
         }
 
-        var oursComparison = comparator.Compare(
-            baseInspection.Snapshot,
-            oursInspection.Snapshot);
-        var theirsComparison = comparator.Compare(
-            baseInspection.Snapshot,
-            theirsInspection.Snapshot);
+        if (fileType == "presentation")
+        {
+            var outcome = new PowerPointMerger(options, comparator).Merge(
+                basePath,
+                oursPath,
+                theirsPath,
+                candidatePath,
+                baseInspection,
+                oursInspection,
+                theirsInspection,
+                oursComparison,
+                theirsComparison,
+                analysis);
+            return Build(
+                outcome.Outcome,
+                outcome.Strategy,
+                outcome.FailureCode,
+                outcome.Warnings,
+                outcome.AppliedPaths,
+                outcome.Analysis,
+                outcome.CandidateBytes);
+        }
+
         if (fileType != "word_document")
         {
             return Manual("merge_format_requires_manual_resolution", [
@@ -179,7 +222,14 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
             theirsPaths.Order(StringComparer.Ordinal).ToArray());
 
         MergeResult Manual(string failureCode, IReadOnlyList<string> warnings)
-            => Build("manual_resolution_required", null, failureCode, warnings, [], null);
+            => Build(
+                "manual_resolution_required",
+                null,
+                failureCode,
+                warnings,
+                [],
+                analysis,
+                null);
 
         MergeResult CandidateManual(
             string path,
@@ -191,6 +241,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
                 failureCode,
                 warnings,
                 [],
+                analysis,
                 File.ReadAllBytes(path));
 
         MergeResult ExactCandidate(
@@ -203,7 +254,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
             byte[] bytes,
             string strategy,
             IReadOnlyList<string> appliedPaths)
-            => Build("completed", strategy, null, [], appliedPaths, bytes);
+            => Build("completed", strategy, null, [], appliedPaths, analysis, bytes);
 
         MergeResult Build(
             string outcome,
@@ -211,6 +262,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
             string? failureCode,
             IReadOnlyList<string> warnings,
             IReadOnlyList<string> appliedPaths,
+            MergeAnalysis resultAnalysis,
             byte[]? candidateBytes)
         {
             var candidateSha256 = candidateBytes is null ? null : Hash(candidateBytes);
@@ -227,6 +279,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
                 failureCode,
                 warnings,
                 appliedPaths,
+                resultAnalysis,
                 candidateSha256,
                 candidateBytes?.LongLength);
             var stableHash = Hash(JsonSerializer.SerializeToUtf8Bytes(basis, StableJsonOptions));
@@ -243,6 +296,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
                 basis.FailureCode,
                 basis.Warnings,
                 basis.AppliedPaths,
+                basis.Analysis,
                 basis.CandidateSha256,
                 basis.CandidateByteSize,
                 candidateBytes,
@@ -387,6 +441,7 @@ public sealed class OoxmlMerger(InspectionOptions options, OoxmlComparator compa
         string? FailureCode,
         IReadOnlyList<string> Warnings,
         IReadOnlyList<string> AppliedPaths,
+        MergeAnalysis Analysis,
         string? CandidateSha256,
         long? CandidateByteSize);
 }

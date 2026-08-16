@@ -642,8 +642,11 @@ describe.runIf(runInfrastructureTests)(
       });
       expect(created.statusCode, created.payload).toBe(201);
       expect(created.json()).toMatchObject({
+        analysis: null,
         baseVersion: { id: baseVersionId },
         candidate: null,
+        engineVersion: '1.1.0',
+        mergeSchemaVersion: '1.1.0',
         oursVersion: { id: oursVersionId },
         state: 'queued',
         theirsVersion: { id: theirsVersionId, status: 'conflicted' },

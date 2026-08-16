@@ -217,6 +217,10 @@ static async Task<IResult> MergeAsync(
     var oursSha256 = request.Headers["X-MergeCom-Ours-Sha256"].ToString();
     var theirsSha256 = request.Headers["X-MergeCom-Theirs-Sha256"].ToString();
     var traceId = request.Headers["X-MergeCom-Trace-Id"].ToString();
+    var powerPointAutomaticMergeEnabled = string.Equals(
+        request.Headers["X-MergeCom-PowerPoint-Automatic-Merge"].ToString(),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
     var validBaseSize = long.TryParse(request.Headers["X-MergeCom-Base-Size"], out var baseSize);
     var validOursSize = long.TryParse(request.Headers["X-MergeCom-Ours-Size"], out var oursSize);
     var validTheirsSize = long.TryParse(request.Headers["X-MergeCom-Theirs-Size"], out var theirsSize);
@@ -280,7 +284,8 @@ static async Task<IResult> MergeAsync(
                 baseSha256,
                 oursSha256,
                 theirsSha256,
-                candidatePath));
+                candidatePath,
+                powerPointAutomaticMergeEnabled));
         }
     }
     catch (EndOfStreamException)

@@ -4,10 +4,13 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  CircleAlert,
   Download,
   FileStack,
   GitMerge,
+  Layers3,
   LoaderCircle,
+  ShieldCheck,
   ShieldAlert,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -54,8 +57,32 @@ const failureLabels: Record<string, string> = {
     'A supporting package part changed outside automatic merge coverage.',
   merge_word_markup_unsupported:
     'A changed paragraph also changed unsupported markup.',
+  powerpoint_automatic_merge_disabled:
+    'These changes are eligible, but automatic PowerPoint merge is not enabled for this workspace.',
+  powerpoint_candidate_path_missing:
+    'An approved PowerPoint shape could not be located.',
+  powerpoint_candidate_preservation_failed:
+    'An untouched PowerPoint package part changed during generation.',
+  powerpoint_candidate_validation_failed:
+    'The generated PowerPoint package did not validate.',
+  powerpoint_candidate_verification_failed:
+    'The generated PowerPoint package did not match the analyzed changes.',
+  powerpoint_change_unsupported:
+    'At least one PowerPoint edit is outside automatic merge coverage.',
+  powerpoint_changes_conflict:
+    'Both versions changed the same PowerPoint content incompatibly.',
+  powerpoint_package_change_unsupported:
+    'A PowerPoint package feature cannot be preserved automatically.',
+  powerpoint_shape_match_ambiguous:
+    'At least one PowerPoint shape could not be matched confidently.',
+  powerpoint_shape_markup_unsupported:
+    'A PowerPoint shape changed beyond its text content.',
+  powerpoint_supporting_parts_changed:
+    'PowerPoint relationships or supporting content changed.',
 };
 const strategyLabels: Record<string, string> = {
+  disjoint_powerpoint_shapes: 'disjoint PowerPoint shape text',
+  disjoint_powerpoint_slides: 'disjoint PowerPoint slide text',
   disjoint_word_text: 'validated disjoint Word text',
   fast_forward_theirs: 'latest-unchanged fast-forward',
   identical_heads: 'identical source versions',
@@ -221,6 +248,14 @@ export function DocumentMergePage() {
                 <button
                   className="button-secondary"
                   type="button"
+                  onClick={() => void downloadSource(result.baseVersion.id)}
+                >
+                  <Download aria-hidden="true" size={17} />
+                  Download base
+                </button>
+                <button
+                  className="button-secondary"
+                  type="button"
                   onClick={() => void downloadSource(result.oursVersion.id)}
                 >
                   <Download aria-hidden="true" size={17} />
@@ -294,6 +329,8 @@ export function DocumentMergePage() {
         </div>
       ) : null}
 
+      {result.analysis ? <MergeAnalysis analysis={result.analysis} /> : null}
+
       <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-200 pt-4 font-mono text-xs text-slate-500">
         <span>Merge schema {result.mergeSchemaVersion}</span>
         <span>Parser {result.parserVersion}</span>
@@ -307,6 +344,164 @@ export function DocumentMergePage() {
       {toast ? <Toast kind={toast.kind} message={toast.message} /> : null}
     </section>
   );
+}
+
+const analysisGroups = [
+  {
+    classification: 'true_conflict',
+    label: 'True conflicts',
+    tone: 'text-red-800',
+  },
+  {
+    classification: 'ambiguous',
+    label: 'Ambiguous matches',
+    tone: 'text-amber-800',
+  },
+  {
+    classification: 'unsupported',
+    label: 'Unsupported package content',
+    tone: 'text-amber-800',
+  },
+  {
+    classification: 'non_overlapping',
+    label: 'Non-overlapping changes',
+    tone: 'text-emerald-800',
+  },
+  {
+    classification: 'compatible_overlap',
+    label: 'Compatible overlaps',
+    tone: 'text-emerald-800',
+  },
+] as const;
+
+function MergeAnalysis({
+  analysis,
+}: {
+  analysis: NonNullable<DocumentMerge['analysis']>;
+}) {
+  return (
+    <section
+      className="mt-9 border-t border-slate-300 pt-6"
+      aria-labelledby="analysis-heading"
+    >
+      <div className="flex items-start gap-3">
+        <Layers3
+          aria-hidden="true"
+          className="mt-0.5 text-slate-600"
+          size={20}
+        />
+        <div>
+          <h2
+            className="text-lg font-bold text-slate-950"
+            id="analysis-heading"
+          >
+            Conflict analysis
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            {analysis.automaticMergeEligible
+              ? analysis.automaticMergeEnabled
+                ? 'Stable text targets and unchanged package relationships allowed automatic resolution.'
+                : 'The changes passed the safety allowlist, but workspace pilot access is disabled.'
+              : 'One or more semantic or package blockers require resolution in PowerPoint.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid border-y border-slate-200 bg-white sm:grid-cols-5">
+        {analysisGroups.map((group) => (
+          <ResultFact
+            key={group.classification}
+            label={group.label}
+            value={String(analysis.summary[group.classification] ?? 0)}
+          />
+        ))}
+      </div>
+
+      {analysis.blockers.length ? (
+        <div className="mt-6 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-amber-950">
+          <div className="flex items-center gap-2 font-bold">
+            <CircleAlert aria-hidden="true" size={18} />
+            Automatic resolution blockers
+          </div>
+          {analysis.blockers.map((blocker) => (
+            <p
+              className="mt-2 text-sm"
+              key={`${blocker.code}:${blocker.path ?? ''}`}
+            >
+              <span className="font-semibold">
+                {categoryLabel(blocker.category)}:
+              </span>{' '}
+              {blocker.explanation}
+            </p>
+          ))}
+        </div>
+      ) : analysis.automaticMergeEligible ? (
+        <div className="mt-6 flex items-start gap-2 border-l-4 border-emerald-600 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <ShieldCheck
+            aria-hidden="true"
+            className="mt-0.5 shrink-0"
+            size={18}
+          />
+          <p>
+            All matched shapes were high confidence, text-only, and retained
+            their original relationships.
+          </p>
+        </div>
+      ) : null}
+
+      {analysisGroups.map((group) => {
+        const items = analysis.items.filter(
+          (item) => item.classification === group.classification,
+        );
+        if (!items.length) return null;
+        return (
+          <section className="mt-7" key={group.classification}>
+            <div className="flex items-baseline justify-between gap-4 border-b border-slate-200 pb-2">
+              <h3 className={`text-sm font-bold ${group.tone}`}>
+                {group.label}
+              </h3>
+              <span className="text-xs font-semibold text-slate-500">
+                {items.length}
+              </span>
+            </div>
+            <div className="grid gap-3 pt-3 md:grid-cols-2">
+              {items.map((item) => (
+                <article
+                  className="border border-slate-200 bg-white p-4"
+                  key={item.id}
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <p className="font-bold text-slate-950">{item.label}</p>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {categoryLabel(item.category)} / {item.confidence}{' '}
+                      confidence
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-700">
+                    {item.explanation}
+                  </p>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Latest: {item.oursChange ?? 'unchanged'} / Incoming:{' '}
+                    {item.theirsChange ?? 'unchanged'}
+                    {item.automaticallyResolved
+                      ? ' / resolved automatically'
+                      : ''}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </section>
+  );
+}
+
+function categoryLabel(category: string): string {
+  return category
+    .split('_')
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function PendingMerge({ merge }: { merge: DocumentMerge }) {

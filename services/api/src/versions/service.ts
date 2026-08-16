@@ -33,9 +33,9 @@ function secondsUntil(date: Date, maximum: number): number {
 }
 
 export const COMPARISON_SCHEMA_VERSION = '1.0.0';
-export const DOCUMENT_ENGINE_VERSION = '1.0.0';
+export const DOCUMENT_ENGINE_VERSION = '1.1.0';
 export const DOCUMENT_PARSER_VERSION = '1.1.0';
-export const MERGE_SCHEMA_VERSION = '1.0.0';
+export const MERGE_SCHEMA_VERSION = '1.1.0';
 
 export class VersionService {
   public constructor(

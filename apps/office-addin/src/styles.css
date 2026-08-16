@@ -36,7 +36,7 @@ body {
   font-size: 13px;
 }
 .content {
-  padding: 32px 20px;
+  padding: 28px 20px;
 }
 .eyebrow {
   margin: 0 0 12px;
@@ -55,6 +55,67 @@ p {
   color: #526071;
   font-size: 14px;
   line-height: 1.6;
+}
+.summary {
+  margin: 12px 0 0;
+}
+.version-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 24px;
+  border-block: 1px solid #cbd5e1;
+}
+.version-pair div {
+  display: grid;
+  gap: 5px;
+  padding: 14px 10px 14px 0;
+}
+.version-pair div + div {
+  border-left: 1px solid #cbd5e1;
+  padding-left: 14px;
+}
+.version-pair span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+.version-pair strong {
+  font-size: 14px;
+}
+.actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+button {
+  min-height: 40px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: #172033;
+  background: white;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+button:hover {
+  background: #f1f5f9;
+}
+button.primary {
+  border-color: #991b1b;
+  color: white;
+  background: #991b1b;
+}
+button.primary:hover {
+  background: #7f1d1d;
+}
+.feedback {
+  min-height: 42px;
+  margin: 14px 0 0;
+  color: #475569;
+  font-size: 12px;
 }
 .status {
   display: flex;

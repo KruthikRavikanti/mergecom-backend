@@ -1027,9 +1027,9 @@ export const mergeOperations = pgTable(
       .references(() => users.id, { onDelete: 'restrict' })
       .notNull(),
     note: text('note').notNull(),
-    mergeSchemaVersion: text('merge_schema_version').default('1.0.0').notNull(),
+    mergeSchemaVersion: text('merge_schema_version').default('1.1.0').notNull(),
     parserVersion: text('parser_version').default('1.1.0').notNull(),
-    engineVersion: text('engine_version').default('1.0.0').notNull(),
+    engineVersion: text('engine_version').default('1.1.0').notNull(),
     status: mergeOperationStatus('status').default('queued').notNull(),
     attempts: integer('attempts').default(0).notNull(),
     maxAttempts: integer('max_attempts').default(3).notNull(),
@@ -1055,6 +1055,7 @@ export const mergeOperations = pgTable(
       .$type<string[]>()
       .default(sql`'[]'::jsonb`)
       .notNull(),
+    analysis: jsonb('analysis').$type<Record<string, unknown>>(),
     candidateObjectKey: text('candidate_object_key'),
     candidateSha256: text('candidate_sha256'),
     candidateByteSize: bigint('candidate_byte_size', { mode: 'number' }),
@@ -1111,9 +1112,10 @@ export const mergeOperations = pgTable(
     check(
       'merge_operations_outcome_ck',
       sql`(${table.status} = 'completed' and ${table.resultVersionId} is not null
-            and ${table.candidateObjectKey} is not null and ${table.failureCode} is null)
+            and ${table.candidateObjectKey} is not null and ${table.failureCode} is null
+            and ${table.analysis} is not null)
           or (${table.status} = 'manual_resolution_required' and ${table.resultVersionId} is null
-            and ${table.failureCode} is not null)
+            and ${table.failureCode} is not null and ${table.analysis} is not null)
           or (${table.status} not in ('completed', 'manual_resolution_required')
             and ${table.resultVersionId} is null)`,
     ),

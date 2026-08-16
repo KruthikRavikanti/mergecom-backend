@@ -237,7 +237,47 @@ const MergeVersionReference = Type.Intersect([
   ComparisonVersionReference,
   Type.Object({ status: VersionStatus }),
 ]);
+const MergeAnalysisClassification = Type.Union([
+  Type.Literal('ambiguous'),
+  Type.Literal('compatible_overlap'),
+  Type.Literal('non_overlapping'),
+  Type.Literal('true_conflict'),
+  Type.Literal('unsupported'),
+]);
+const MergeAnalysis = Type.Object({
+  automaticMergeEligible: Type.Boolean(),
+  automaticMergeEnabled: Type.Boolean(),
+  blockers: Type.Array(
+    Type.Object({
+      category: Type.String(),
+      code: Type.String(),
+      explanation: Type.String(),
+      path: Type.Union([Type.String(), Type.Null()]),
+    }),
+  ),
+  items: Type.Array(
+    Type.Object({
+      automaticallyResolved: Type.Boolean(),
+      category: Type.String(),
+      classification: MergeAnalysisClassification,
+      confidence: Type.Union([
+        Type.Literal('high'),
+        Type.Literal('low'),
+        Type.Literal('medium'),
+      ]),
+      explanation: Type.String(),
+      id: Type.String({ pattern: '^[0-9a-f]{64}$' }),
+      label: Type.String(),
+      oursChange: Type.Union([Type.String(), Type.Null()]),
+      path: Type.String(),
+      theirsChange: Type.Union([Type.String(), Type.Null()]),
+    }),
+  ),
+  schemaVersion: Type.String(),
+  summary: Type.Record(Type.String(), Type.Integer({ minimum: 0 })),
+});
 const Merge = Type.Object({
+  analysis: Type.Union([MergeAnalysis, Type.Null()]),
   appliedPaths: Type.Array(Type.String()),
   attempts: Type.Integer({ minimum: 0 }),
   baseVersion: MergeVersionReference,

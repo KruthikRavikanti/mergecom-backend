@@ -12,6 +12,8 @@ export interface WorkerConfig {
   notificationFrom: string;
   organizationQuotaBytes: number;
   port: number;
+  powerPointAutomaticMergeEnabled: boolean;
+  powerPointAutomaticMergePilotOrganizationIds: string[];
   redisUrl: string;
   smtpUrl: string;
   s3: {
@@ -31,6 +33,32 @@ function positiveInteger(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return value;
+}
+
+function booleanFlag(name: string, fallback = false): boolean {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be true or false.`);
+}
+
+function organizationAllowlist(name: string): string[] {
+  const values = (process.env[name] ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (
+    values.some(
+      (value) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+          value,
+        ),
+    )
+  ) {
+    throw new Error(`${name} must contain comma-separated UUIDs.`);
+  }
+  return [...new Set(values.map((value) => value.toLowerCase()))];
 }
 
 export function loadWorkerConfig(): WorkerConfig {
@@ -92,6 +120,12 @@ export function loadWorkerConfig(): WorkerConfig {
       5 * 1024 * 1024 * 1024,
     ),
     port: positiveInteger('WORKER_PORT', 3002),
+    powerPointAutomaticMergeEnabled: booleanFlag(
+      'POWERPOINT_AUTOMATIC_MERGE_ENABLED',
+    ),
+    powerPointAutomaticMergePilotOrganizationIds: organizationAllowlist(
+      'POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS',
+    ),
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     smtpUrl: process.env.SMTP_URL ?? 'smtp://localhost:1025',
     s3: {

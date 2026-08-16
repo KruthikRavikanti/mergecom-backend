@@ -906,6 +906,7 @@ export class ProcessingStore {
                   strategy = $3, stable_hash = $4, warnings = $5,
                   applied_paths = $6, candidate_object_key = $7,
                   candidate_sha256 = $8, candidate_byte_size = $9,
+                  analysis = $10,
                   updated_at = now()
             where id = $1`,
           [
@@ -918,6 +919,7 @@ export class ProcessingStore {
             input.candidateObjectKey,
             input.result.candidate_sha256,
             input.result.candidate_byte_size,
+            JSON.stringify(apiMergeAnalysis(input.result.analysis)),
           ],
         );
         await insertMergeOutcomeEvent(client, {
@@ -957,7 +959,7 @@ export class ProcessingStore {
                   last_error = null, strategy = $2, stable_hash = $3,
                   warnings = $4, applied_paths = $5,
                   candidate_object_key = $6, candidate_sha256 = $7,
-                  candidate_byte_size = $8, updated_at = now()
+                  candidate_byte_size = $8, analysis = $9, updated_at = now()
             where id = $1`,
           [
             input.merge.id,
@@ -968,6 +970,7 @@ export class ProcessingStore {
             input.candidateObjectKey,
             input.result.candidate_sha256,
             input.result.candidate_byte_size,
+            JSON.stringify(apiMergeAnalysis(input.result.analysis)),
           ],
         );
         await insertMergeOutcomeEvent(client, {
@@ -1005,7 +1008,7 @@ export class ProcessingStore {
                   last_error = null, strategy = $2, stable_hash = $3,
                   warnings = $4, applied_paths = $5,
                   candidate_object_key = $6, candidate_sha256 = $7,
-                  candidate_byte_size = $8, updated_at = now()
+                  candidate_byte_size = $8, analysis = $9, updated_at = now()
             where id = $1`,
           [
             input.merge.id,
@@ -1016,6 +1019,7 @@ export class ProcessingStore {
             input.candidateObjectKey,
             input.result.candidate_sha256,
             input.result.candidate_byte_size,
+            JSON.stringify(apiMergeAnalysis(input.result.analysis)),
           ],
         );
         await insertMergeOutcomeEvent(client, {
@@ -1110,7 +1114,7 @@ export class ProcessingStore {
                 strategy = $2, stable_hash = $3, warnings = $4,
                 applied_paths = $5, candidate_object_key = $6,
                 candidate_sha256 = $7, candidate_byte_size = $8,
-                result_version_id = $9, updated_at = now()
+                result_version_id = $9, analysis = $10, updated_at = now()
           where id = $1`,
         [
           input.merge.id,
@@ -1122,6 +1126,7 @@ export class ProcessingStore {
           input.result.candidate_sha256,
           input.result.candidate_byte_size,
           resultVersionId,
+          JSON.stringify(apiMergeAnalysis(input.result.analysis)),
         ],
       );
       await insertMergeOutcomeEvent(client, {
@@ -1197,6 +1202,28 @@ async function lockComparison(
     [comparisonId],
   );
   return result.rows[0] ?? null;
+}
+
+function apiMergeAnalysis(analysis: MergeResult['analysis']) {
+  return {
+    automaticMergeEligible: analysis.automatic_merge_eligible,
+    automaticMergeEnabled: analysis.automatic_merge_enabled,
+    blockers: analysis.blockers,
+    items: analysis.items.map((item) => ({
+      automaticallyResolved: item.automatically_resolved,
+      category: item.category,
+      classification: item.classification,
+      confidence: item.confidence,
+      explanation: item.explanation,
+      id: item.id,
+      label: item.label,
+      oursChange: item.ours_change,
+      path: item.path,
+      theirsChange: item.theirs_change,
+    })),
+    schemaVersion: analysis.schema_version,
+    summary: analysis.summary,
+  };
 }
 
 async function lockMerge(

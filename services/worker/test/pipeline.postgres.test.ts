@@ -326,18 +326,26 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
     );
     await mergeProcessor.process(mergeId);
     const merge = await pool.query<{
+      analysis: {
+        automaticMergeEnabled: boolean;
+        schemaVersion: string;
+      };
       candidate_object_key: string;
       result_version_id: string;
       stable_hash: string;
       status: string;
       strategy: string;
     }>(
-      `select status, strategy, stable_hash, candidate_object_key,
+      `select status, strategy, stable_hash, candidate_object_key, analysis,
               result_version_id
          from merge_operations where id = $1`,
       [mergeId],
     );
     expect(merge.rows[0]).toMatchObject({
+      analysis: {
+        automaticMergeEnabled: false,
+        schemaVersion: '1.0.0',
+      },
       status: 'completed',
       strategy: 'identical_heads',
     });
@@ -468,6 +476,8 @@ function workerConfig(
     notificationFrom: 'MergeCom <no-reply@mergecom.local>',
     organizationQuotaBytes: 5 * 1024 * 1024 * 1024,
     port: 3002,
+    powerPointAutomaticMergeEnabled: false,
+    powerPointAutomaticMergePilotOrganizationIds: [],
     redisUrl: 'redis://127.0.0.1:6379',
     smtpUrl: 'smtp://127.0.0.1:1025',
     s3: {

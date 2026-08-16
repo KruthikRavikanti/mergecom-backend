@@ -41,6 +41,9 @@ manually.
 
 ```sql
 select id, document_id, failure_code, strategy, warnings, applied_paths,
+       analysis->>'automaticMergeEligible' as eligible,
+       analysis->>'automaticMergeEnabled' as enabled,
+       analysis->'blockers' as blockers,
        candidate_sha256, candidate_byte_size, completed_at, trace_id
 from merge_operations
 where organization_id = :organization_id
@@ -106,3 +109,23 @@ where m.status = 'completed'
 Do not delete source artifacts, normalized snapshots, candidate objects, merge rows,
 result versions, audits, or outbox events during recovery. Correction must be a new,
 authorized, auditable operation.
+
+## PowerPoint pilot controls
+
+Conflict analysis is always recorded for an engine-completed merge. Candidate
+generation requires both controls below and remains disabled by default:
+
+```bash
+POWERPOINT_AUTOMATIC_MERGE_ENABLED=true
+POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS=00000000-0000-4000-8000-000000000000
+```
+
+The allowlist is a comma-separated UUID list. Restart the worker after changing either
+value. To stop generation immediately, set the global flag to `false` and restart the
+worker; eligible analyses will then end in manual resolution with
+`powerpoint_automatic_merge_disabled`. Do not alter existing merge rows or candidates.
+
+Before adding a pilot organization, review its fixture evidence and confirm that the
+document profile is limited to plain text-shape changes. Layout/master/theme changes,
+notes, grouped shapes, charts, media, relationships, macros, signatures, embedded
+objects, and unknown package parts remain blockers even when the pilot controls are on.

@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.IO.Compression;
 using DocumentFormat.OpenXml.Packaging;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 using W = DocumentFormat.OpenXml.Wordprocessing;
+using P = DocumentFormat.OpenXml.Presentation;
 
 namespace MergeCom.DocumentEngine.Tests;
 
@@ -100,6 +102,197 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public void EligiblePowerPointChangesRemainManualWhenKillSwitchIsOff()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["Base A"], ["Base B"]);
+        using var ours = SyntheticOfficePackage.PresentationSlides(["Ours A"], ["Base B"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["Base A"], ["Theirs B"]);
+        var result = MergePresentation(basis, ours, theirs, false);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Equal("powerpoint_automatic_merge_disabled", result.FailureCode);
+        Assert.True(result.Analysis.AutomaticMergeEligible);
+        Assert.False(result.Analysis.AutomaticMergeEnabled);
+        Assert.Empty(result.Analysis.Blockers);
+        Assert.All(
+            result.Analysis.Items,
+            item => Assert.False(item.AutomaticallyResolved));
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void DisjointPowerPointSlidesProduceValidatedCandidate()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["Base A"], ["Base B"]);
+        using var ours = SyntheticOfficePackage.PresentationSlides(["Ours A"], ["Base B"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["Base A"], ["Theirs B"]);
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("completed", result.Outcome);
+        Assert.Equal("disjoint_powerpoint_slides", result.Strategy);
+        Assert.True(result.Analysis.AutomaticMergeEnabled);
+        Assert.True(result.Analysis.AutomaticMergeEligible);
+        Assert.Equal(2, result.Analysis.Summary["non_overlapping"]);
+        Assert.All(
+            result.Analysis.Items,
+            item => Assert.True(item.AutomaticallyResolved));
+        Assert.Equal(["Ours A", "Theirs B"], PresentationText(result.CandidateBytes!));
+    }
+
+    [Fact]
+    public void SameSlideDisjointShapeTextProducesValidatedCandidate()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["Base A", "Base B"]);
+        using var ours = SyntheticOfficePackage.PresentationSlides(["Ours A", "Base B"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["Base A", "Theirs B"]);
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("completed", result.Outcome);
+        Assert.Equal("disjoint_powerpoint_shapes", result.Strategy);
+        Assert.Equal(["Ours A", "Theirs B"], PresentationText(result.CandidateBytes!));
+    }
+
+    [Fact]
+    public void SamePowerPointShapeTextConflictIsExplained()
+    {
+        using var basis = SyntheticOfficePackage.Presentation("Base");
+        using var ours = SyntheticOfficePackage.Presentation("Ours");
+        using var theirs = SyntheticOfficePackage.Presentation("Theirs");
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Equal("powerpoint_changes_conflict", result.FailureCode);
+        Assert.Equal(1, result.Analysis.Summary["true_conflict"]);
+        Assert.Contains(
+            result.Analysis.Blockers,
+            blocker => blocker.Code == "incompatible_target_changes");
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void DeletedVersusEditedPowerPointSlideIsManual()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["First"], ["Second"]);
+        using var ours = SyntheticOfficePackage.PresentationSlides(["First"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["First"], ["Second edited"]);
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.FailureCode, new[]
+        {
+            "powerpoint_change_unsupported",
+            "powerpoint_package_change_unsupported",
+            "powerpoint_changes_conflict",
+        });
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void ReorderedVersusEditedPowerPointSlidesAreManual()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["First"], ["Second"]);
+        using var ours = SyntheticOfficePackage.PresentationSlidesReordered(
+            [1, 0],
+            ["First"],
+            ["Second"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["First edited"], ["Second"]);
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.Analysis.Items, item => item.Category == "slide");
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void GroupedPowerPointShapeChangesAreManual()
+    {
+        using var basis = SyntheticOfficePackage.PresentationWithGroup("Base");
+        using var ours = SyntheticOfficePackage.PresentationWithGroup("Ours");
+        using var theirs = SyntheticOfficePackage.PresentationWithGroup("Theirs");
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.FailureCode, new[]
+        {
+            "powerpoint_changes_conflict",
+            "powerpoint_shape_match_ambiguous",
+        });
+    }
+
+    [Theory]
+    [InlineData("ppt/media/image1.png", "media")]
+    [InlineData("ppt/charts/chart1.xml", "chart")]
+    [InlineData("ppt/slideMasters/slideMaster1.xml", "master")]
+    [InlineData("ppt/slideLayouts/slideLayout1.xml", "layout")]
+    [InlineData("ppt/theme/theme1.xml", "theme")]
+    [InlineData("ppt/notesSlides/notesSlide1.xml", "notes")]
+    [InlineData("ppt/embeddings/object1.bin", "embedded_object")]
+    [InlineData("ppt/vbaProject.bin", "macros")]
+    [InlineData("_xmlsignatures/sig1.xml", "signatures")]
+    [InlineData("ppt/custom/unknown.xml", "unknown")]
+    public void ChangedPowerPointPackageFeaturesAreClassifiedAndBlocked(
+        string part,
+        string category)
+    {
+        var content = part.EndsWith(".xml", StringComparison.Ordinal)
+            ? "<root />"u8.ToArray()
+            : [0x01, 0x02, 0x03];
+        using var basis = SyntheticOfficePackage.Presentation("Base");
+        using var ours = SyntheticOfficePackage.PresentationWithFeature(part, content, ["Ours"]);
+        using var theirs = SyntheticOfficePackage.Presentation("Theirs");
+        var result = MergePresentation(basis, ours, theirs, true);
+
+        Assert.Equal("manual_resolution_required", result.Outcome);
+        Assert.Contains(result.Analysis.Items, item => item.Category == category);
+        Assert.Contains(result.Analysis.Blockers, blocker => blocker.Category == category);
+        Assert.Null(result.CandidateBytes);
+    }
+
+    [Fact]
+    public void PowerPointCandidatePreservesEveryUntouchedPartByteForByte()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["Base A", "Base B"]);
+        using var ours = SyntheticOfficePackage.PresentationSlides(["Ours A", "Base B"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["Base A", "Theirs B"]);
+        var result = MergePresentation(basis, ours, theirs, true);
+        var oursParts = PackageHashes(ours.Bytes);
+        var candidateParts = PackageHashes(result.CandidateBytes!);
+        var mutablePart = result.AppliedPaths.Single()
+            .Split("/shapes/", StringSplitOptions.None)[0]
+            .Replace("/presentation/slides/", string.Empty, StringComparison.Ordinal);
+
+        Assert.Equal(oursParts.Keys.Order(), candidateParts.Keys.Order());
+        foreach (var part in oursParts.Keys.Where(part => part != mutablePart))
+        {
+            Assert.True(
+                oursParts[part] == candidateParts[part],
+                $"Untouched part changed: {part}");
+        }
+    }
+
+    [Fact]
+    public void CorruptPowerPointCandidateFailsInspection()
+    {
+        using var package = SyntheticOfficePackage.Presentation("Valid");
+        var bytes = package.Bytes;
+        Array.Resize(ref bytes, bytes.Length / 2);
+        var path = Path.Combine(Path.GetTempPath(), $"corrupt-candidate-{Guid.NewGuid():N}.pptx");
+        try
+        {
+            File.WriteAllBytes(path, bytes);
+            var result = new OoxmlInspector(new InspectionOptions()).Inspect(
+                path,
+                "presentation",
+                Sha256(bytes));
+            Assert.NotEqual("completed", result.Outcome);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ChangedUnmodeledPackagePartRequiresManualResolution()
     {
         using var basis = SyntheticOfficePackage.Word("Base");
@@ -157,14 +350,115 @@ public sealed class MergeTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("completed", json.RootElement.GetProperty("outcome").GetString());
-        Assert.Equal("1.0.0", json.RootElement.GetProperty("merge_schema_version").GetString());
+        Assert.Equal("1.1.0", json.RootElement.GetProperty("merge_schema_version").GetString());
+        Assert.Equal(
+            "1.0.0",
+            json.RootElement.GetProperty("analysis").GetProperty("schema_version").GetString());
         Assert.True(json.RootElement.GetProperty("candidate_bytes").GetString()!.Length > 0);
+    }
+
+    [Fact]
+    public async Task InternalEndpointHonorsPowerPointPilotGate()
+    {
+        using var basis = SyntheticOfficePackage.PresentationSlides(["Base A"], ["Base B"]);
+        using var ours = SyntheticOfficePackage.PresentationSlides(["Ours A"], ["Base B"]);
+        using var theirs = SyntheticOfficePackage.PresentationSlides(["Base A"], ["Theirs B"]);
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/v1/merges")
+        {
+            Content = new ByteArrayContent(
+                basis.Bytes.Concat(ours.Bytes).Concat(theirs.Bytes).ToArray()),
+        };
+        request.Headers.Add("X-MergeCom-Internal-Token", Token);
+        request.Headers.Add("X-MergeCom-Trace-Id", Guid.NewGuid().ToString());
+        request.Headers.Add("X-MergeCom-File-Type", "presentation");
+        request.Headers.Add("X-MergeCom-Extension", ".pptx");
+        request.Headers.Add("X-MergeCom-Base-Sha256", Sha256(basis.Bytes));
+        request.Headers.Add("X-MergeCom-Ours-Sha256", Sha256(ours.Bytes));
+        request.Headers.Add("X-MergeCom-Theirs-Sha256", Sha256(theirs.Bytes));
+        request.Headers.Add("X-MergeCom-Base-Size", basis.Bytes.Length.ToString());
+        request.Headers.Add("X-MergeCom-Ours-Size", ours.Bytes.Length.ToString());
+        request.Headers.Add("X-MergeCom-Theirs-Size", theirs.Bytes.Length.ToString());
+        request.Headers.Add("X-MergeCom-PowerPoint-Automatic-Merge", "true");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("completed", json.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal(
+            "disjoint_powerpoint_slides",
+            json.RootElement.GetProperty("strategy").GetString());
+        Assert.True(
+            json.RootElement.GetProperty("analysis").GetProperty("automatic_merge_enabled").GetBoolean());
+        Assert.True(
+            json.RootElement.GetProperty("analysis").GetProperty("automatic_merge_eligible").GetBoolean());
     }
 
     private static OoxmlMerger Merger()
     {
         var options = new InspectionOptions();
         return new(options, new OoxmlComparator());
+    }
+
+    private static MergeResult MergePresentation(
+        SyntheticOfficePackage basis,
+        SyntheticOfficePackage ours,
+        SyntheticOfficePackage theirs,
+        bool automaticMergeEnabled)
+    {
+        var candidatePath = Path.Combine(Path.GetTempPath(), $"candidate-{Guid.NewGuid():N}.pptx");
+        try
+        {
+            return Merger().Merge(
+                basis.Path,
+                ours.Path,
+                theirs.Path,
+                "presentation",
+                Sha256(basis.Bytes),
+                Sha256(ours.Bytes),
+                Sha256(theirs.Bytes),
+                candidatePath,
+                automaticMergeEnabled);
+        }
+        finally
+        {
+            File.Delete(candidatePath);
+        }
+    }
+
+    private static string[] PresentationText(byte[] bytes)
+    {
+        using var document = PresentationDocument.Open(new MemoryStream(bytes), false);
+        var presentationPart = document.PresentationPart
+            ?? throw new InvalidDataException("Presentation part missing.");
+        var presentation = presentationPart.Presentation
+            ?? throw new InvalidDataException("Presentation XML missing.");
+        return presentation.SlideIdList!.Elements<P.SlideId>()
+            .SelectMany(slideId =>
+            {
+                var relationshipId = slideId.RelationshipId?.Value
+                    ?? throw new InvalidDataException("Slide relationship missing.");
+                var slidePart = (SlidePart)presentationPart.GetPartById(relationshipId);
+                return (slidePart.Slide
+                    ?? throw new InvalidDataException("Slide XML missing."))
+                    .Descendants<DocumentFormat.OpenXml.Drawing.Text>();
+            })
+            .Select(text => text.Text)
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> PackageHashes(byte[] bytes)
+    {
+        using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        return archive.Entries.ToDictionary(
+            entry => entry.FullName,
+            entry =>
+            {
+                using var stream = entry.Open();
+                return Convert.ToHexStringLower(SHA256.HashData(stream));
+            },
+            StringComparer.Ordinal);
     }
 
     private static string Sha256(byte[] bytes)

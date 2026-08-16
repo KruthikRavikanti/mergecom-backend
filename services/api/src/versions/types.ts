@@ -105,7 +105,40 @@ export interface MergeVersionReference extends ComparisonVersionReference {
   status: VersionStatus;
 }
 
+export type MergeAnalysisClassification =
+  | 'ambiguous'
+  | 'compatible_overlap'
+  | 'non_overlapping'
+  | 'true_conflict'
+  | 'unsupported';
+
+export interface MergeAnalysis {
+  automaticMergeEligible: boolean;
+  automaticMergeEnabled: boolean;
+  blockers: Array<{
+    category: string;
+    code: string;
+    explanation: string;
+    path: string | null;
+  }>;
+  items: Array<{
+    automaticallyResolved: boolean;
+    category: string;
+    classification: MergeAnalysisClassification;
+    confidence: 'high' | 'low' | 'medium';
+    explanation: string;
+    id: string;
+    label: string;
+    oursChange: string | null;
+    path: string;
+    theirsChange: string | null;
+  }>;
+  schemaVersion: string;
+  summary: Record<MergeAnalysisClassification, number>;
+}
+
 export interface DocumentMerge {
+  analysis: MergeAnalysis | null;
   appliedPaths: string[];
   attempts: number;
   baseVersion: MergeVersionReference;

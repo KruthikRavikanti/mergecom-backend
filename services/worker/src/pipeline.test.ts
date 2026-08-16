@@ -296,6 +296,20 @@ const mergeJob: ClaimedMergeJob = {
   traceId: job.traceId,
 };
 const mergeResult: MergeResult = {
+  analysis: {
+    automatic_merge_eligible: true,
+    automatic_merge_enabled: false,
+    blockers: [],
+    items: [],
+    schema_version: '1.0.0',
+    summary: {
+      ambiguous: 0,
+      compatible_overlap: 0,
+      non_overlapping: 0,
+      true_conflict: 0,
+      unsupported: 0,
+    },
+  },
   applied_paths: ['/body/p/2'],
   base_source_sha256: mergeJob.baseArtifact.sha256,
   candidate_byte_size: mergeCandidate.byteLength,
@@ -335,11 +349,20 @@ describe('merge processor', () => {
       engine,
       30_000,
       60_000,
+      true,
+      [mergeJob.organizationId],
     );
 
     await processor.process(mergeJob.id);
 
     expect(storage.readArtifact).toHaveBeenCalledTimes(3);
+    expect(engine.merge).toHaveBeenCalledWith(
+      mergeJob,
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+      true,
+    );
     expect(storage.putMergeCandidate).toHaveBeenCalledWith(
       expect.objectContaining({
         key: expect.stringContaining(
@@ -394,6 +417,41 @@ describe('merge processor', () => {
     expect(storage.putMergeCandidate).not.toHaveBeenCalled();
     expect(store.completeMerge).toHaveBeenCalledWith(
       expect.objectContaining({ candidateObjectKey: null }),
+    );
+  });
+
+  it('requires both the global flag and organization pilot membership', async () => {
+    const store = {
+      claimMerge: vi.fn().mockResolvedValue(mergeJob),
+      completeMerge: vi.fn().mockResolvedValue(undefined),
+      heartbeatMerge: vi.fn().mockResolvedValue(true),
+      listDispatchableMerges: vi.fn().mockResolvedValue([]),
+      markMergeDispatched: vi.fn().mockResolvedValue(undefined),
+      recordMergeFailure: vi.fn().mockResolvedValue(false),
+    };
+    const storage = {
+      putMergeCandidate: vi.fn().mockResolvedValue(undefined),
+      readArtifact: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3, 4])),
+    };
+    const engine = { merge: vi.fn().mockResolvedValue(mergeResult) };
+    const processor = new MergeProcessor(
+      store,
+      storage,
+      engine,
+      30_000,
+      60_000,
+      true,
+      ['10000000-0000-4000-8000-000000000099'],
+    );
+
+    await processor.process(mergeJob.id);
+
+    expect(engine.merge).toHaveBeenCalledWith(
+      mergeJob,
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+      false,
     );
   });
 });

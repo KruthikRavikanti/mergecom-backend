@@ -11,6 +11,7 @@ const versionPath = `${documentPath}/versions`;
 const reviewsPath = `${documentPath}/reviews`;
 const notificationsPath = `/v1/organizations/${organizationId}/notifications`;
 const reviewId = '92000000-0000-4000-8000-000000000001';
+const mergeId = '94000000-0000-4000-8000-000000000001';
 const reviewerUserId = '20000000-0000-4000-8000-000000000002';
 
 const currentUser = {
@@ -212,6 +213,117 @@ test.beforeEach(async ({ page }) => {
       id: '90000000-0000-4000-8000-000000000002',
       note: 'Work prepared from the earlier client draft',
     },
+  };
+  const merge = {
+    analysis: {
+      automaticMergeEligible: false,
+      automaticMergeEnabled: true,
+      blockers: [
+        {
+          category: 'chart',
+          code: 'incompatible_target_changes',
+          explanation:
+            'Both versions changed the same semantic target incompatibly.',
+          path: '/presentation/slides/ppt/slides/slide12.xml/shapes/7',
+        },
+      ],
+      items: [
+        {
+          automaticallyResolved: false,
+          category: 'chart',
+          classification: 'true_conflict',
+          confidence: 'high',
+          explanation:
+            'Both versions changed this valuation chart incompatibly.',
+          id: '1'.repeat(64),
+          label: 'Valuation chart',
+          oursChange: 'modified',
+          path: '/presentation/slides/ppt/slides/slide12.xml/shapes/7',
+          theirsChange: 'modified',
+        },
+        {
+          automaticallyResolved: false,
+          category: 'text',
+          classification: 'non_overlapping',
+          confidence: 'high',
+          explanation:
+            'Only the latest team version changed text in this stable shape.',
+          id: '2'.repeat(64),
+          label: 'Executive summary',
+          oursChange: 'modified',
+          path: '/presentation/slides/ppt/slides/slide4.xml/shapes/2',
+          theirsChange: null,
+        },
+        {
+          automaticallyResolved: false,
+          category: 'layout',
+          classification: 'unsupported',
+          confidence: 'high',
+          explanation:
+            'The slide layout package part changed outside automatic coverage.',
+          id: '3'.repeat(64),
+          label: 'Layout',
+          oursChange: null,
+          path: '/package/parts/ppt/slideLayouts/slideLayout2.xml',
+          theirsChange: 'modified',
+        },
+      ],
+      schemaVersion: '1.0.0',
+      summary: {
+        ambiguous: 0,
+        compatible_overlap: 0,
+        non_overlapping: 1,
+        true_conflict: 1,
+        unsupported: 1,
+      },
+    },
+    appliedPaths: [],
+    attempts: 1,
+    baseVersion: {
+      artifactSha256: '7'.repeat(64),
+      authorName: 'Avery Chen',
+      createdAt: '2026-08-15T11:00:00.000Z',
+      displayNumber: 7,
+      id: '95000000-0000-4000-8000-000000000007',
+      note: 'Common presentation base',
+      status: 'ready',
+    },
+    branchId: '81000000-0000-4000-8000-000000000001',
+    candidate: null,
+    createdAt: '2026-08-16T15:00:00.000Z',
+    engineVersion: '1.1.0',
+    failureCode: 'powerpoint_changes_conflict',
+    id: mergeId,
+    maxAttempts: 3,
+    mergeSchemaVersion: '1.1.0',
+    nextAttemptAt: null,
+    note: 'Merge incoming valuation edits',
+    oursVersion: {
+      artifactSha256: '9'.repeat(64),
+      authorName: 'Avery Chen',
+      createdAt: '2026-08-16T13:00:00.000Z',
+      displayNumber: 9,
+      id: '95000000-0000-4000-8000-000000000009',
+      note: 'Latest team presentation',
+      status: 'ready',
+    },
+    parserVersion: '1.1.0',
+    resultVersionId: null,
+    stableHash: '4'.repeat(64),
+    state: 'manual_resolution_required',
+    strategy: null,
+    supportTraceId: '96000000-0000-4000-8000-000000000001',
+    theirsVersion: {
+      artifactSha256: '8'.repeat(64),
+      authorName: 'Riley Morgan',
+      createdAt: '2026-08-16T12:30:00.000Z',
+      displayNumber: 8,
+      id: '95000000-0000-4000-8000-000000000008',
+      note: 'Incoming valuation update',
+      status: 'conflicted',
+    },
+    updatedAt: '2026-08-16T15:00:02.000Z',
+    warnings: [],
   };
   const notificationItems = [
     {
@@ -493,6 +605,10 @@ test.beforeEach(async ({ page }) => {
       });
       return;
     }
+    if (path === `${documentPath}/merges/${mergeId}` && method === 'GET') {
+      await route.fulfill({ json: merge, status: 200 });
+      return;
+    }
     if (path === reviewsPath && method === 'GET') {
       await route.fulfill({
         json: { items: [review], nextCursor: null },
@@ -700,6 +816,40 @@ test('reads inbox activity and persists notification preferences', async ({
   await expect(
     page.getByRole('heading', { name: 'No unread notifications' }),
   ).toBeVisible();
+});
+
+test('groups PowerPoint conflict analysis without exposing raw package XML', async ({
+  page,
+}, testInfo) => {
+  await startIdentitySession(page);
+  await page.goto(
+    `/app/projects/${projectId}/documents/${documentId}/history/merges/${mergeId}`,
+  );
+  await expect(
+    page.getByRole('heading', { name: 'Conflict analysis' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Valuation chart', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Executive summary', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Unsupported package content', { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Download base' }),
+  ).toBeVisible();
+  await expect(page.getByText(/<p:|<a:|\.xml</u)).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath('phase10-powerpoint-conflicts.png'),
+  });
 });
 
 test('creates a persisted project through the API boundary', async ({

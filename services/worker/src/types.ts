@@ -126,6 +126,7 @@ export interface ComparisonResult {
 }
 
 export interface MergeResult {
+  analysis: MergeAnalysis;
   applied_paths: string[];
   base_source_sha256: string;
   candidate_byte_size: number | null;
@@ -142,6 +143,42 @@ export interface MergeResult {
   strategy: string | null;
   theirs_source_sha256: string;
   warnings: string[];
+}
+
+export type MergeAnalysisClassification =
+  | 'ambiguous'
+  | 'compatible_overlap'
+  | 'non_overlapping'
+  | 'true_conflict'
+  | 'unsupported';
+
+export interface MergeAnalysisItem {
+  automatically_resolved: boolean;
+  category: string;
+  classification: MergeAnalysisClassification;
+  confidence: 'high' | 'low' | 'medium';
+  explanation: string;
+  id: string;
+  label: string;
+  ours_change: string | null;
+  path: string;
+  theirs_change: string | null;
+}
+
+export interface MergeAnalysisBlocker {
+  category: string;
+  code: string;
+  explanation: string;
+  path: string | null;
+}
+
+export interface MergeAnalysis {
+  automatic_merge_eligible: boolean;
+  automatic_merge_enabled: boolean;
+  blockers: MergeAnalysisBlocker[];
+  items: MergeAnalysisItem[];
+  schema_version: string;
+  summary: Record<MergeAnalysisClassification, number>;
 }
 
 export interface DispatchableJob {
