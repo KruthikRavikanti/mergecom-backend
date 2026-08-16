@@ -2,6 +2,9 @@ import { ArtifactStorage } from './artifact-storage';
 import { createApp } from './app';
 import { loadWorkerConfig } from './config';
 import { DocumentEngineClient } from './document-engine-client';
+import { createNotificationMailer } from './notification-mailer';
+import { NotificationPipeline } from './notification-pipeline';
+import { NotificationStore } from './notification-store';
 import { DocumentPipeline } from './pipeline';
 import { ProcessingStore } from './processing-store';
 import {
@@ -20,28 +23,44 @@ const engine = new DocumentEngineClient(
   config.documentEngineToken,
 );
 const pipeline = new DocumentPipeline(config, store, storage, engine);
+const notificationStore = new NotificationStore(config.databaseUrl);
+const notificationPipeline = new NotificationPipeline(
+  config,
+  notificationStore,
+  createNotificationMailer({
+    from: config.notificationFrom,
+    smtpUrl: config.smtpUrl,
+    webOrigin: config.webOrigin,
+  }),
+);
 const redisProbe = createRedisReadinessProbe(config.redisUrl);
 const readiness: WorkerReadinessProbe = async () => {
-  const [redis, database, objectStorage, documentEngine] = await Promise.all([
-    redisProbe(),
-    store.probe(),
-    storage.probe(),
-    engine.probe(),
-  ]);
+  const [redis, database, notificationDatabase, objectStorage, documentEngine] =
+    await Promise.all([
+      redisProbe(),
+      store.probe(),
+      notificationStore.probe(),
+      storage.probe(),
+      engine.probe(),
+    ]);
   return {
-    database: database ? 'ready' : 'unavailable',
+    database: database && notificationDatabase ? 'ready' : 'unavailable',
     documentEngine: documentEngine ? 'ready' : 'unavailable',
     objectStorage: objectStorage ? 'ready' : 'unavailable',
     redis: redis.redis ?? 'unavailable',
   };
 };
 readiness.close = async () => {
-  await pipeline.close();
-  await store.close();
+  await Promise.all([
+    pipeline.close(),
+    notificationPipeline.close(),
+    store.close(),
+    notificationStore.close(),
+  ]);
   await redisProbe.close?.();
 };
 
-await pipeline.start();
+await Promise.all([pipeline.start(), notificationPipeline.start()]);
 const app = createApp({ logger: true, readinessProbe: readiness });
 
 const shutdown = async () => {

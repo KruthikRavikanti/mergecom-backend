@@ -20,6 +20,7 @@ Phase 1 created the canonical repository structure and moved evidence without ca
 | Browser mock identity/members/settings | PostgreSQL through `services/api` | Removed; immutable IdP mappings, server sessions, tenant checks, and RBAC are authoritative | 2 complete |
 | Browser mock projects/teams/documents | PostgreSQL through `services/api` | Removed; tenant-linked projects, explicit project memberships, nested folders, document records, archives, and audits are authoritative | 3 complete |
 | Browser review labels and local comments | PostgreSQL through `services/api` | Removed; immutable-version requests, fixed assignments, append-only decisions/comments, exact comparison anchors, audit/outbox evidence, and the approved pointer are authoritative | 7 complete |
+| Mock notification settings and console behavior | PostgreSQL, worker SMTP delivery, and `apps/web` | Removed; recipient inbox state, channel preferences, suppression, retries, leases, provider evidence, and dead letters are authoritative | 9 complete |
 
 ## Migration sequence
 

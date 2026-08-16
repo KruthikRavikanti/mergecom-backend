@@ -9,6 +9,7 @@ const projectPath = `${projectsPath}/${projectId}`;
 const documentPath = `${projectPath}/documents/${documentId}`;
 const versionPath = `${documentPath}/versions`;
 const reviewsPath = `${documentPath}/reviews`;
+const notificationsPath = `/v1/organizations/${organizationId}/notifications`;
 const reviewId = '92000000-0000-4000-8000-000000000001';
 const reviewerUserId = '20000000-0000-4000-8000-000000000002';
 
@@ -212,6 +213,36 @@ test.beforeEach(async ({ page }) => {
       note: 'Work prepared from the earlier client draft',
     },
   };
+  const notificationItems = [
+    {
+      body: 'A document version is waiting for your review.',
+      category: 'review_activity',
+      createdAt: '2026-08-16T14:00:00.000Z',
+      eventType: 'review.requested',
+      href: `/app/projects/${projectId}/documents/${documentId}/history/reviews/${reviewId}`,
+      id: '93000000-0000-4000-8000-000000000001',
+      readAt: null as string | null,
+      title: 'Review requested',
+    },
+    {
+      body: 'A requested version comparison is ready.',
+      category: 'document_activity',
+      createdAt: '2026-08-16T13:00:00.000Z',
+      eventType: 'version.comparison_finished',
+      href: `/app/projects/${projectId}/documents/${documentId}/history`,
+      id: '93000000-0000-4000-8000-000000000002',
+      readAt: null as string | null,
+      title: 'Comparison ready',
+    },
+  ];
+  let notificationPreferences = {
+    emailAvailable: true,
+    emailDocumentActivity: false,
+    emailReviewActivity: false,
+    inAppDocumentActivity: true,
+    inAppReviewActivity: true,
+    updatedAt: '2026-08-16T12:00:00.000Z',
+  };
   let headVersionId = versions[1]!.id;
 
   await page.route('**/*', async (route) => {
@@ -271,6 +302,67 @@ test.beforeEach(async ({ page }) => {
         },
         status: 200,
       });
+      return;
+    }
+    if (path === `${notificationsPath}/preferences` && method === 'GET') {
+      await route.fulfill({ json: notificationPreferences, status: 200 });
+      return;
+    }
+    if (path === `${notificationsPath}/preferences` && method === 'PUT') {
+      notificationPreferences = {
+        ...notificationPreferences,
+        ...(request.postDataJSON() as Omit<
+          typeof notificationPreferences,
+          'emailAvailable' | 'updatedAt'
+        >),
+        updatedAt: '2026-08-16T15:00:00.000Z',
+      };
+      await route.fulfill({ json: notificationPreferences, status: 200 });
+      return;
+    }
+    if (path === notificationsPath && method === 'GET') {
+      const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
+      await route.fulfill({
+        json: {
+          items: notificationItems.filter(
+            (notification) => !unreadOnly || !notification.readAt,
+          ),
+          nextCursor: null,
+          unreadCount: notificationItems.filter(
+            (notification) => !notification.readAt,
+          ).length,
+        },
+        status: 200,
+      });
+      return;
+    }
+    if (path === `${notificationsPath}/read-all` && method === 'POST') {
+      let updatedCount = 0;
+      for (const notification of notificationItems) {
+        if (!notification.readAt) {
+          notification.readAt = '2026-08-16T15:00:00.000Z';
+          updatedCount += 1;
+        }
+      }
+      await route.fulfill({ json: { updatedCount }, status: 200 });
+      return;
+    }
+    const notificationRead = path.match(
+      new RegExp(`^${notificationsPath}/([0-9a-f-]+)/read$`, 'u'),
+    );
+    if (notificationRead && method === 'POST') {
+      const notification = notificationItems.find(
+        (candidate) => candidate.id === notificationRead[1],
+      );
+      if (!notification) {
+        await route.fulfill({
+          json: { code: 'not_found', message: 'Resource not found.' },
+          status: 404,
+        });
+        return;
+      }
+      notification.readAt ??= '2026-08-16T15:00:00.000Z';
+      await route.fulfill({ json: notification, status: 200 });
       return;
     }
     if (path === '/health/ready') {
@@ -556,6 +648,7 @@ const authenticatedRoutes = [
     path: `/app/projects/${projectId}/documents/${documentId}/history/reviews/${reviewId}`,
   },
   { heading: 'Team', path: '/app/team' },
+  { heading: 'Notifications', path: '/app/notifications' },
   { heading: 'Settings', path: '/app/settings' },
   { heading: 'Workspace controls', path: '/app/admin' },
 ];
@@ -569,6 +662,45 @@ for (const route of authenticatedRoutes) {
     ).toBeVisible();
   });
 }
+
+test('reads inbox activity and persists notification preferences', async ({
+  page,
+}, testInfo) => {
+  await startIdentitySession(page);
+  await page.goto('/app/notifications');
+  await expect(
+    page.getByText('Review requested', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Comparison ready', { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath('phase9-notifications.png'),
+  });
+
+  await page.getByRole('button', { name: /Review requested/u }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/history/reviews/${reviewId}$`, 'u'),
+  );
+  await page.goto('/app/settings');
+  const reviewEmail = page.getByLabel('Review activity email');
+  await reviewEmail.check();
+  await expect(reviewEmail).toBeChecked();
+  const documentInbox = page.getByLabel('Document activity in-app inbox');
+  await documentInbox.uncheck();
+  await expect(documentInbox).not.toBeChecked();
+
+  await page.goto('/app/notifications');
+  await page.getByRole('button', { name: 'Mark all read' }).click();
+  await page
+    .getByRole('group', { name: 'Notification view' })
+    .getByRole('button', { name: /^Unread/u })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'No unread notifications' }),
+  ).toBeVisible();
+});
 
 test('creates a persisted project through the API boundary', async ({
   page,

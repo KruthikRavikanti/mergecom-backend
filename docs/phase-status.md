@@ -1,5 +1,24 @@
 # Phase status
 
+## Phase 9: durable notifications
+
+Status: implementation complete on `phase-9/notifications`; pending owner review.
+
+- [x] Review and asynchronous document completion events fan out from the transactional outbox without changing mutation latency or publishing an event before recipient records exist.
+- [x] PostgreSQL owns fanout and email queue state, bounded attempts, availability, leases, heartbeats, retry evidence, terminal completion, suppression, and dead letters.
+- [x] Recipient resolution rechecks active organization membership, enabled identity state, and current project scope; review actors are excluded from their own social notifications.
+- [x] A unique source-event/recipient notification and unique notification/channel delivery make duplicate BullMQ delivery a no-op.
+- [x] In-app review and document activity default on, email defaults off, and email can only be enabled for an identity with a verified address.
+- [x] SMTP messages contain generic workflow metadata and an authorized deep link, use deterministic message IDs, and do not include document names, comments, decision notes, or package content.
+- [x] The tenant-scoped API exposes cursor-paginated inbox reads, unread counts, recipient-owned read mutations, read-all, and audited preference updates without exposing delivery internals.
+- [x] The web app provides a polling inbox, unread header badge, all/unread views, deep-link navigation, mark-one/all-read behavior, and persisted channel controls.
+- [x] Real PostgreSQL and SMTP integration covers fanout, actor exclusion, preference suppression, durable completion, provider IDs, and duplicate processing; focused unit tests cover retries and permanent failure.
+- [x] Desktop and mobile Playwright cover the inbox, settings mutations, read state, and a live reviewer deep link with no clipping or horizontal overflow.
+
+The contract is documented in `docs/product/notifications.md`; operational inspection
+and recovery are in `docs/runbooks/notification-delivery.md`, and command evidence is
+in `docs/verification/phase-9-command-results.md`.
+
 ## Phase 8: conservative three-way merge
 
 Status: implementation complete on `phase-8/conservative-merge`; pending owner review.

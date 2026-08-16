@@ -464,9 +464,12 @@ function workerConfig(
     host: '127.0.0.1',
     leaseMilliseconds: 30_000,
     maxArtifactBytes: 100 * 1024 * 1024,
+    notificationConcurrency: 1,
+    notificationFrom: 'MergeCom <no-reply@mergecom.local>',
     organizationQuotaBytes: 5 * 1024 * 1024 * 1024,
     port: 3002,
     redisUrl: 'redis://127.0.0.1:6379',
+    smtpUrl: 'smtp://127.0.0.1:1025',
     s3: {
       accessKey: process.env.TEST_S3_ACCESS_KEY ?? 'mergecom-local',
       bucket,
@@ -475,5 +478,6 @@ function workerConfig(
       region: 'us-east-1',
       secretKey: process.env.TEST_S3_SECRET_KEY ?? 'mergecom-local-only',
     },
+    webOrigin: 'http://127.0.0.1:5173',
   };
 }

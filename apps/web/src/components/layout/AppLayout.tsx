@@ -1,4 +1,5 @@
 import {
+  Bell,
   Building2,
   FolderKanban,
   LogOut,
@@ -7,9 +8,12 @@ import {
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 
-import { useSwitchOrganizationMutation } from '../../api/queries';
+import {
+  useNotificationsQuery,
+  useSwitchOrganizationMutation,
+} from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
 import { canManageAccess, roleLabels } from '../../auth/roles';
 import { Brand } from './Brand';
@@ -29,9 +33,14 @@ const navigation = [
 export function AppLayout() {
   const { signOut, user } = useAuth();
   const switchOrganization = useSwitchOrganizationMutation();
+  const notifications = useNotificationsQuery(
+    user?.activeOrganization?.id,
+    true,
+  );
   const [logoutFailed, setLogoutFailed] = useState(false);
   if (!user) return null;
   const active = user.activeOrganization;
+  const unreadCount = notifications.data?.pages[0]?.unreadCount ?? 0;
   const visibleNavigation = navigation.filter(
     (item) => !item.adminOnly || canManageAccess(active?.role),
   );
@@ -128,14 +137,33 @@ export function AppLayout() {
               </p>
             )}
           </div>
-          <button
-            aria-label="Sign out"
-            className="rounded p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
-            type="button"
-            onClick={() => void logout()}
-          >
-            <LogOut aria-hidden="true" size={18} />
-          </button>
+          <div className="flex items-center gap-1">
+            <Link
+              aria-label={
+                unreadCount > 0
+                  ? `Notifications, ${unreadCount} unread`
+                  : 'Notifications'
+              }
+              className="relative rounded p-2 text-slate-500 hover:bg-slate-100"
+              title="Notifications"
+              to="/app/notifications"
+            >
+              <Bell aria-hidden="true" size={19} />
+              {unreadCount > 0 ? (
+                <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-700 px-1 text-[10px] font-bold text-white">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              ) : null}
+            </Link>
+            <button
+              aria-label="Sign out"
+              className="rounded p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
+              type="button"
+              onClick={() => void logout()}
+            >
+              <LogOut aria-hidden="true" size={18} />
+            </button>
+          </div>
         </header>
         <main className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">
           {!active || active.status !== 'active' ? (

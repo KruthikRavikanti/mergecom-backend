@@ -8,9 +8,12 @@ export interface WorkerConfig {
   host: string;
   leaseMilliseconds: number;
   maxArtifactBytes: number;
+  notificationConcurrency: number;
+  notificationFrom: string;
   organizationQuotaBytes: number;
   port: number;
   redisUrl: string;
+  smtpUrl: string;
   s3: {
     accessKey: string;
     bucket: string;
@@ -19,6 +22,7 @@ export interface WorkerConfig {
     region: string;
     secretKey: string;
   };
+  webOrigin: string;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -30,6 +34,16 @@ function positiveInteger(name: string, fallback: number): number {
 }
 
 export function loadWorkerConfig(): WorkerConfig {
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  if (nodeEnv === 'production' && !process.env.SMTP_URL) {
+    throw new Error(
+      'SMTP_URL is required for production notification delivery.',
+    );
+  }
+  const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
+  if (nodeEnv === 'production' && !webOrigin.startsWith('https://')) {
+    throw new Error('WEB_ORIGIN must use HTTPS in production.');
+  }
   const heartbeatMilliseconds = positiveInteger(
     'PROCESSING_HEARTBEAT_MILLISECONDS',
     5_000,
@@ -70,12 +84,16 @@ export function loadWorkerConfig(): WorkerConfig {
       'PROCESSING_MAX_ARTIFACT_BYTES',
       100 * 1024 * 1024,
     ),
+    notificationConcurrency: positiveInteger('NOTIFICATION_CONCURRENCY', 2),
+    notificationFrom:
+      process.env.NOTIFICATION_FROM ?? 'MergeCom <no-reply@mergecom.local>',
     organizationQuotaBytes: positiveInteger(
       'ORGANIZATION_STORAGE_QUOTA_BYTES',
       5 * 1024 * 1024 * 1024,
     ),
     port: positiveInteger('WORKER_PORT', 3002),
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
+    smtpUrl: process.env.SMTP_URL ?? 'smtp://localhost:1025',
     s3: {
       accessKey: process.env.S3_ACCESS_KEY ?? 'mergecom-local',
       bucket: process.env.S3_BUCKET ?? 'mergecom-artifacts',
@@ -84,5 +102,6 @@ export function loadWorkerConfig(): WorkerConfig {
       region: process.env.S3_REGION ?? 'us-east-1',
       secretKey: process.env.S3_SECRET_KEY ?? 'mergecom-local-only',
     },
+    webOrigin,
   };
 }

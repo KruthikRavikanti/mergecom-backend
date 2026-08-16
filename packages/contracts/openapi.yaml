@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MergeCom API
-  version: 0.7.0
-  description: Identity, project, immutable version, semantic comparison, conservative merge, and review workflow contracts.
+  version: 0.9.0
+  description: Identity, project, immutable version, semantic comparison, conservative merge, review workflow, and notification delivery contracts.
 paths:
   /health/live:
     get:
@@ -153,6 +153,98 @@ paths:
         '401': { $ref: '#/components/responses/ApiError' }
         '403': { $ref: '#/components/responses/ApiError' }
         '404': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/notifications:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: listNotifications
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: unreadOnly
+          in: query
+          required: false
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Recipient-owned in-app notification page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/notifications/preferences:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: getNotificationPreferences
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Current recipient notification preferences.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+        default: { $ref: '#/components/responses/ApiError' }
+    put:
+      operationId: updateNotificationPreferences
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationPreferenceInput' }
+      responses:
+        '200':
+          description: Notification preferences updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/notifications/{notificationId}/read:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/NotificationId'
+    post:
+      operationId: markNotificationRead
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Notification marked read for its recipient.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserNotification' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/notifications/read-all:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    post:
+      operationId: markAllNotificationsRead
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: All visible notifications marked read.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [updatedCount]
+                properties:
+                  updatedCount: { type: integer, minimum: 0 }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/memberships:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -1412,6 +1504,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     ThreadId:
       name: threadId
       in: path
@@ -1445,6 +1542,67 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
   schemas:
+    NotificationPreferenceInput:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          inAppReviewActivity,
+          emailReviewActivity,
+          inAppDocumentActivity,
+          emailDocumentActivity,
+        ]
+      properties:
+        inAppReviewActivity: { type: boolean }
+        emailReviewActivity: { type: boolean }
+        inAppDocumentActivity: { type: boolean }
+        emailDocumentActivity: { type: boolean }
+    NotificationPreferences:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          inAppReviewActivity,
+          emailReviewActivity,
+          inAppDocumentActivity,
+          emailDocumentActivity,
+          emailAvailable,
+          updatedAt,
+        ]
+      properties:
+        inAppReviewActivity: { type: boolean }
+        emailReviewActivity: { type: boolean }
+        inAppDocumentActivity: { type: boolean }
+        emailDocumentActivity: { type: boolean }
+        emailAvailable: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+    UserNotification:
+      type: object
+      additionalProperties: false
+      required: [id, category, eventType, title, body, href, readAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        category:
+          type: string
+          enum: [review_activity, document_activity]
+        eventType: { type: string }
+        title: { type: string }
+        body: { type: string }
+        href: { type: string }
+        readAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, unreadCount]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UserNotification' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
+        unreadCount: { type: integer, minimum: 0 }
     ApiError:
       type: object
       additionalProperties: false

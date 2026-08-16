@@ -741,7 +741,11 @@ export class PostgresReviewStore implements ReviewStore {
       await this.event(client, {
         eventType: 'review.requested',
         organizationId: input.actor.organizationId,
-        payload: { reviewRequestId, versionId: input.versionId },
+        payload: {
+          actorUserId: input.actor.userId,
+          reviewRequestId,
+          versionId: input.versionId,
+        },
         reviewRequestId,
       });
       return {
@@ -988,6 +992,7 @@ export class PostgresReviewStore implements ReviewStore {
         eventType: 'review.decision_recorded',
         organizationId: input.actor.organizationId,
         payload: {
+          actorUserId: input.actor.userId,
           decision: input.decision,
           outcome,
           reviewRequestId: input.reviewRequestId,
@@ -1055,7 +1060,10 @@ export class PostgresReviewStore implements ReviewStore {
           await this.event(client, {
             eventType: 'review.cancelled',
             organizationId: input.actor.organizationId,
-            payload: { reviewRequestId: input.reviewRequestId },
+            payload: {
+              actorUserId: input.actor.userId,
+              reviewRequestId: input.reviewRequestId,
+            },
             reviewRequestId: input.reviewRequestId,
           });
         } else if (review.status !== 'cancelled') {
@@ -1198,7 +1206,11 @@ export class PostgresReviewStore implements ReviewStore {
         await this.event(client, {
           eventType: 'review.thread_created',
           organizationId: input.actor.organizationId,
-          payload: { reviewRequestId: input.reviewRequestId, threadId },
+          payload: {
+            actorUserId: input.actor.userId,
+            reviewRequestId: input.reviewRequestId,
+            threadId,
+          },
           reviewRequestId: input.reviewRequestId,
         });
       }
@@ -1301,6 +1313,7 @@ export class PostgresReviewStore implements ReviewStore {
           eventType: 'review.comment_added',
           organizationId: input.actor.organizationId,
           payload: {
+            actorUserId: input.actor.userId,
             commentId,
             reviewRequestId: input.reviewRequestId,
             threadId: input.threadId,
@@ -1394,6 +1407,7 @@ export class PostgresReviewStore implements ReviewStore {
             eventType: 'review.thread_resolved',
             organizationId: input.actor.organizationId,
             payload: {
+              actorUserId: input.actor.userId,
               reviewRequestId: input.reviewRequestId,
               threadId: input.threadId,
             },

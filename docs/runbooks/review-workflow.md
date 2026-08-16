@@ -50,9 +50,12 @@ operation; Phase 7 intentionally provides no unaudited repair command.
 
 ## Outbox delivery
 
-Review mutations write `review.*` rows to `outbox_events`. Phase 7 retains them but
-has no notification consumer. Do not mark them published to simulate notification
-delivery. Phase 9 will own retry, channel preference, and publication semantics.
+Review mutations write `review.*` rows to `outbox_events`. The notification worker
+creates a durable `notification_dispatches` row, resolves currently authorized
+recipients, persists channel deliveries, and only then marks the source event
+published in the same transaction. Do not mark review events published or insert
+delivery rows manually. Inspect and recover them with
+`docs/runbooks/notification-delivery.md`.
 
 ## Integrity checks
 

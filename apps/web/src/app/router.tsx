@@ -11,6 +11,7 @@ import { DocumentHistoryPage } from '../features/history/DocumentHistoryPage';
 import { DocumentComparePage } from '../features/history/DocumentComparePage';
 import { DocumentMergePage } from '../features/history/DocumentMergePage';
 import { InviteAcceptancePage } from '../features/invitations/InviteAcceptancePage';
+import { NotificationInboxPage } from '../features/notifications/NotificationInboxPage';
 import { ProjectPage } from '../features/projects/ProjectPage';
 import { DocumentReviewPage } from '../features/reviews/DocumentReviewPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -65,6 +66,7 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
             path: 'projects/:projectId/documents/:documentId/history/reviews/:reviewRequestId',
           },
           { element: <TeamPage />, path: 'team' },
+          { element: <NotificationInboxPage />, path: 'notifications' },
           { element: <SettingsPage />, path: 'settings' },
           { element: <AdminPage />, path: 'admin' },
         ],

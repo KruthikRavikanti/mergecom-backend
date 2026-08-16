@@ -1,5 +1,11 @@
 import type { components } from '@mergecom/contracts';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 import { currentUserQueryKey, type CurrentUser } from '../auth/session';
 import { apiClient } from './client';
@@ -17,6 +23,10 @@ export type DocumentVersion = components['schemas']['DocumentVersion'];
 export type VersionPage = components['schemas']['VersionPage'];
 export type VersionComparison = components['schemas']['VersionComparison'];
 export type DocumentMerge = components['schemas']['DocumentMerge'];
+export type NotificationPreferences =
+  components['schemas']['NotificationPreferences'];
+export type NotificationPage = components['schemas']['NotificationPage'];
+export type UserNotification = components['schemas']['UserNotification'];
 export type ComparisonChange = components['schemas']['ComparisonChange'];
 export type ReviewRequest = components['schemas']['ReviewRequest'];
 export type ReviewPage = components['schemas']['ReviewPage'];
@@ -26,6 +36,10 @@ export type FinalizeVersionResult =
 
 export const queryKeys = {
   apiReadiness: ['api', 'readiness'] as const,
+  notificationPreferences: (organizationId: string) =>
+    ['notifications', organizationId, 'preferences'] as const,
+  notifications: (organizationId: string, unreadOnly: boolean) =>
+    ['notifications', organizationId, 'inbox', { unreadOnly }] as const,
   members: (organizationId: string) =>
     ['identity', 'organizations', organizationId, 'memberships'] as const,
   project: (organizationId: string, projectId: string) =>
@@ -128,6 +142,150 @@ export const queryKeys = {
   projectTeam: (organizationId: string, projectId: string) =>
     ['projects', organizationId, projectId, 'team'] as const,
 };
+
+export function useNotificationsQuery(
+  organizationId: string | undefined,
+  unreadOnly = false,
+) {
+  return useInfiniteQuery<
+    NotificationPage,
+    Error,
+    InfiniteData<NotificationPage>,
+    ReturnType<typeof queryKeys.notifications>,
+    string | undefined
+  >({
+    enabled: Boolean(organizationId),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/notifications',
+        {
+          params: {
+            path: { organizationId: organizationId! },
+            query: {
+              limit: 50,
+              unreadOnly,
+              ...(pageParam ? { cursor: pageParam } : {}),
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Notifications could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.notifications(
+      organizationId ?? 'unavailable',
+      unreadOnly,
+    ),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useNotificationPreferencesQuery(
+  organizationId: string | undefined,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/notifications/preferences',
+        { params: { path: { organizationId: organizationId! } } },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Notification preferences could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.notificationPreferences(
+      organizationId ?? 'unavailable',
+    ),
+  });
+}
+
+export function useUpdateNotificationPreferencesMutation(
+  currentUser: CurrentUser,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      body: components['schemas']['NotificationPreferenceInput'],
+    ) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.PUT(
+        '/v1/organizations/{organizationId}/notifications/preferences',
+        {
+          body,
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Notification preferences could not be updated.');
+      return data;
+    },
+    onSuccess: (preferences) => {
+      queryClient.setQueryData(
+        queryKeys.notificationPreferences(activeOrganizationId(currentUser)),
+        preferences,
+      );
+    },
+  });
+}
+
+export function useMarkNotificationReadMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationId: string) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/notifications/{notificationId}/read',
+        {
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { notificationId, organizationId },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Notification could not be marked read.');
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['notifications', activeOrganizationId(currentUser)],
+      });
+    },
+  });
+}
+
+export function useMarkAllNotificationsReadMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/notifications/read-all',
+        {
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Notifications could not be marked read.');
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['notifications', activeOrganizationId(currentUser)],
+      });
+    },
+  });
+}
 
 function failure(error: unknown, fallback: string): Error {
   if (error && typeof error === 'object' && 'message' in error) {

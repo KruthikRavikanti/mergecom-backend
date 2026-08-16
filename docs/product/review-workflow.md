@@ -65,8 +65,9 @@ same logical review on replay and reject key reuse with a different payload. Rev
 and branch locks serialize terminal decisions and pointer movement.
 
 Successful requests, decisions, cancellation, thread creation, comments, and
-resolution write an audit event and a transactional outbox event. Phase 9 can consume
-those outbox rows for notifications; Phase 7 does not send email or in-app alerts.
+resolution write an audit event and a transactional outbox event. The Phase 9
+notification pipeline consumes those rows, rechecks current recipient scope, and
+publishes durable in-app and preference-controlled email deliveries.
 
 Composite foreign keys bind reviews, versions, comparisons, assignments, threads,
 comments, and the approved pointer to the same organization and document. Database

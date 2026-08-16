@@ -13,6 +13,9 @@ import { registerIdentityRoutes } from './identity/identity-routes';
 import { OidcClient } from './identity/oidc';
 import { PostgresIdentityStore } from './identity/postgres-store';
 import type { IdentityStore } from './identity/store';
+import { PostgresNotificationStore } from './notifications/postgres-store';
+import { registerNotificationRoutes } from './notifications/routes';
+import type { NotificationStore } from './notifications/store';
 import { PostgresProjectStore } from './projects/postgres-store';
 import { registerProjectRoutes } from './projects/routes';
 import type { ProjectStore } from './projects/store';
@@ -47,6 +50,7 @@ interface CreateAppOptions {
   databaseUrl?: string | undefined;
   identityStore?: IdentityStore;
   logger?: boolean;
+  notificationStore?: NotificationStore;
   projectStore?: ProjectStore;
   readinessProbe?: ReadinessProbe;
   reviewStore?: ReviewStore;
@@ -63,6 +67,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     (!options.identityStore ||
       !options.projectStore ||
       !options.reviewStore ||
+      !options.notificationStore ||
       !options.versionStore) &&
     options.databaseUrl
       ? createDatabase(options.databaseUrl)
@@ -78,6 +83,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   const reviewStore =
     options.reviewStore ??
     (database ? new PostgresReviewStore(database.pool) : null);
+  const notificationStore =
+    options.notificationStore ??
+    (database ? new PostgresNotificationStore(database.pool) : null);
   const blobStore =
     options.blobStore ??
     (config.blobStorage ? new S3BlobStore(config.blobStorage) : null);
@@ -122,7 +130,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'MergeCom API', version: '0.7.0' },
+      info: { title: 'MergeCom API', version: '0.9.0' },
       components: {
         securitySchemes: {
           sessionCookie: {
@@ -174,6 +182,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     };
     registerAuthRoutes(app, runtime);
     registerIdentityRoutes(app, runtime);
+    if (notificationStore) {
+      registerNotificationRoutes(app, { ...runtime, notificationStore });
+    }
     if (projectStore) {
       registerProjectRoutes(app, { ...runtime, projectStore });
     }

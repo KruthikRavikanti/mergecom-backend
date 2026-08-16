@@ -17,8 +17,8 @@ The prototype demonstrates product intent but has no production trust boundary. 
 | Restore | Destructive replacement | New version pointing to an authorized older artifact; history preserved | 4 |
 | Concurrency | Last writer replaces global file | Base version checks, stale-write rejection, idempotent commands | 4 |
 | Merge | Durable three-way operation over exact immutable inputs; exact-head strategies for all supported Office types; validated disjoint Word text merge; explicit retained manual outcomes | Broaden automatic coverage only with format-specific validation and no loss of unsupported package content | 8 complete |
-| Review/comments | Persisted immutable-version requests, assignments, append-only decisions/comments, exact change anchors, audits, and approval pointer | Notification delivery and merge handoff build on retained review outbox state | 7 complete |
-| Notifications | Mock UI and console behavior | Transactional outbox, retries, in-app/email preferences | 9 |
+| Review/comments | Persisted immutable-version requests, assignments, append-only decisions/comments, exact change anchors, audits, approval pointer, and notification fanout | Broaden workflow integrations only without weakening immutable evidence or authorization checks | 9 complete |
+| Notifications | Recipient-scoped transactional outbox fanout, in-app inbox, verified-address email, preferences, leases, retries, and dead letters | Add providers or digest modes only through the durable delivery contract | 9 complete |
 | Security | Committed key, broad CORS, payload logs | Secret management, least privilege, scan/quarantine, safe logs, runbooks | 0 onward |
 | Compliance claims | Unsupported marketing text | Truthful language backed by implemented controls and evidence | 1 onward |
 | Quality | Builds without tests; lint/type failures | Unit, integration, contract, fixture, accessibility, and end-to-end gates | 1 onward |

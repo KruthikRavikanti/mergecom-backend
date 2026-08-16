@@ -13,7 +13,7 @@
     "dev": "tsx watch src/server.ts",
     "lint": "eslint src test",
     "start": "node dist/server.js",
-    "test:integration": "vitest run --no-file-parallelism test/startup.test.ts test/postgres.test.ts test/identity.postgres.test.ts test/projects.postgres.test.ts test/versions.postgres.test.ts",
+    "test:integration": "vitest run --no-file-parallelism test/startup.test.ts test/postgres.test.ts test/identity.postgres.test.ts test/projects.postgres.test.ts test/versions.postgres.test.ts test/notifications.postgres.test.ts",
     "test:unit": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

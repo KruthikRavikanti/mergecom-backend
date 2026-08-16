@@ -57,6 +57,13 @@
       "when": 1786897545592,
       "tag": "0007_fluffy_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786901312296,
+      "tag": "0008_fast_sue_storm",
+      "breakpoints": true
     }
   ]
 }

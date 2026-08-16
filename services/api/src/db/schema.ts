@@ -112,6 +112,22 @@ export const reviewAnchorType = pgEnum('review_anchor_type', [
   'general',
   'comparison_change',
 ]);
+export const notificationCategory = pgEnum('notification_category', [
+  'review_activity',
+  'document_activity',
+]);
+export const notificationChannel = pgEnum('notification_channel', [
+  'in_app',
+  'email',
+]);
+export const notificationJobStatus = pgEnum('notification_job_status', [
+  'queued',
+  'running',
+  'retryable_failed',
+  'permanently_failed',
+  'completed',
+  'suppressed',
+]);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true })
@@ -1350,6 +1366,194 @@ export const outboxEvents = pgTable(
     index('outbox_events_aggregate_idx').on(
       table.aggregateType,
       table.aggregateId,
+    ),
+  ],
+);
+
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    inAppReviewActivity: boolean('in_app_review_activity')
+      .default(true)
+      .notNull(),
+    emailReviewActivity: boolean('email_review_activity')
+      .default(false)
+      .notNull(),
+    inAppDocumentActivity: boolean('in_app_document_activity')
+      .default(true)
+      .notNull(),
+    emailDocumentActivity: boolean('email_document_activity')
+      .default(false)
+      .notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('notification_preferences_organization_user_uq').on(
+      table.organizationId,
+      table.userId,
+    ),
+  ],
+);
+
+export const notificationDispatches = pgTable(
+  'notification_dispatches',
+  {
+    outboxEventId: uuid('outbox_event_id')
+      .primaryKey()
+      .references(() => outboxEvents.id, { onDelete: 'cascade' }),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    status: notificationJobStatus('status').default('queued').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(5).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
+    lastError: text('last_error'),
+    traceId: uuid('trace_id').defaultRandom().notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    index('notification_dispatches_queue_idx').on(
+      table.status,
+      table.availableAt,
+    ),
+    index('notification_dispatches_lease_idx').on(
+      table.status,
+      table.leaseExpiresAt,
+    ),
+    check(
+      'notification_dispatches_attempts_ck',
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} > 0 and ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+    check(
+      'notification_dispatches_terminal_ck',
+      sql`(${table.status} in ('completed', 'permanently_failed') and ${table.completedAt} is not null)
+          or (${table.status} not in ('completed', 'permanently_failed') and ${table.completedAt} is null)`,
+    ),
+    check(
+      'notification_dispatches_status_ck',
+      sql`${table.status} <> 'suppressed'`,
+    ),
+  ],
+);
+
+export const userNotifications = pgTable(
+  'user_notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    recipientUserId: uuid('recipient_user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    sourceEventId: uuid('source_event_id')
+      .references(() => outboxEvents.id, { onDelete: 'cascade' })
+      .notNull(),
+    category: notificationCategory('category').notNull(),
+    eventType: text('event_type').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    href: text('href').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('user_notifications_event_recipient_uq').on(
+      table.sourceEventId,
+      table.recipientUserId,
+    ),
+    uniqueIndex('user_notifications_organization_id_uq').on(
+      table.organizationId,
+      table.id,
+    ),
+    index('user_notifications_inbox_idx').on(
+      table.organizationId,
+      table.recipientUserId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      'user_notifications_content_ck',
+      sql`length(${table.title}) between 1 and 160
+          and length(${table.body}) between 1 and 500
+          and ${table.href} like '/app/projects/%'`,
+    ),
+  ],
+);
+
+export const notificationDeliveries = pgTable(
+  'notification_deliveries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    notificationId: uuid('notification_id')
+      .references(() => userNotifications.id, { onDelete: 'cascade' })
+      .notNull(),
+    channel: notificationChannel('channel').notNull(),
+    status: notificationJobStatus('status').default('queued').notNull(),
+    recipientAddress: text('recipient_address'),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(5).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
+    lastError: text('last_error'),
+    providerMessageId: text('provider_message_id'),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('notification_deliveries_notification_channel_uq').on(
+      table.notificationId,
+      table.channel,
+    ),
+    index('notification_deliveries_queue_idx').on(
+      table.channel,
+      table.status,
+      table.availableAt,
+    ),
+    index('notification_deliveries_lease_idx').on(
+      table.status,
+      table.leaseExpiresAt,
+    ),
+    check(
+      'notification_deliveries_attempts_ck',
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} > 0 and ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+    check(
+      'notification_deliveries_address_ck',
+      sql`(${table.channel} = 'email' and (${table.recipientAddress} is not null or ${table.status} = 'suppressed'))
+          or (${table.channel} = 'in_app' and ${table.recipientAddress} is null)`,
+    ),
+    check(
+      'notification_deliveries_terminal_ck',
+      sql`(${table.status} in ('completed', 'suppressed', 'permanently_failed') and ${table.completedAt} is not null)
+          or (${table.status} not in ('completed', 'suppressed', 'permanently_failed') and ${table.completedAt} is null)`,
     ),
   ],
 );
