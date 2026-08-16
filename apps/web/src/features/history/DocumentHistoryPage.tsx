@@ -12,6 +12,7 @@ import {
   Download,
   FileText,
   LoaderCircle,
+  ShieldAlert,
   RotateCcw,
   Upload,
 } from 'lucide-react';
@@ -65,6 +66,26 @@ const statusClasses: Record<DocumentVersion['status'], string> = {
   pending_processing: 'border-sky-300 bg-sky-50 text-sky-900',
   quarantined: 'border-red-300 bg-red-50 text-red-800',
   ready: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+};
+const processingLabels: Record<DocumentVersion['processing']['state'], string> =
+  {
+    completed: 'Inspection complete',
+    permanently_failed: 'Inspection failed',
+    quarantined: 'Quarantined',
+    queued: 'Queued',
+    retryable_failed: 'Retry scheduled',
+    running: 'Inspecting',
+  };
+const processingClasses: Record<
+  DocumentVersion['processing']['state'],
+  string
+> = {
+  completed: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+  permanently_failed: 'border-red-300 bg-red-50 text-red-800',
+  quarantined: 'border-red-300 bg-red-50 text-red-800',
+  queued: 'border-sky-300 bg-sky-50 text-sky-900',
+  retryable_failed: 'border-amber-300 bg-amber-50 text-amber-900',
+  running: 'border-sky-300 bg-sky-50 text-sky-900',
 };
 
 type UploadStage =
@@ -157,7 +178,7 @@ export function DocumentHistoryPage() {
         setUploadStage('idle');
         setToast({
           kind: 'success',
-          message: `Version ${result.version.displayNumber} is processing.`,
+          message: `Version ${result.version.displayNumber} was uploaded for secure inspection.`,
         });
       }
     } catch (error) {
@@ -294,6 +315,20 @@ export function DocumentHistoryPage() {
                     >
                       {statusLabels[version.status]}
                     </span>
+                    {version.processing.state !== 'completed' ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-bold ${processingClasses[version.processing.state]}`}
+                      >
+                        {version.processing.state === 'running' ? (
+                          <LoaderCircle
+                            aria-hidden="true"
+                            className="animate-spin"
+                            size={13}
+                          />
+                        ) : null}
+                        {processingLabels[version.processing.state]}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-2 break-words text-sm font-medium text-slate-800">
                     {version.note}
@@ -304,6 +339,62 @@ export function DocumentHistoryPage() {
                       Based on an older team version; the latest was not
                       changed.
                     </p>
+                  ) : null}
+                  {version.processing.state === 'queued' ? (
+                    <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-sky-900">
+                      <Clock3 aria-hidden="true" size={16} />
+                      Waiting for secure inspection
+                    </p>
+                  ) : null}
+                  {version.processing.state === 'running' ? (
+                    <p className="mt-2 text-sm font-semibold text-sky-900">
+                      Secure inspection attempt {version.processing.attempts} of{' '}
+                      {version.processing.maxAttempts}
+                    </p>
+                  ) : null}
+                  {version.processing.state === 'retryable_failed' ? (
+                    <p className="mt-2 inline-flex flex-wrap items-center gap-2 text-sm font-semibold text-amber-900">
+                      <Clock3 aria-hidden="true" size={16} />
+                      Attempt {version.processing.attempts} failed. Automatic
+                      retry
+                      {version.processing.nextAttemptAt
+                        ? ` ${dateFormatter.format(new Date(version.processing.nextAttemptAt))}`
+                        : ' pending'}
+                      .
+                    </p>
+                  ) : null}
+                  {version.processing.state === 'permanently_failed' ||
+                  version.processing.state === 'quarantined' ? (
+                    <p className="mt-2 inline-flex flex-wrap items-center gap-2 text-sm font-semibold text-red-800">
+                      <ShieldAlert aria-hidden="true" size={16} />
+                      {version.processing.state === 'quarantined'
+                        ? 'This package was isolated and is unavailable for processing.'
+                        : 'Secure inspection could not complete after bounded retries.'}
+                      {version.processing.failureCode ? (
+                        <span className="font-mono text-xs">
+                          {version.processing.failureCode}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  {version.processing.snapshot?.warnings.length ? (
+                    <div className="mt-3 border-l-2 border-amber-400 pl-3">
+                      {version.processing.snapshot.warnings.map((warning) => (
+                        <p
+                          className="mt-1 text-sm text-amber-900 first:mt-0"
+                          key={`${warning.code}:${warning.part ?? ''}:${warning.message}`}
+                        >
+                          <span className="font-semibold">
+                            {warning.message}
+                          </span>
+                          {warning.part ? (
+                            <span className="ml-2 break-all font-mono text-xs text-amber-800">
+                              {warning.part}
+                            </span>
+                          ) : null}
+                        </p>
+                      ))}
+                    </div>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
                     <span>{version.author.name}</span>
@@ -316,9 +407,24 @@ export function DocumentHistoryPage() {
                     <span className="font-mono">
                       SHA-256 {version.artifact.sha256.slice(0, 12)}...
                     </span>
+                    {version.processing.snapshot ? (
+                      <span>
+                        Parser {version.processing.snapshot.parserVersion} /
+                        schema {version.processing.snapshot.schemaVersion}
+                      </span>
+                    ) : null}
+                    {version.processing.snapshot ? (
+                      <span className="font-mono">
+                        Snapshot{' '}
+                        {version.processing.snapshot.stableHash.slice(0, 12)}...
+                      </span>
+                    ) : null}
+                    <span className="font-mono">
+                      Support {version.processing.supportTraceId.slice(0, 12)}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     aria-label={`Download version ${version.displayNumber}`}
                     className="button-secondary"

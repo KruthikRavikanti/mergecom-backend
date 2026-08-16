@@ -2,12 +2,12 @@ import Fastify from 'fastify';
 
 import {
   createRedisReadinessProbe,
-  type RedisReadinessProbe,
+  type WorkerReadinessProbe,
 } from './readiness';
 
 interface CreateAppOptions {
   logger?: boolean;
-  readinessProbe?: RedisReadinessProbe;
+  readinessProbe?: WorkerReadinessProbe;
   redisUrl?: string | undefined;
 }
 
@@ -22,13 +22,16 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/health/live', () => ({ service: 'worker', status: 'alive' }));
   app.get('/health/ready', async (_request, reply) => {
-    const redis = await readinessProbe();
+    const dependencies = await readinessProbe();
+    const ready = Object.values(dependencies).every(
+      (dependency) => dependency === 'ready',
+    );
     const response = {
-      dependencies: { redis },
+      dependencies,
       service: 'worker',
-      status: redis === 'ready' ? 'ready' : 'not-ready',
+      status: ready ? 'ready' : 'not-ready',
     };
-    return redis === 'ready' ? response : reply.code(503).send(response);
+    return ready ? response : reply.code(503).send(response);
   });
 
   return app;

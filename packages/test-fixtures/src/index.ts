@@ -11,3 +11,7 @@ export const healthFixtures = {
     status: 'ready' as const,
   },
 };
+
+export const officeFixturePaths = {
+  validWord: 'packages/test-fixtures/office/valid-word.docx',
+} as const;

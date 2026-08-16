@@ -285,6 +285,14 @@ export function useVersionsQuery(
       projectId,
       documentId,
     ),
+    refetchInterval: (query) =>
+      query.state.data?.items.some((version) =>
+        ['queued', 'retryable_failed', 'running'].includes(
+          version.processing.state,
+        ),
+      )
+        ? 2_000
+        : false,
   });
 }
 

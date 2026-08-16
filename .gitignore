@@ -2,6 +2,7 @@
 node_modules/
 .pnpm-store/
 .dotnet/
+.local/
 
 # Build and test output
 dist/

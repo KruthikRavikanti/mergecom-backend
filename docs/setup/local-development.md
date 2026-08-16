@@ -31,7 +31,8 @@ Readiness endpoints are dependency-aware:
 
 - API: `http://localhost:3001/health/ready` requires PostgreSQL and the private
   MinIO artifact bucket.
-- Worker: `http://localhost:3002/health/ready` requires Redis.
+- Worker: `http://localhost:3002/health/ready` requires PostgreSQL, Redis, the
+  private MinIO bucket, and the document engine.
 - Document engine: `http://localhost:3003/health/ready` has no external dependency.
 
 MinIO creates the `mergecom-artifacts` bucket through the one-shot `minio-init`
@@ -47,9 +48,9 @@ creates two organizations with every organization role, four projects, nested
 folders, document records, and all four project roles. Running it again is
 idempotent.
 
-Projects, project teams, folders, documents, artifacts, and versions always come from
-the API. There is no browser fixture flag. New file versions remain in an honest
-`Processing` state until the secure Office ingestion pipeline is implemented.
+Projects, project teams, folders, documents, artifacts, versions, and normalized
+snapshot summaries always come from the API. There is no browser fixture flag. New
+versions remain in an honest processing state while the worker safely inspects them.
 
 Mailpit receives local invitation messages through `SMTP_URL`. Non-production can
 also return the one-time acceptance URL to an authorized owner/admin when

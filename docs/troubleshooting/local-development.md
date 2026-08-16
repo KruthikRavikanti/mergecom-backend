@@ -36,8 +36,17 @@ TEST_DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/merge
 TEST_S3_ENDPOINT=http://localhost:9000 \
 TEST_S3_ACCESS_KEY=mergecom-local \
 TEST_S3_SECRET_KEY=mergecom-local-only \
+TEST_WORKER_DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom \
+TEST_DOCUMENT_ENGINE_URL=http://localhost:3003 \
 pnpm test:integration
 ```
+
+## Versions stay queued
+
+Check worker readiness for all four dependencies and inspect the durable row using
+`docs/runbooks/document-processing.md`. Restarting the worker is safe: deterministic
+BullMQ IDs and PostgreSQL claims prevent duplicate snapshots. Do not manually change
+leases or terminal states.
 
 ## Direct upload fails while API readiness is green
 

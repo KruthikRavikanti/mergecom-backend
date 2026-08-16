@@ -15,7 +15,7 @@ Phase 1 created the canonical repository structure and moved evidence without ca
 | Committed `cert/` | external developer cert store | Delete; generate with `office-addin-dev-certs` and ignore | 0 |
 | Four npm lockfiles | root `pnpm-lock.yaml` | Replaced by one pnpm lockfile; legacy projects are not installable workspace packages | 1 complete |
 | Tracked `node_modules` | none | Delete and ignore; install from lockfiles | 0 |
-| Prototype semantic JSON | `packages/contracts` and derived BlobStore snapshots | Document metadata is now contracted; semantic payloads remain a Phase 4-6 redesign and the prototype shape is not a product contract | 3 metadata complete |
+| Prototype semantic JSON | `packages/contracts` and immutable normalized snapshots | Document metadata and versioned read-only OOXML inventories are contracted; editing semantics remain a Phase 6 redesign and the prototype shape is not a product contract | 5 ingestion complete |
 | Add-in push/pull | `packages/office-core` and API artifact flow | Immutable upload, base-aware push, and exact-byte download are implemented; Office host capture and binding remain later-phase work | 4 storage complete |
 | Browser mock identity/members/settings | PostgreSQL through `services/api` | Removed; immutable IdP mappings, server sessions, tenant checks, and RBAC are authoritative | 2 complete |
 | Browser mock projects/teams/documents | PostgreSQL through `services/api` | Removed; tenant-linked projects, explicit project memberships, nested folders, document records, archives, and audits are authoritative | 3 complete |

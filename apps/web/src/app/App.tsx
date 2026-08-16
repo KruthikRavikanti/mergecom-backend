@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { RouterProvider } from 'react-router-dom';
 
 import { AuthProvider } from '../auth/AuthContext';
-import { LoadingPage } from '../pages/LoadingPage';
 import { AppErrorBoundary } from './AppErrorBoundary';
 import { createAppRouter } from './router';
 
@@ -20,7 +19,7 @@ export function App() {
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <RouterProvider fallbackElement={<LoadingPage />} router={router} />
+          <RouterProvider router={router} />
         </AuthProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

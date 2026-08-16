@@ -1343,6 +1343,82 @@ components:
           oneOf: [{ type: string }, { type: 'null' }]
         scanStatus:
           { type: string, enum: [pending, clean, quarantined, failed] }
+    ProcessingWarning:
+      type: object
+      additionalProperties: false
+      required: [code, message, part, severity]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        part:
+          oneOf: [{ type: string }, { type: 'null' }]
+        severity: { type: string, enum: [info, warning] }
+    SnapshotSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          package,
+          parserVersion,
+          schemaVersion,
+          stableHash,
+          unsupportedFeatures,
+          validationErrorCount,
+          warnings,
+        ]
+      properties:
+        package:
+          type: object
+          additionalProperties:
+            oneOf: [{ type: boolean }, { type: number }]
+        parserVersion: { type: string }
+        schemaVersion: { type: string }
+        stableHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        unsupportedFeatures:
+          type: array
+          items: { type: string }
+        validationErrorCount: { type: integer, minimum: 0 }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ProcessingWarning' }
+    VersionProcessing:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          attempts,
+          failureCode,
+          maxAttempts,
+          nextAttemptAt,
+          snapshot,
+          state,
+          supportTraceId,
+          updatedAt,
+        ]
+      properties:
+        attempts: { type: integer, minimum: 0 }
+        failureCode:
+          oneOf: [{ type: string }, { type: 'null' }]
+        maxAttempts: { type: integer, minimum: 1 }
+        nextAttemptAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        snapshot:
+          oneOf:
+            - $ref: '#/components/schemas/SnapshotSummary'
+            - type: 'null'
+        state:
+          type: string
+          enum:
+            [
+              queued,
+              running,
+              retryable_failed,
+              permanently_failed,
+              quarantined,
+              completed,
+            ]
+        supportTraceId: { type: string, format: uuid }
+        updatedAt: { type: string, format: date-time }
     DocumentVersion:
       type: object
       additionalProperties: false
@@ -1362,6 +1438,7 @@ components:
           conflictReason,
           author,
           artifact,
+          processing,
           createdAt,
         ]
       properties:
@@ -1397,6 +1474,7 @@ components:
             id: { type: string, format: uuid }
             name: { type: string }
         artifact: { $ref: '#/components/schemas/Artifact' }
+        processing: { $ref: '#/components/schemas/VersionProcessing' }
         createdAt: { type: string, format: date-time }
     VersionPage:
       type: object

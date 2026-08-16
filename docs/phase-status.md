@@ -1,5 +1,22 @@
 # Phase status
 
+## Phase 5: secure OOXML ingestion and durable processing
+
+Status: implementation complete on `phase-5/ooxml-ingestion`; pending owner review.
+
+- [x] PostgreSQL records explicit queue, lease, retry, quarantine, dead-letter, and completion states plus one versioned snapshot per document version.
+- [x] BullMQ uses deterministic job IDs, bounded exponential retries, heartbeats, lease expiry recovery, duplicate-delivery no-ops, and Redis AOF durability.
+- [x] The worker authenticates to an internal ASP.NET Core engine, verifies immutable S3 bytes, and writes collision-checked snapshot objects before transactional completion.
+- [x] Open XML SDK `3.5.1` performs read-only validation and deterministic PowerPoint, Excel, and Word inventory behind ZIP/XML security preflight.
+- [x] Traversal, duplicate parts, unsafe relationships, bombs, oversized parts/counts, DTD/XXE, depth, encrypted and corrupt packages are bounded and classified.
+- [x] Macros, digital signatures, external relationships, OLE/embedded objects, and unsupported binaries are detected and never executed or followed.
+- [x] Web history polls active work and shows attempts, retry schedule, failure/quarantine codes, structured warnings, parser/schema versions, stable hash, and support trace.
+- [x] Synthetic valid and adversarial fixtures cover deterministic/golden behavior, authentication, package defenses, duplicate delivery, real storage/database processing, and offline-worker restart recovery.
+
+The contract and limits are documented in `docs/product/ooxml-ingestion.md`;
+operational recovery is in `docs/runbooks/document-processing.md`, and command
+evidence is recorded in `docs/verification/phase-5-command-results.md`.
+
 ## Phase 4: immutable artifact storage and version graph
 
 Status: implementation complete on `phase-4/artifact-versioning`; pending owner review.

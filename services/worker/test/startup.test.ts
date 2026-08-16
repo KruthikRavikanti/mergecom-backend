@@ -9,7 +9,9 @@ afterEach(async () =>
 
 describe('worker startup', () => {
   it('starts and serves liveness and readiness', async () => {
-    const app = createApp({ readinessProbe: () => Promise.resolve('ready') });
+    const app = createApp({
+      readinessProbe: () => Promise.resolve({ redis: 'ready' }),
+    });
     apps.push(app);
     await app.ready();
 

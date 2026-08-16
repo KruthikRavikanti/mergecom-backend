@@ -10,7 +10,7 @@ afterEach(async () =>
 describe('worker health', () => {
   it('does not report ready when Redis is unavailable', async () => {
     const app = createApp({
-      readinessProbe: () => Promise.resolve('unavailable'),
+      readinessProbe: () => Promise.resolve({ redis: 'unavailable' }),
     });
     apps.push(app);
     const response = await app.inject({ method: 'GET', url: '/health/ready' });

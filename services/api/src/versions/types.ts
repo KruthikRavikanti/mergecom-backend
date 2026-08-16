@@ -7,6 +7,41 @@ export type VersionSource =
   'web_upload' | 'office_addin' | 'restore' | 'merge' | 'import';
 export type VersionStatus =
   'pending_processing' | 'ready' | 'conflicted' | 'quarantined' | 'failed';
+export type ProcessingJobStatus =
+  | 'queued'
+  | 'running'
+  | 'retryable_failed'
+  | 'permanently_failed'
+  | 'quarantined'
+  | 'completed';
+
+export interface ProcessingWarning {
+  code: string;
+  message: string;
+  part: string | null;
+  severity: 'info' | 'warning';
+}
+
+export interface SnapshotSummary {
+  package: Record<string, boolean | number>;
+  parserVersion: string;
+  schemaVersion: string;
+  stableHash: string;
+  unsupportedFeatures: string[];
+  validationErrorCount: number;
+  warnings: ProcessingWarning[];
+}
+
+export interface VersionProcessingSummary {
+  attempts: number;
+  failureCode: string | null;
+  maxAttempts: number;
+  nextAttemptAt: Date | null;
+  snapshot: SnapshotSummary | null;
+  state: ProcessingJobStatus;
+  supportTraceId: string;
+  updatedAt: Date;
+}
 
 export interface ArtifactSummary {
   byteSize: number;
@@ -39,6 +74,7 @@ export interface DocumentVersionSummary {
   mergeParentVersionId: string | null;
   note: string;
   parentVersionId: string | null;
+  processing: VersionProcessingSummary;
   sequence: number;
   source: VersionSource;
   status: VersionStatus;

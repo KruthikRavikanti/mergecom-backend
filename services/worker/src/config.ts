@@ -1,0 +1,83 @@
+export interface WorkerConfig {
+  concurrency: number;
+  databaseUrl: string;
+  dispatchIntervalMilliseconds: number;
+  documentEngineToken: string;
+  documentEngineUrl: string;
+  heartbeatMilliseconds: number;
+  host: string;
+  leaseMilliseconds: number;
+  maxArtifactBytes: number;
+  port: number;
+  redisUrl: string;
+  s3: {
+    accessKey: string;
+    bucket: string;
+    endpoint: string;
+    forcePathStyle: boolean;
+    region: string;
+    secretKey: string;
+  };
+}
+
+function positiveInteger(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return value;
+}
+
+export function loadWorkerConfig(): WorkerConfig {
+  const heartbeatMilliseconds = positiveInteger(
+    'PROCESSING_HEARTBEAT_MILLISECONDS',
+    5_000,
+  );
+  const leaseMilliseconds = positiveInteger(
+    'PROCESSING_LEASE_MILLISECONDS',
+    30_000,
+  );
+  if (heartbeatMilliseconds * 2 >= leaseMilliseconds) {
+    throw new Error(
+      'PROCESSING_LEASE_MILLISECONDS must exceed twice the heartbeat interval.',
+    );
+  }
+  const documentEngineToken =
+    process.env.DOCUMENT_ENGINE_INTERNAL_TOKEN ??
+    'mergecom-local-document-engine-token';
+  if (documentEngineToken.length < 32) {
+    throw new Error(
+      'DOCUMENT_ENGINE_INTERNAL_TOKEN must be at least 32 characters.',
+    );
+  }
+  return {
+    concurrency: positiveInteger('PROCESSING_CONCURRENCY', 2),
+    databaseUrl:
+      process.env.DATABASE_URL ??
+      'postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom',
+    dispatchIntervalMilliseconds: positiveInteger(
+      'PROCESSING_DISPATCH_INTERVAL_MILLISECONDS',
+      2_000,
+    ),
+    documentEngineToken,
+    documentEngineUrl:
+      process.env.DOCUMENT_ENGINE_URL ?? 'http://127.0.0.1:3003',
+    heartbeatMilliseconds,
+    host: process.env.WORKER_HOST ?? '0.0.0.0',
+    leaseMilliseconds,
+    maxArtifactBytes: positiveInteger(
+      'PROCESSING_MAX_ARTIFACT_BYTES',
+      100 * 1024 * 1024,
+    ),
+    port: positiveInteger('WORKER_PORT', 3002),
+    redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
+    s3: {
+      accessKey: process.env.S3_ACCESS_KEY ?? 'mergecom-local',
+      bucket: process.env.S3_BUCKET ?? 'mergecom-artifacts',
+      endpoint: process.env.S3_ENDPOINT ?? 'http://localhost:9000',
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
+      region: process.env.S3_REGION ?? 'us-east-1',
+      secretKey: process.env.S3_SECRET_KEY ?? 'mergecom-local-only',
+    },
+  };
+}

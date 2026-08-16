@@ -74,9 +74,11 @@ export const versionStatus = pgEnum('version_status', [
 ]);
 export const processingJobStatus = pgEnum('processing_job_status', [
   'queued',
-  'processing',
-  'succeeded',
-  'failed',
+  'running',
+  'retryable_failed',
+  'permanently_failed',
+  'quarantined',
+  'completed',
 ]);
 export const outboxEventStatus = pgEnum('outbox_event_status', [
   'pending',
@@ -736,12 +738,19 @@ export const versionProcessingJobs = pgTable(
     jobType: text('job_type').notNull(),
     status: processingJobStatus('status').default('queued').notNull(),
     attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
     availableAt: timestamp('available_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
     startedAt: timestamp('started_at', { withTimezone: true }),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
     lastError: text('last_error'),
+    traceId: uuid('trace_id').defaultRandom().notNull(),
     ...timestamps,
   },
   (table) => [
@@ -752,6 +761,73 @@ export const versionProcessingJobs = pgTable(
     index('version_processing_jobs_queue_idx').on(
       table.status,
       table.availableAt,
+    ),
+    index('version_processing_jobs_lease_idx').on(
+      table.status,
+      table.leaseExpiresAt,
+    ),
+    check(
+      'version_processing_jobs_attempts_ck',
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} > 0 and ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+  ],
+);
+
+export const normalizedSnapshots = pgTable(
+  'normalized_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    versionId: uuid('version_id')
+      .references(() => documentVersions.id, { onDelete: 'cascade' })
+      .notNull(),
+    objectKey: text('object_key').notNull(),
+    schemaVersion: text('schema_version').notNull(),
+    parserVersion: text('parser_version').notNull(),
+    fileType: documentKind('file_type').notNull(),
+    snapshotSha256: text('snapshot_sha256').notNull(),
+    stableHash: text('stable_hash').notNull(),
+    packageSummary: jsonb('package_summary')
+      .$type<Record<string, number | boolean>>()
+      .notNull(),
+    warnings: jsonb('warnings')
+      .$type<
+        Array<{
+          code: string;
+          message: string;
+          part: string | null;
+          severity: 'info' | 'warning';
+        }>
+      >()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    unsupportedFeatures: jsonb('unsupported_features')
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    validationErrorCount: integer('validation_error_count')
+      .default(0)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('normalized_snapshots_version_uq').on(table.versionId),
+    uniqueIndex('normalized_snapshots_object_key_uq').on(table.objectKey),
+    index('normalized_snapshots_organization_created_idx').on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    check(
+      'normalized_snapshots_hashes_ck',
+      sql`${table.snapshotSha256} ~ '^[0-9a-f]{64}$' and ${table.stableHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'normalized_snapshots_validation_count_ck',
+      sql`${table.validationErrorCount} >= 0`,
     ),
   ],
 );

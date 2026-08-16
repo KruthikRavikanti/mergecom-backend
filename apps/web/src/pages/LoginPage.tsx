@@ -23,7 +23,7 @@ export function LoginPage({ signup = false }: { signup?: boolean }) {
 
   const enterDevelopment = async (identity: DevelopmentIdentity) => {
     await signInDevelopment(identity);
-    navigate(safeReturnTo(location.search), { replace: true });
+    await navigate(safeReturnTo(location.search), { replace: true });
   };
   const returnTo = safeReturnTo(location.search);
   const microsoftUrl = `${apiUrl('/auth/login')}?returnTo=${encodeURIComponent(returnTo)}`;

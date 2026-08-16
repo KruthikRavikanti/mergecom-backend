@@ -61,6 +61,41 @@ const Artifact = Type.Object({
   storageChecksum: Type.Union([Type.String(), Type.Null()]),
   storageVersion: Type.Union([Type.String(), Type.Null()]),
 });
+const ProcessingWarning = Type.Object({
+  code: Type.String(),
+  message: Type.String(),
+  part: Type.Union([Type.String(), Type.Null()]),
+  severity: Type.Union([Type.Literal('info'), Type.Literal('warning')]),
+});
+const SnapshotSummary = Type.Object({
+  package: Type.Record(
+    Type.String(),
+    Type.Union([Type.Boolean(), Type.Number()]),
+  ),
+  parserVersion: Type.String(),
+  schemaVersion: Type.String(),
+  stableHash: Type.String({ pattern: '^[0-9a-f]{64}$' }),
+  unsupportedFeatures: Type.Array(Type.String()),
+  validationErrorCount: Type.Integer({ minimum: 0 }),
+  warnings: Type.Array(ProcessingWarning),
+});
+const Processing = Type.Object({
+  attempts: Type.Integer({ minimum: 0 }),
+  failureCode: Type.Union([Type.String(), Type.Null()]),
+  maxAttempts: Type.Integer({ minimum: 1 }),
+  nextAttemptAt: Type.Union([DateTime, Type.Null()]),
+  snapshot: Type.Union([SnapshotSummary, Type.Null()]),
+  state: Type.Union([
+    Type.Literal('queued'),
+    Type.Literal('running'),
+    Type.Literal('retryable_failed'),
+    Type.Literal('permanently_failed'),
+    Type.Literal('quarantined'),
+    Type.Literal('completed'),
+  ]),
+  supportTraceId: Id,
+  updatedAt: DateTime,
+});
 const Version = Type.Object({
   artifact: Artifact,
   author: Type.Object({ id: Id, name: Type.String() }),
@@ -74,6 +109,7 @@ const Version = Type.Object({
   mergeParentVersionId: Type.Union([Id, Type.Null()]),
   note: Type.String(),
   parentVersionId: Type.Union([Id, Type.Null()]),
+  processing: Processing,
   sequence: Type.Integer({ minimum: 1 }),
   source: Type.Union([
     Type.Literal('web_upload'),
@@ -140,7 +176,15 @@ function actor(request: FastifyRequest): ProjectActor {
 }
 
 function serializeVersion(version: DocumentVersionSummary) {
-  return { ...version, createdAt: version.createdAt.toISOString() };
+  return {
+    ...version,
+    createdAt: version.createdAt.toISOString(),
+    processing: {
+      ...version.processing,
+      nextAttemptAt: version.processing.nextAttemptAt?.toISOString() ?? null,
+      updatedAt: version.processing.updatedAt.toISOString(),
+    },
+  };
 }
 
 async function sendVersionError(

@@ -1,9 +1,10 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 4
-adds immutable S3-compatible artifact capture, SHA-256 integrity, multipart uploads,
-an append-only version graph, stale-base conflicts, exact downloads, and restore as a
-new version. Semantic Office diffing and Office host behavior remain deferred.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 5
+adds durable BullMQ processing and bounded, read-only OOXML inspection with the
+official Open XML SDK, deterministic versioned snapshots, structured warnings, and
+honest retry/quarantine status. Semantic diffing and Office host behavior remain
+deferred.
 
 ## Repository map
 
@@ -11,8 +12,8 @@ new version. Semantic Office diffing and Office host behavior remain deferred.
 apps/web/                    React web application
 apps/office-addin/           shared Office task-pane shell
 services/api/                Fastify HTTP API
-services/worker/             BullMQ/Redis worker process shell
-services/document-engine/    ASP.NET Core document-engine boundary
+services/worker/             durable BullMQ/PostgreSQL processing pipeline
+services/document-engine/    bounded ASP.NET Core Open XML inspection engine
 packages/contracts/          OpenAPI source and generated TypeScript client types
 packages/ui/                 shared accessible UI primitives
 packages/office-core/        shared Office artifact invariants
@@ -84,6 +85,7 @@ See [local setup](docs/setup/local-development.md),
 [identity and RBAC](docs/security/identity-rbac.md),
 [projects and folders](docs/product/projects-folders.md),
 [artifact versioning](docs/product/artifact-versioning.md),
+[secure OOXML ingestion](docs/product/ooxml-ingestion.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.
 

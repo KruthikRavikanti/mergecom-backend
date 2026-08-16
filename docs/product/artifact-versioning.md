@@ -1,9 +1,9 @@
 # Immutable artifacts and versions
 
 Phase 4 stores every uploaded Office package as immutable object bytes and records an
-append-only version graph in PostgreSQL. Semantic Office parsing remains asynchronous;
-new versions truthfully remain `pending_processing` until the Phase 5 ingestion worker
-updates them.
+append-only version graph in PostgreSQL. Phase 5 securely inspects those immutable
+bytes asynchronously and links a versioned normalized snapshot without changing the
+source artifact.
 
 ## Upload protocol
 

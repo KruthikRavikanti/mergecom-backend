@@ -9,16 +9,19 @@
     "dev": "tsx watch src/server.ts",
     "lint": "eslint src test",
     "start": "node dist/server.js",
-    "test:integration": "vitest run test/startup.test.ts",
-    "test:unit": "vitest run src/app.test.ts",
+    "test:integration": "vitest run test/startup.test.ts test/pipeline.postgres.test.ts",
+    "test:unit": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1111.0",
     "bullmq": "5.66.5",
     "fastify": "5.12.0",
-    "ioredis": "5.8.2"
+    "ioredis": "5.8.2",
+    "pg": "8.16.3"
   },
   "devDependencies": {
+    "@types/pg": "8.15.6",
     "tsx": "4.21.0",
     "vitest": "4.0.16"
   }

@@ -842,6 +842,37 @@ export interface components {
             /** @enum {string} */
             scanStatus: "pending" | "clean" | "quarantined" | "failed";
         };
+        ProcessingWarning: {
+            code: string;
+            message: string;
+            part: string | null;
+            /** @enum {string} */
+            severity: "info" | "warning";
+        };
+        SnapshotSummary: {
+            package: {
+                [key: string]: boolean | number;
+            };
+            parserVersion: string;
+            schemaVersion: string;
+            stableHash: string;
+            unsupportedFeatures: string[];
+            validationErrorCount: number;
+            warnings: components["schemas"]["ProcessingWarning"][];
+        };
+        VersionProcessing: {
+            attempts: number;
+            failureCode: string | null;
+            maxAttempts: number;
+            nextAttemptAt: string | null;
+            snapshot: components["schemas"]["SnapshotSummary"] | null;
+            /** @enum {string} */
+            state: "queued" | "running" | "retryable_failed" | "permanently_failed" | "quarantined" | "completed";
+            /** Format: uuid */
+            supportTraceId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         DocumentVersion: {
             /** Format: uuid */
             id: string;
@@ -866,6 +897,7 @@ export interface components {
                 name: string;
             };
             artifact: components["schemas"]["Artifact"];
+            processing: components["schemas"]["VersionProcessing"];
             /** Format: date-time */
             createdAt: string;
         };

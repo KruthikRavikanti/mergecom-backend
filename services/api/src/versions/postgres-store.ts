@@ -25,6 +25,8 @@ import type {
   UploadMode,
   VersionActor,
   VersionPage,
+  ProcessingJobStatus,
+  ProcessingWarning,
   VersionSource,
   VersionStatus,
 } from './types';
@@ -83,9 +85,23 @@ interface VersionRow {
   merge_parent_version_id: string | null;
   note: string;
   parent_version_id: string | null;
+  processing_attempts: number;
+  processing_available_at: Date;
+  processing_failure_code: string | null;
+  processing_max_attempts: number;
+  processing_status: ProcessingJobStatus;
+  processing_trace_id: string;
+  processing_updated_at: Date;
   sequence: number;
   source: VersionSource;
   status: VersionStatus;
+  snapshot_package_summary: Record<string, boolean | number> | null;
+  snapshot_parser_version: string | null;
+  snapshot_schema_version: string | null;
+  snapshot_stable_hash: string | null;
+  snapshot_unsupported_features: string[] | null;
+  snapshot_validation_error_count: number | null;
+  snapshot_warnings: ProcessingWarning[] | null;
 }
 
 function hash(value: string): string {
@@ -147,6 +163,34 @@ function mapVersion(row: VersionRow): DocumentVersionSummary {
     mergeParentVersionId: row.merge_parent_version_id,
     note: row.note,
     parentVersionId: row.parent_version_id,
+    processing: {
+      attempts: row.processing_attempts,
+      failureCode: row.processing_failure_code,
+      maxAttempts: row.processing_max_attempts,
+      nextAttemptAt:
+        row.processing_status === 'queued' ||
+        row.processing_status === 'retryable_failed'
+          ? row.processing_available_at
+          : null,
+      snapshot:
+        row.snapshot_schema_version &&
+        row.snapshot_parser_version &&
+        row.snapshot_stable_hash &&
+        row.snapshot_package_summary
+          ? {
+              package: row.snapshot_package_summary,
+              parserVersion: row.snapshot_parser_version,
+              schemaVersion: row.snapshot_schema_version,
+              stableHash: row.snapshot_stable_hash,
+              unsupportedFeatures: row.snapshot_unsupported_features ?? [],
+              validationErrorCount: row.snapshot_validation_error_count ?? 0,
+              warnings: row.snapshot_warnings ?? [],
+            }
+          : null,
+      state: row.processing_status,
+      supportTraceId: row.processing_trace_id,
+      updatedAt: row.processing_updated_at,
+    },
     sequence: row.sequence,
     source: row.source,
     status: row.status,
@@ -213,7 +257,19 @@ const versionColumns = `
   a.original_filename as artifact_original_filename,
   a.extension as artifact_extension, a.scan_status as artifact_scan_status,
   a.storage_version as artifact_storage_version,
-  a.storage_checksum as artifact_storage_checksum`;
+  a.storage_checksum as artifact_storage_checksum,
+  j.status as processing_status, j.attempts as processing_attempts,
+  j.max_attempts as processing_max_attempts,
+  j.available_at as processing_available_at,
+  j.failure_code as processing_failure_code, j.trace_id as processing_trace_id,
+  j.updated_at as processing_updated_at,
+  s.schema_version as snapshot_schema_version,
+  s.parser_version as snapshot_parser_version,
+  s.stable_hash as snapshot_stable_hash,
+  s.package_summary as snapshot_package_summary,
+  s.warnings as snapshot_warnings,
+  s.unsupported_features as snapshot_unsupported_features,
+  s.validation_error_count as snapshot_validation_error_count`;
 
 export class PostgresVersionStore implements VersionStore {
   public constructor(
@@ -275,6 +331,9 @@ export class PostgresVersionStore implements VersionStore {
          from document_versions v
          join artifacts a on a.id = v.artifact_id
          join users u on u.id = v.author_user_id
+         join version_processing_jobs j on j.version_id = v.id
+          and j.job_type = 'semantic_ingestion'
+         left join normalized_snapshots s on s.version_id = v.id
         where v.organization_id = $1 and v.document_id = $2 and v.id = $3`,
       [organizationId, documentId, versionId],
     );
@@ -936,6 +995,9 @@ export class PostgresVersionStore implements VersionStore {
            from document_versions v
            join artifacts a on a.id = v.artifact_id
            join users u on u.id = v.author_user_id
+           join version_processing_jobs j on j.version_id = v.id
+            and j.job_type = 'semantic_ingestion'
+           left join normalized_snapshots s on s.version_id = v.id
           where v.organization_id = $1 and v.document_id = $2
             and v.branch_id = $3
             and ($4::int is null or (v.sequence, v.id) < ($4::int, $5::uuid))

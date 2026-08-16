@@ -14,6 +14,7 @@ import { SettingsPage } from '../features/settings/SettingsPage';
 import { TeamPage } from '../features/team/TeamPage';
 import { HomePage } from '../pages/HomePage';
 import { LoginPage } from '../pages/LoginPage';
+import { LoadingPage } from '../pages/LoadingPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { RouteErrorPage } from '../pages/RouteErrorPage';
 import { SecurityPage } from '../pages/SecurityPage';
@@ -33,6 +34,7 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
     path: '/',
   },
   {
+    HydrateFallback: LoadingPage,
     children: [
       { element: <InviteAcceptancePage />, path: 'invite/:token' },
       {

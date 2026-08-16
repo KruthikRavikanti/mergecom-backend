@@ -1,25 +1,30 @@
 import Redis from 'ioredis';
 
-export interface RedisReadinessProbe {
-  (): Promise<'ready' | 'unavailable'>;
+export type DependencyStatus = 'ready' | 'unavailable';
+export type ReadinessDependencies = Record<string, DependencyStatus>;
+
+export interface WorkerReadinessProbe {
+  (): Promise<ReadinessDependencies>;
   close?: () => Promise<void>;
 }
 
 export function createRedisReadinessProbe(
   redisUrl: string | undefined,
-): RedisReadinessProbe {
-  if (!redisUrl) return () => Promise.resolve('unavailable');
+): WorkerReadinessProbe {
+  if (!redisUrl) return () => Promise.resolve({ redis: 'unavailable' });
 
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
     maxRetriesPerRequest: 0,
   });
-  const probe: RedisReadinessProbe = async () => {
+  const probe: WorkerReadinessProbe = async () => {
     try {
       if (redis.status === 'wait') await redis.connect();
-      return (await redis.ping()) === 'PONG' ? 'ready' : 'unavailable';
+      return {
+        redis: (await redis.ping()) === 'PONG' ? 'ready' : 'unavailable',
+      };
     } catch {
-      return 'unavailable';
+      return { redis: 'unavailable' };
     }
   };
   probe.close = () => {
