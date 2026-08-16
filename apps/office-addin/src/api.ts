@@ -6,6 +6,7 @@ import type { OfficeVersionGateway, UploadIntentInput } from './push-version';
 export type CurrentUser = components['schemas']['CurrentUser'];
 export type Document = components['schemas']['Document'];
 export type DocumentVersion = components['schemas']['DocumentVersion'];
+export type DownloadGrant = components['schemas']['DownloadGrant'];
 export type FinalizeVersionResult =
   components['schemas']['FinalizeVersionResult'];
 export type Project = components['schemas']['Project'];
@@ -198,6 +199,26 @@ export class OfficeApi implements OfficeVersionGateway {
         result.error,
         'Version processing status could not be loaded.',
       );
+    }
+    return result.data;
+  }
+
+  public async createDownloadGrant(
+    binding: DocumentBinding,
+    versionId: string,
+    csrfToken: string,
+  ): Promise<DownloadGrant> {
+    const result = await this.client.POST(
+      '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/download',
+      {
+        params: {
+          header: { 'X-CSRF-Token': csrfToken },
+          path: { ...binding, versionId },
+        },
+      },
+    );
+    if (!result.response.ok || !result.data) {
+      throw failure(result.error, 'Version download could not be authorized.');
     }
     return result.data;
   }

@@ -1,5 +1,38 @@
 # Phase status
 
+## Phase 14: Office exact version retrieval
+
+Status: implementation complete on `phase-14/office-version-pull`; pending owner
+review.
+
+- [x] The linked pane lists every authorized immutable version and defaults retrieval
+  to the branch head without changing the current file's stored base.
+- [x] Every pane retrieval obtains a fresh CSRF-protected, audited, short-lived
+  download grant for the exact selected version; grant filename and SHA-256 must
+  match the authorized version metadata.
+- [x] Open-copy downloads through the signed object URL with progress and
+  cancellation, requires the exact byte count, then verifies OOXML ZIP signature,
+  host/extension/media-type agreement, and SHA-256 before invoking Office.
+- [x] Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` use their supported host API
+  requirement sets to open a separate file. The active document is never cleared,
+  reconstructed, or replaced.
+- [x] Automatic open requires a clean scan and a package no larger than 50 MiB.
+  Macro-enabled packages, larger packages, missing host APIs, pending scans, and
+  refused states remain available through exact download only.
+- [x] Local signed MinIO downloads use the HTTPS task-pane proxy; hosted grants are
+  left unchanged. Direct downloads still use the Office browser boundary rather
+  than exposing object keys or storage credentials.
+- [x] Shared and adapter tests cover exact verification, wrong hashes and lengths,
+  non-ZIP data, host capability gates, all three open APIs, binary download progress,
+  cancellation, and invalid grants.
+- [x] Live desktop/mobile coverage performs a real Word capture, push, processing,
+  pane pull, SHA-verified open, and pane download, proving the returned bytes are
+  identical to the source fixture with no horizontal overflow.
+
+The retrieval contract is documented in `docs/product/office-version-pull.md`;
+setup and failure recovery are in `docs/runbooks/office-addin.md`, and command
+evidence is in `docs/verification/phase-14-command-results.md`.
+
 ## Phase 13: Office document binding and exact version push
 
 Status: implementation complete on `phase-13/office-version-push`; pending owner
@@ -54,7 +87,8 @@ review.
   consumes the exact result through API finalization instead of presenting a local
   capture download as a version.
 - [x] API session/upload, document binding, and base-version state were deliberately
-  deferred here and completed in Phase 13. Authorized open-latest remains deferred.
+  deferred here and completed in Phase 13. Authorized exact-version retrieval was
+  completed in Phase 14.
 - [x] Core and adapter suites cover the byte boundary and callback bridge; HTTPS Playwright simulations cover success and explicit refusals on desktop and mobile without overflow.
 
 The behavior and support matrix are documented in

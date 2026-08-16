@@ -9,7 +9,9 @@ import {
   type Page,
 } from '@playwright/test';
 
-const livePhase13 = process.env.LIVE_PHASE13_E2E === 'true';
+const liveOffice =
+  process.env.LIVE_PHASE14_E2E === 'true' ||
+  process.env.LIVE_PHASE13_E2E === 'true';
 const officeAddinUrl = process.env.OFFICE_ADDIN_URL ?? 'https://localhost:5176';
 const wordFixturePath = resolve(
   process.cwd(),
@@ -17,7 +19,7 @@ const wordFixturePath = resolve(
 );
 
 test.use({ ignoreHTTPSErrors: true });
-test.skip(!livePhase13, 'Requires the Phase 13 HTTPS Office task pane.');
+test.skip(!liveOffice, 'Requires the Phase 14 HTTPS Office task pane.');
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/office.js', (route) => route.abort());
@@ -156,7 +158,7 @@ test('marks a regular browser tab as a preview', async ({ page }) => {
   await expectNoHorizontalOverflow(page);
 });
 
-test('pushes, processes, and downloads exact Word bytes', async ({
+test('pushes, pulls, opens, and downloads exact Word bytes', async ({
   page,
 }, testInfo) => {
   const bytes = await readFile(wordFixturePath);
@@ -221,13 +223,44 @@ test('pushes, processes, and downloads exact Word bytes', async ({
 
   await expect(page.getByRole('heading', { name: documentName })).toBeVisible();
   await expect(page.getByText('First version', { exact: true })).toBeVisible();
-  await page.getByLabel('Version note').fill('Phase 13 exact Office push');
+  await page
+    .getByLabel('Version note')
+    .fill('Phase 14 exact Office round trip');
   await page.getByRole('button', { name: 'Push exact version' }).click();
   await expect(page.getByText('V1 finalized successfully.')).toBeVisible({
     timeout: 60_000,
   });
   await expect(page.getByText('Processing complete')).toBeVisible();
   expect(proxiedBlobRequests).toHaveLength(1);
+
+  await expect(page.getByLabel('Version', { exact: true })).toHaveValue(/.+/u);
+  await expect(
+    page.getByRole('button', { name: 'Open exact copy' }),
+  ).toBeEnabled();
+  await page.getByRole('button', { name: 'Open exact copy' }).click();
+  await expect(
+    page.getByText('Opened V1 as a separate document.'),
+  ).toBeVisible();
+  expect(proxiedBlobRequests).toHaveLength(2);
+  expect(
+    await page.evaluate(() => {
+      const state = window as unknown as {
+        openedOfficePackage?: number[];
+      };
+      return state.openedOfficePackage;
+    }),
+  ).toEqual([...bytes]);
+
+  await page.getByRole('button', { name: 'Download' }).click();
+  await expect(
+    page.getByText('Downloading the exact V1 package.'),
+  ).toBeVisible();
+  const paneDownloadUrl = await page.evaluate(() => {
+    const state = window as unknown as { openedOfficeUrl?: string };
+    return state.openedOfficeUrl;
+  });
+  expect(paneDownloadUrl).toBeDefined();
+  expect(new URL(paneDownloadUrl!).pathname).toMatch(/^\/blob\//u);
 
   const versionPage = await getJson<VersionPageResponse>(
     await page.request.get(
@@ -242,16 +275,9 @@ test('pushes, processes, and downloads exact Word bytes', async ({
     status: 'ready',
   });
 
-  const download = await getJson<DownloadGrantResponse>(
-    await page.request.post(
-      `${officeAddinUrl}/api/v1/organizations/${organizationId}/projects/${project.id}/documents/${document.id}/versions/${version!.id}/download`,
-      { headers },
-    ),
-  );
-  const downloaded = await page.request.get(download.url);
+  const downloaded = await page.request.get(paneDownloadUrl!);
   expect(downloaded.ok()).toBe(true);
   expect(Buffer.from(await downloaded.body())).toEqual(bytes);
-  expect(download.sha256).toBe(sha256);
   expect(
     await page.evaluate(() => {
       const state = window as unknown as {
@@ -264,7 +290,7 @@ test('pushes, processes, and downloads exact Word bytes', async ({
   await page.screenshot({
     fullPage: true,
     path: testInfo.outputPath(
-      `phase13-office-push-${testInfo.project.name}.png`,
+      `phase14-office-round-trip-${testInfo.project.name}.png`,
     ),
   });
 });
@@ -293,11 +319,6 @@ interface VersionPageResponse {
     source: string;
     status: string;
   }>;
-}
-
-interface DownloadGrantResponse {
-  sha256: string;
-  url: string;
 }
 
 async function createDevelopmentSession(request: APIRequestContext) {
@@ -341,10 +362,47 @@ async function installOfficeMock(
     const settings = new Map<string, unknown>();
     const state = window as unknown as {
       Office: object;
+      Excel: object;
+      PowerPoint: object;
+      Word: object;
       officeCaptureCalls: { close: number; slices: number[] };
+      openedOfficePackage?: number[];
       openedOfficeUrl?: string;
     };
     state.officeCaptureCalls = { close: 0, slices: [] };
+    const recordOpenedPackage = (base64: string) => {
+      const binary = atob(base64);
+      state.openedOfficePackage = Array.from(binary, (character) =>
+        character.charCodeAt(0),
+      );
+    };
+    state.Excel = {
+      createWorkbook: async (base64: string) => recordOpenedPackage(base64),
+    };
+    state.PowerPoint = {
+      createPresentation: async (base64: string) => recordOpenedPackage(base64),
+    };
+    state.Word = {
+      run: async (
+        batch: (context: {
+          application: {
+            createDocument(base64: string): { open(): void };
+          };
+          sync(): Promise<void>;
+        }) => Promise<void>,
+      ) => {
+        let packageBase64 = '';
+        await batch({
+          application: {
+            createDocument: (base64) => {
+              packageBase64 = base64;
+              return { open: () => recordOpenedPackage(packageBase64) };
+            },
+          },
+          sync: () => Promise.resolve(),
+        });
+      },
+    };
     state.Office = {
       AsyncResultStatus: { Failed: 'failed', Succeeded: 'succeeded' },
       FileType: { Compressed: 'compressed' },

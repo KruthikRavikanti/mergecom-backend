@@ -78,8 +78,9 @@ and document engine continue to own safe OOXML inspection.
 
 ## Deliberate limits
 
-- `Open in MergeCom` opens the authorized web history. Pull/open-latest and replacing
-  an already open Office package are not implemented.
+- Phase 14 adds exact-version selection, verified separate-file open, and exact
+  original download as described in `docs/product/office-version-pull.md`. Replacing
+  an already open Office package remains prohibited.
 - The pane does not create projects or documents. Linking is an explicit selection
   among existing accessible records of the matching host type.
 - Real Office client validation is still required for supported Windows, Mac, web,

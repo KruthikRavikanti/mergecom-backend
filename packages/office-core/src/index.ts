@@ -256,6 +256,24 @@ export async function captureExactOfficePackage(
   return capturedPackage;
 }
 
+export async function verifyExactOfficePackage(
+  bytes: Uint8Array,
+  descriptor: OfficeArtifactDescriptor,
+): Promise<void> {
+  assertOfficeArtifact(descriptor);
+  if (bytes.byteLength !== descriptor.contentLength) {
+    throw new Error(
+      `Downloaded Office package contains ${bytes.byteLength} bytes; expected ${descriptor.contentLength} bytes.`,
+    );
+  }
+  if (!isZipPackage(bytes)) {
+    throw new Error('Downloaded data is not an OOXML ZIP package.');
+  }
+  if ((await sha256Hex(bytes)) !== descriptor.sha256) {
+    throw new Error('Downloaded Office package SHA-256 does not match.');
+  }
+}
+
 function assertPositiveSafeInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${label} must be a positive safe integer.`);

@@ -10,6 +10,13 @@ import {
   type DocumentBindingStore,
   parseDocumentBinding,
 } from './document-binding';
+import {
+  getExactOpenSupport,
+  getGlobalApplications,
+  openExactOfficePackage,
+  type ExactOpenSupport,
+  type OfficeOpenApplications,
+} from './office-open';
 
 type OfficeToken = number | string;
 
@@ -116,6 +123,8 @@ export interface OfficeRuntime {
   host: OfficeHost;
   platform: OfficePlatform;
   provider: OfficeCompressedFileProvider;
+  exactOpenSupport(fileName: string, byteSize: number): ExactOpenSupport;
+  openExactPackage(bytes: Uint8Array): Promise<void>;
   openBrowserWindow(url: string): void;
   requestAuthentication(url: string): Promise<string>;
 }
@@ -128,6 +137,7 @@ const EXTENSIONS_BY_HOST: Readonly<Record<OfficeHost, readonly string[]>> = {
 
 export async function detectOfficeRuntime(
   providedOffice?: OfficeApi,
+  providedApplications?: OfficeOpenApplications,
 ): Promise<OfficeRuntime | null> {
   const office = providedOffice ?? getGlobalOfficeApi();
   if (office === undefined) return null;
@@ -142,6 +152,13 @@ export async function detectOfficeRuntime(
     '1.1',
   );
   const documentUrl = await getDocumentUrl(office);
+  const applications = providedApplications ?? getGlobalApplications();
+  const openRequirement = getOpenRequirement(host);
+  const openRequirementSupported = office.context.requirements.isSetSupported(
+    openRequirement.name,
+    openRequirement.minimumVersion,
+  );
+  const applicationAvailable = Boolean(applications[openRequirement.global]);
 
   return {
     bindingStore: createDocumentBindingStore(office),
@@ -151,6 +168,16 @@ export async function detectOfficeRuntime(
     host,
     platform,
     provider: createCompressedFileProvider(office),
+    exactOpenSupport: (fileName, byteSize) =>
+      getExactOpenSupport(
+        host,
+        fileName,
+        byteSize,
+        openRequirementSupported,
+        applicationAvailable,
+      ),
+    openExactPackage: (bytes) =>
+      openExactOfficePackage(host, bytes, applications),
     openBrowserWindow: (url) => {
       if (!office.context.ui) {
         throw new Error('This Office runtime cannot open the sign-in window.');
@@ -159,6 +186,24 @@ export async function detectOfficeRuntime(
     },
     requestAuthentication: (url) => requestAuthentication(office, url),
   };
+}
+
+function getOpenRequirement(host: OfficeHost): {
+  global: 'Excel' | 'PowerPoint' | 'Word';
+  minimumVersion: string;
+  name: string;
+} {
+  if (host === 'excel') {
+    return { global: 'Excel', minimumVersion: '1.8', name: 'ExcelApi' };
+  }
+  if (host === 'powerpoint') {
+    return {
+      global: 'PowerPoint',
+      minimumVersion: '1.1',
+      name: 'PowerPointApi',
+    };
+  }
+  return { global: 'Word', minimumVersion: '1.3', name: 'WordApi' };
 }
 
 function getDocumentUrl(office: OfficeApi): Promise<string> {

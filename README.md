@@ -1,10 +1,11 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 13
-links saved Word, Excel, and PowerPoint files to real MergeCom documents and pushes
-their exact captured OOXML bytes through the immutable artifact API. Base-aware
-finalization, stale conflict preservation, cancellation, and processing status run in
-the shared task pane. Unsupported host/platform combinations fail closed.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 14
+adds authorized exact-version retrieval to the shared Word, Excel, and PowerPoint
+task pane. Users can choose any accessible version, download its immutable original,
+or open a verified clean plain OOXML package as a separate Office file. Exact capture,
+base-aware push, stale conflict preservation, and processing status remain available;
+unsupported host, format, size, and scan states fail closed.
 
 ## Repository map
 
@@ -90,6 +91,8 @@ See [local setup](docs/setup/local-development.md),
 [review workflow](docs/product/review-workflow.md),
 [conservative merge](docs/product/conservative-merge.md),
 [Office host capture](docs/product/office-host-capture.md),
+[Office version push](docs/product/office-version-push.md),
+[Office version retrieval](docs/product/office-version-pull.md),
 [notifications](docs/product/notifications.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.

@@ -123,7 +123,10 @@ function createOfficeMock(overrides: Record<string, unknown> = {}) {
 describe('detectOfficeRuntime', () => {
   it('maps the host and captures through the callback Office APIs', async () => {
     const office = createOfficeMock();
-    const runtime = await detectOfficeRuntime(office.api);
+    const createWorkbook = vi.fn().mockResolvedValue(undefined);
+    const runtime = await detectOfficeRuntime(office.api, {
+      Excel: { createWorkbook },
+    });
 
     expect(runtime).toMatchObject({
       compressedFileAvailable: true,
@@ -147,6 +150,22 @@ describe('detectOfficeRuntime', () => {
     );
     expect(office.getSliceAsync).toHaveBeenCalledOnce();
     expect(office.closeAsync).toHaveBeenCalledOnce();
+    expect(runtime.exactOpenSupport('Forecast Q3.xlsx', 10)).toEqual({
+      supported: true,
+    });
+    await runtime.openExactPackage(packageBytes);
+    expect(createWorkbook).toHaveBeenCalledOnce();
+  });
+
+  it('reports when the host cannot open a package copy', async () => {
+    const office = createOfficeMock();
+    const runtime = await detectOfficeRuntime(office.api, {});
+    if (runtime === null) throw new Error('Expected an Office runtime.');
+
+    expect(runtime.exactOpenSupport('Forecast Q3.xlsx', 10)).toMatchObject({
+      reason: expect.stringContaining('cannot open'),
+      supported: false,
+    });
   });
 
   it('returns null when Office.js is unavailable', async () => {

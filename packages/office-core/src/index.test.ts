@@ -4,6 +4,7 @@ import {
   assertOfficeArtifact,
   captureExactOfficePackage,
   getExactCaptureSupport,
+  verifyExactOfficePackage,
   type OfficeCompressedFile,
 } from './index';
 
@@ -280,5 +281,44 @@ describe('captureExactOfficePackage', () => {
       ),
     ).rejects.toThrow('not valid for the excel host');
     expect(openCompressedFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('verifyExactOfficePackage', () => {
+  const descriptor = {
+    contentLength: packageBytes.byteLength,
+    fileName: 'Deck.pptx',
+    mediaType:
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    sha256: 'ce4eee426281b10649e13e62ba5c641d2216fdc46b858a03f86b5dfb60543f7f',
+    sourceHost: 'powerpoint' as const,
+  };
+
+  it('accepts exact OOXML bytes that match the artifact descriptor', async () => {
+    await expect(
+      verifyExactOfficePackage(packageBytes, descriptor),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects a byte-length mismatch before hashing', async () => {
+    await expect(
+      verifyExactOfficePackage(packageBytes.slice(0, -1), descriptor),
+    ).rejects.toThrow('contains 9 bytes; expected 10 bytes');
+  });
+
+  it('rejects a non-ZIP package', async () => {
+    const bytes = packageBytes.slice();
+    bytes[0] = 0;
+    await expect(verifyExactOfficePackage(bytes, descriptor)).rejects.toThrow(
+      'not an OOXML ZIP package',
+    );
+  });
+
+  it('rejects bytes with a different SHA-256', async () => {
+    const bytes = packageBytes.slice();
+    bytes[4] = 0x15;
+    await expect(verifyExactOfficePackage(bytes, descriptor)).rejects.toThrow(
+      'SHA-256 does not match',
+    );
   });
 });

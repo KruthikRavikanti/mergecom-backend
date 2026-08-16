@@ -44,6 +44,14 @@ and point their source and icon URLs at the local HTTPS server.
   version. Processing may still be queued or running.
 - `Conflict preserved`: the incoming version exists, but the branch head did not
   move.
+- `Version retrieval`: choose an authorized immutable version. The branch head is
+  selected initially; changing this selection does not change the current file base.
+- `Open exact copy`: the pane downloads and verifies a clean `.docx`, `.xlsx`, or
+  `.pptx`, then asks Office to create a separate file. Save that new file before
+  linking or pushing it.
+- `Download`: the Office browser opens the authorized exact original. This remains
+  available when automatic open is refused for macro, size, scan, or API-support
+  reasons.
 
 ## Verification
 
@@ -52,13 +60,15 @@ Run the deterministic Office callback bridge and browser simulations with:
 ```bash
 pnpm --filter @mergecom/office-core test:unit
 pnpm --filter @mergecom/office-addin test:unit
-LIVE_PHASE13_E2E=true OFFICE_ADDIN_URL=https://localhost:5176 \
+LIVE_PHASE14_E2E=true OFFICE_ADDIN_URL=https://localhost:5176 \
   pnpm exec playwright test tests/e2e/office-addin.live.spec.ts
 ```
 
 For a manual host check, use a non-confidential saved fixture for the matching host,
-link it to a disposable document, push it, wait for processing, then download the
-exact version from web history and compare SHA-256. Do not use production documents.
+link it to a disposable document, push it, wait for processing, select that version
+in the pane, and exercise both `Open exact copy` and `Download`. Confirm open creates
+a separate file and compare the download SHA-256 with the source. Do not use
+production documents.
 
 ## Failure handling
 
@@ -78,3 +88,13 @@ exact version from web history and compare SHA-256. Do not use production docume
   session cookies or handoff codes through document settings or query logs.
 - A storage error in local HTTPS development usually means MinIO is unavailable or
   the `/blob` proxy target does not match `VITE_LOCAL_BLOB_ORIGIN`.
+- A scan-status refusal is intentional. Wait for a clean result; do not automatically
+  open pending, quarantined, or failed artifacts.
+- Macro-enabled `.docm`, `.xlsm`, and `.pptm` versions and packages larger than 50
+  MiB must use exact download. Do not strip macros or reconstruct a plain package.
+- A byte-count, ZIP-signature, media-type, filename, or SHA-256 mismatch invalidates
+  the pull. Do not open the response; inspect the API, object-store proxy, and audit
+  records before retrying.
+- A host API refusal means the installed Office build does not expose WordApi 1.3,
+  ExcelApi 1.8, or PowerPointApi 1.1 as required for separate-file open. Use exact
+  download and open the saved file normally.

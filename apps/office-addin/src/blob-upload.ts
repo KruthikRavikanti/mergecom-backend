@@ -20,7 +20,7 @@ export const uploadBlob: BlobUploader = (grant, body, onProgress, signal) =>
     }
     const request = new XMLHttpRequest();
     const abort = () => request.abort();
-    request.open(grant.method, browserGrantUrl(grant.url));
+    request.open(grant.method, resolveBrowserGrantUrl(grant.url));
     for (const [name, value] of Object.entries(grant.headers)) {
       request.setRequestHeader(name, value);
     }
@@ -62,8 +62,9 @@ export function rewriteLocalGrantUrl(
   return proxy.href;
 }
 
-function browserGrantUrl(grantUrl: string): string {
+export function resolveBrowserGrantUrl(grantUrl: string): string {
   if (!import.meta.env.DEV) return grantUrl;
+  if (typeof window === 'undefined') return grantUrl;
   return rewriteLocalGrantUrl(
     grantUrl,
     import.meta.env.VITE_LOCAL_BLOB_ORIGIN ?? 'http://localhost:9000',

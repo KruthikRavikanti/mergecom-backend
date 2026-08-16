@@ -3,12 +3,16 @@ import './styles.css';
 import {
   captureExactOfficePackage,
   getExactCaptureSupport,
+  verifyExactOfficePackage,
   type CapturedOfficePackage,
   type OfficeHost,
 } from '@mergecom/office-core';
 import {
   CircleCheck,
+  Download,
   ExternalLink,
+  FolderOpen,
+  History,
   Link2,
   LogIn,
   RefreshCw,
@@ -25,11 +29,13 @@ import {
   type CurrentUser,
   type DocumentChoice,
   type DocumentVersion,
+  type DownloadGrant,
   type Project,
   webAppUrl,
 } from './api';
 import { createBaseContextStore, type KeyValueStorage } from './base-context';
-import { uploadBlob } from './blob-upload';
+import { downloadBlob } from './blob-download';
+import { resolveBrowserGrantUrl, uploadBlob } from './blob-upload';
 import { documentKindForHost, type DocumentBinding } from './document-binding';
 import {
   detectOfficeRuntime,
@@ -442,6 +448,13 @@ async function renderBoundDocument(
     state.project.accessRole,
   );
   const status = baseStatus(baseVersion, headVersion);
+  const selectedVersion = headVersion ?? state.versions[0];
+  const selectedOpenSupport = selectedVersion
+    ? versionOpenSupport(runtime, selectedVersion)
+    : {
+        reason: 'This document does not have any versions yet.',
+        supported: false as const,
+      };
   root.innerHTML = `
     ${brandMarkup()}
     <main class="content">
@@ -459,6 +472,33 @@ async function renderBoundDocument(
         <div><span>File base</span><strong>${baseVersion ? versionLabel(baseVersion) : 'Unverified'}</strong></div>
         <div><span>Status</span><strong class="${status.warning ? 'warning-text' : ''}">${status.label}</strong></div>
         ${headVersion ? `<div><span>Processing</span><strong>${processingLabel(headVersion)}</strong></div>` : ''}
+      </section>
+      <section class="version-retrieval" aria-label="Version retrieval">
+        <div class="section-title"><i data-lucide="history" aria-hidden="true"></i><span>VERSION RETRIEVAL</span></div>
+        <label for="pull-version">Version</label>
+        <select id="pull-version" name="version" ${selectedVersion ? '' : 'disabled'}>
+          ${
+            state.versions
+              .map(
+                (version) =>
+                  `<option value="${version.id}" ${version.id === selectedVersion?.id ? 'selected' : ''}>${escapeHtml(versionOptionLabel(version))}</option>`,
+              )
+              .join('') || '<option value="">No versions</option>'
+          }
+        </select>
+        <div class="retrieval-details">
+          <span class="retrieval-file">${escapeHtml(selectedVersion?.artifact.originalFilename ?? '')}</span>
+          <span class="retrieval-size">${selectedVersion ? formatBytes(selectedVersion.artifact.byteSize) : ''}</span>
+        </div>
+        <div class="retrieval-actions">
+          <button class="secondary open-copy-button" type="button" ${selectedOpenSupport.supported ? '' : 'disabled'}>
+            <i data-lucide="folder-open" aria-hidden="true"></i>Open exact copy
+          </button>
+          <button class="secondary download-version-button" type="button" ${selectedVersion ? '' : 'disabled'}>
+            <i data-lucide="download" aria-hidden="true"></i>Download
+          </button>
+        </div>
+        <p class="retrieval-hint">${escapeHtml(selectedOpenSupport.supported ? 'Opens a separate Office file. The current file is not replaced.' : selectedOpenSupport.reason)}</p>
       </section>
       <form class="push-form">
         <label for="version-note">Version note</label>
@@ -487,6 +527,48 @@ async function renderBoundDocument(
   const note = getElement<HTMLTextAreaElement>('#version-note');
   const count = getElement<HTMLElement>('.note-count');
   const pushButton = getElement<HTMLButtonElement>('.push-button');
+  const versionSelect = getElement<HTMLSelectElement>('#pull-version');
+  const openCopyButton = getElement<HTMLButtonElement>('.open-copy-button');
+  const downloadVersionButton = getElement<HTMLButtonElement>(
+    '.download-version-button',
+  );
+  const retrievalFile = getElement<HTMLElement>('.retrieval-file');
+  const retrievalSize = getElement<HTMLElement>('.retrieval-size');
+  const retrievalHint = getElement<HTMLElement>('.retrieval-hint');
+  const getSelectedVersion = () =>
+    state.versions.find((version) => version.id === versionSelect.value);
+  const updateRetrieval = () => {
+    const version = getSelectedVersion();
+    retrievalFile.textContent = version?.artifact.originalFilename ?? '';
+    retrievalSize.textContent = version
+      ? formatBytes(version.artifact.byteSize)
+      : '';
+    downloadVersionButton.disabled = version === undefined;
+    if (!version) {
+      openCopyButton.disabled = true;
+      retrievalHint.textContent =
+        'This document does not have any versions yet.';
+      return;
+    }
+    const support = versionOpenSupport(runtime, version);
+    openCopyButton.disabled = !support.supported;
+    retrievalHint.textContent = support.supported
+      ? 'Opens a separate Office file. The current file is not replaced.'
+      : support.reason;
+  };
+  versionSelect.addEventListener('change', updateRetrieval);
+  openCopyButton.addEventListener('click', () => {
+    const version = getSelectedVersion();
+    if (version) {
+      void openVersionCopy(runtime, user, binding, version);
+    }
+  });
+  downloadVersionButton.addEventListener('click', () => {
+    const version = getSelectedVersion();
+    if (version) {
+      void downloadVersion(runtime, user, binding, version);
+    }
+  });
   note.addEventListener('input', () => {
     count.textContent = `${note.value.length} / 500`;
     pushButton.disabled = !canPush || note.value.trim().length === 0;
@@ -523,13 +605,8 @@ async function pushCurrentVersion(
 ): Promise<void> {
   const controller = new AbortController();
   const form = getElement<HTMLFormElement>('.push-form');
-  const actions = [
-    ...root.querySelectorAll<HTMLButtonElement>('button'),
-  ].filter((button) => !button.classList.contains('cancel-button'));
+  const restoreActions = disablePaneActions();
   const feedback = getElement<HTMLElement>('.feedback');
-  actions.forEach((button) => {
-    button.disabled = true;
-  });
   form.setAttribute('aria-busy', 'true');
   feedback.classList.remove('warning');
   feedback.textContent = 'Reading the exact Office package...';
@@ -604,22 +681,167 @@ async function pushCurrentVersion(
     } catch (statusError) {
       hideProgress();
       form.removeAttribute('aria-busy');
-      actions.forEach((button) => {
-        button.disabled = false;
-      });
+      restoreActions();
       feedback.classList.add('warning');
       feedback.textContent = `${versionLabel(result.version)} finalized, but processing status is unavailable: ${toErrorMessage(statusError)}`;
     }
   } catch (error) {
     hideProgress();
     form.removeAttribute('aria-busy');
-    actions.forEach((button) => {
-      button.disabled = false;
-    });
-    getElement<HTMLButtonElement>('.push-button').disabled = false;
+    restoreActions();
     feedback.classList.add('warning');
     feedback.textContent = toErrorMessage(error);
   }
+}
+
+async function openVersionCopy(
+  runtime: OfficeRuntime,
+  user: CurrentUser,
+  binding: DocumentBinding,
+  version: DocumentVersion,
+): Promise<void> {
+  const support = versionOpenSupport(runtime, version);
+  if (!support.supported) return;
+
+  const controller = new AbortController();
+  const restoreActions = disablePaneActions();
+  const feedback = getElement<HTMLElement>('.feedback');
+  feedback.classList.remove('warning');
+  feedback.textContent = `Authorizing ${versionLabel(version)}...`;
+  showProgress('Authorizing version', 0, controller);
+
+  try {
+    const grant = await api.createDownloadGrant(
+      binding,
+      version.id,
+      user.session.csrfToken,
+    );
+    assertVersionDownloadGrant(version, grant);
+    controller.signal.throwIfAborted();
+    const bytes = await downloadBlob(
+      grant,
+      version.artifact.byteSize,
+      ({ loaded, total }) => {
+        const percent = total > 0 ? loaded / total : 0;
+        showProgress(
+          `Downloading ${versionLabel(version)}`,
+          5 + percent * 80,
+          controller,
+        );
+      },
+      controller.signal,
+    );
+    showProgress('Verifying exact package', 90, controller);
+    await verifyExactOfficePackage(bytes, {
+      contentLength: version.artifact.byteSize,
+      fileName: version.artifact.originalFilename,
+      mediaType: version.artifact.detectedMediaType,
+      sha256: version.artifact.sha256,
+      sourceHost: runtime.host,
+    });
+    controller.signal.throwIfAborted();
+    showProgress(`Opening ${versionLabel(version)} copy`, 98, controller);
+    const cancel = root.querySelector<HTMLButtonElement>('.cancel-button');
+    if (cancel) cancel.disabled = true;
+    await runtime.openExactPackage(bytes);
+    hideProgress();
+    restoreActions();
+    feedback.textContent = `Opened ${versionLabel(version)} as a separate ${DOCUMENT_LABELS[runtime.host]}.`;
+  } catch (error) {
+    hideProgress();
+    restoreActions();
+    feedback.classList.add('warning');
+    feedback.textContent = toErrorMessage(error);
+  }
+}
+
+async function downloadVersion(
+  runtime: OfficeRuntime,
+  user: CurrentUser,
+  binding: DocumentBinding,
+  version: DocumentVersion,
+): Promise<void> {
+  const restoreActions = disablePaneActions();
+  const feedback = getElement<HTMLElement>('.feedback');
+  feedback.classList.remove('warning');
+  feedback.textContent = `Authorizing ${versionLabel(version)} download...`;
+
+  try {
+    const grant = await api.createDownloadGrant(
+      binding,
+      version.id,
+      user.session.csrfToken,
+    );
+    assertVersionDownloadGrant(version, grant);
+    runtime.openBrowserWindow(resolveBrowserGrantUrl(grant.url));
+    restoreActions();
+    feedback.textContent = `Downloading the exact ${versionLabel(version)} package.`;
+  } catch (error) {
+    restoreActions();
+    feedback.classList.add('warning');
+    feedback.textContent = toErrorMessage(error);
+  }
+}
+
+function disablePaneActions(): () => void {
+  const controls = [
+    ...root.querySelectorAll<
+      HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement
+    >('button, select, textarea'),
+  ].filter(
+    (control) =>
+      !(
+        control instanceof HTMLButtonElement &&
+        control.classList.contains('cancel-button')
+      ),
+  );
+  const states = controls.map(
+    (control) => [control, control.disabled] as const,
+  );
+  controls.forEach((control) => {
+    control.disabled = true;
+  });
+  return () => {
+    states.forEach(([control, disabled]) => {
+      control.disabled = disabled;
+    });
+  };
+}
+
+function assertVersionDownloadGrant(
+  version: DocumentVersion,
+  grant: DownloadGrant,
+): void {
+  if (
+    grant.method !== 'GET' ||
+    grant.filename !== version.artifact.originalFilename ||
+    grant.sha256 !== version.artifact.sha256
+  ) {
+    throw new Error(
+      'Authorized download metadata does not match this version.',
+    );
+  }
+  const expiresAt = Date.parse(grant.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    throw new Error('The authorized version download has expired.');
+  }
+}
+
+function versionOpenSupport(
+  runtime: OfficeRuntime,
+  version: DocumentVersion,
+): { reason: string; supported: false } | { supported: true } {
+  if (version.artifact.scanStatus !== 'clean') {
+    return {
+      reason:
+        'This version must pass package scanning before it can be opened.',
+      supported: false,
+    };
+  }
+  return runtime.exactOpenSupport(
+    version.artifact.originalFilename,
+    version.artifact.byteSize,
+  );
 }
 
 async function capturePackage(
@@ -688,9 +910,9 @@ function showProgress(
   progressLabel.textContent = `${rounded}%`;
   stageLabel.textContent = label;
   const cancel = region.querySelector<HTMLButtonElement>('.cancel-button');
-  if (cancel && controller && cancel.dataset.bound !== 'true') {
-    cancel.dataset.bound = 'true';
-    cancel.addEventListener('click', () => controller.abort());
+  if (cancel && controller) {
+    cancel.disabled = false;
+    cancel.onclick = () => controller.abort();
   }
 }
 
@@ -785,7 +1007,7 @@ function progressMarkup(cancellable = false): string {
     <section class="progress-region" aria-live="polite" hidden>
       <div class="progress-copy"><span class="progress-stage">Working</span><strong class="progress-label">0%</strong></div>
       <progress value="0" max="100">0%</progress>
-      ${cancellable ? '<button class="cancel-button" type="button" title="Cancel upload" aria-label="Cancel upload"><i data-lucide="x" aria-hidden="true"></i></button>' : ''}
+      ${cancellable ? '<button class="cancel-button" type="button" title="Cancel operation" aria-label="Cancel operation"><i data-lucide="x" aria-hidden="true"></i></button>' : ''}
     </section>
   `;
 }
@@ -830,6 +1052,17 @@ function versionLabel(version: DocumentVersion): string {
   return `V${version.displayNumber}`;
 }
 
+function versionOptionLabel(version: DocumentVersion): string {
+  const note = version.note.trim().replace(/\s+/gu, ' ');
+  return note ? `${versionLabel(version)} - ${note}` : versionLabel(version);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function documentHistoryUrl(binding: DocumentBinding): string {
   return webAppUrl(
     `/app/projects/${binding.projectId}/documents/${binding.documentId}/history`,
@@ -840,7 +1073,10 @@ function drawIcons(): void {
   createIcons({
     icons: {
       CircleCheck,
+      Download,
       ExternalLink,
+      FolderOpen,
+      History,
       Link2,
       LogIn,
       RefreshCw,
@@ -886,7 +1122,7 @@ function capitalize(value: string): string {
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof DOMException && error.name === 'AbortError') {
-    return 'Upload cancelled.';
+    return error.message || 'Operation cancelled.';
   }
   return error instanceof Error ? error.message : 'MergeCom request failed.';
 }
