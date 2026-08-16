@@ -1,4 +1,5 @@
-import { deflateRawSync } from 'node:zlib';
+import { readFile } from 'node:fs/promises';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
 
 import { expect, test, type Page } from '@playwright/test';
 
@@ -116,6 +117,24 @@ test('persists eligible PowerPoint analysis for two stale-base users', async ({
       timeout: 20_000,
     });
     await expect(version(page, 4)).toContainText('Merged from version 3');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      version(page, 4)
+        .getByRole('button', { name: 'Download version 4' })
+        .click(),
+    ]);
+    const downloadedPath = await download.path();
+    expect(downloadedPath).not.toBeNull();
+    const downloaded = await readFile(downloadedPath!);
+    expect(zipTextEntry(downloaded, 'ppt/slides/slide1.xml')).toContain(
+      '<a:t>Ours A</a:t>',
+    );
+    expect(zipTextEntry(downloaded, 'ppt/slides/slide2.xml')).toContain(
+      '<a:t>Theirs B</a:t>',
+    );
+    expect(zipTextEntry(downloaded, 'ppt/slides/slide1.xml')).toContain(
+      '<a:ext cx="7315200" cy="914400"',
+    );
   }
 });
 
@@ -223,12 +242,21 @@ function presentation(count: number): string {
 
 function slide(texts: string[]): string {
   const shapes = texts
-    .map(
-      (text, index) =>
-        `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="Text ${index + 1}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp>`,
-    )
+    .map((text, index) => {
+      const y = 914_400 + index * 1_219_200;
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="Text ${index + 1}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="914400" y="${y}"/><a:ext cx="7315200" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square" anchor="ctr"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="2800"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:rPr><a:t>${escapeXml(text)}</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
+    })
     .join('');
   return `<?xml version="1.0" encoding="utf-8"?><p:sld ${namespaces}><p:cSld><p:spTree>${shapeTreeRoot}${shapes}</p:spTree></p:cSld></p:sld>`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
 }
 
 const slideLayout = `<?xml version="1.0" encoding="utf-8"?><p:sldLayout ${namespaces} type="blank" preserve="1"><p:cSld name="Blank"><p:spTree>${shapeTreeRoot}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
@@ -286,6 +314,37 @@ function zip(entries: Array<[string, string]>): Buffer {
   end.writeUInt32LE(directory.length, 12);
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...localParts, directory, end]);
+}
+
+function zipTextEntry(archive: Buffer, target: string): string {
+  const endOffset = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  expect(endOffset).toBeGreaterThanOrEqual(0);
+  const entryCount = archive.readUInt16LE(endOffset + 10);
+  let centralOffset = archive.readUInt32LE(endOffset + 16);
+  for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+    expect(archive.readUInt32LE(centralOffset)).toBe(0x02014b50);
+    const compression = archive.readUInt16LE(centralOffset + 10);
+    const compressedSize = archive.readUInt32LE(centralOffset + 20);
+    const nameLength = archive.readUInt16LE(centralOffset + 28);
+    const extraLength = archive.readUInt16LE(centralOffset + 30);
+    const commentLength = archive.readUInt16LE(centralOffset + 32);
+    const localOffset = archive.readUInt32LE(centralOffset + 42);
+    const name = archive
+      .subarray(centralOffset + 46, centralOffset + 46 + nameLength)
+      .toString();
+    if (name === target) {
+      expect(archive.readUInt32LE(localOffset)).toBe(0x04034b50);
+      const localNameLength = archive.readUInt16LE(localOffset + 26);
+      const localExtraLength = archive.readUInt16LE(localOffset + 28);
+      const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+      const bytes = archive.subarray(dataOffset, dataOffset + compressedSize);
+      if (compression === 0) return bytes.toString();
+      if (compression === 8) return inflateRawSync(bytes).toString();
+      throw new Error(`Unsupported ZIP compression method ${compression}.`);
+    }
+    centralOffset += 46 + nameLength + extraLength + commentLength;
+  }
+  throw new Error(`ZIP entry ${target} was not found.`);
 }
 
 function crc32(bytes: Buffer): number {

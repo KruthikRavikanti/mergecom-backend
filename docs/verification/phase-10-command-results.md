@@ -55,6 +55,9 @@ object storage, API, worker, and document-engine services.
   scenarios with the pilot enabled and two with the default-off gate. The
   enabled path published version 4; the disabled path generated no candidate
   and did not mark findings automatically resolved.
+- A follow-up download check uses positioned, explicitly styled text boxes,
+  downloads merged version 4 through the web UI, decompresses the returned
+  package, and verifies both merged slide strings and nonzero shape dimensions.
 - Desktop, Pixel 7, and narrow PowerPoint task-pane screenshots were visually
   inspected. Analysis groups, source download actions, stale-base actions,
   long labels, and status content had no clipping, overlap, blank state, or
