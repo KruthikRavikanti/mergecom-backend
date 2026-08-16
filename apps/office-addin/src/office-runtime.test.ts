@@ -57,6 +57,14 @@ function createOfficeMock(overrides: Record<string, unknown> = {}) {
       });
     },
   );
+  const getFilePropertiesAsync = vi.fn((callback: (result: object) => void) => {
+    callback({
+      status: 'succeeded',
+      value: {
+        url: 'https://contoso.example/files/Forecast%20Q3.xlsx',
+      },
+    });
+  });
 
   return {
     api: {
@@ -82,6 +90,7 @@ function createOfficeMock(overrides: Record<string, unknown> = {}) {
       context: {
         document: {
           getFileAsync,
+          getFilePropertiesAsync,
           settings: {
             get: vi.fn((name: string) => savedSettings.get(name) ?? null),
             remove: vi.fn((name: string) => savedSettings.delete(name)),
@@ -105,6 +114,7 @@ function createOfficeMock(overrides: Record<string, unknown> = {}) {
     dialogHandlers,
     displayDialogAsync,
     getFileAsync,
+    getFilePropertiesAsync,
     getSliceAsync,
     savedSettings,
   };
@@ -155,8 +165,39 @@ describe('detectOfficeRuntime', () => {
   it('does not invent a filename for an unsaved document', async () => {
     const office = createOfficeMock();
     office.api.context.document.url = '';
+    office.api.context.document.getFilePropertiesAsync = vi.fn(
+      (callback: (result: object) => void) => {
+        callback({ status: 'succeeded', value: { url: '' } });
+      },
+    );
     expect(await detectOfficeRuntime(office.api)).toMatchObject({
       fileName: null,
+    });
+  });
+
+  it('uses file properties when Mac PowerPoint omits document.url', async () => {
+    const office = createOfficeMock({
+      onReady: vi
+        .fn()
+        .mockResolvedValue({ host: 'PowerPoint', platform: 'Mac' }),
+    });
+    office.api.context.document.url = '';
+    office.api.context.document.getFilePropertiesAsync = vi.fn(
+      (callback: (result: object) => void) => {
+        callback({
+          status: 'succeeded',
+          value: {
+            url: '/Users/person/Downloads/Quarterly%20Review.pptx',
+          },
+        });
+      },
+    );
+
+    await expect(detectOfficeRuntime(office.api)).resolves.toMatchObject({
+      documentUrl: '/Users/person/Downloads/Quarterly%20Review.pptx',
+      fileName: 'Quarterly Review.pptx',
+      host: 'powerpoint',
+      platform: 'mac',
     });
   });
 

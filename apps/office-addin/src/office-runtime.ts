@@ -47,6 +47,9 @@ interface OfficeFileLike {
 }
 
 interface OfficeDocumentLike {
+  getFilePropertiesAsync?(
+    callback: (result: OfficeAsyncResult<{ url: string }>) => void,
+  ): void;
   getFileAsync(
     fileType: OfficeToken,
     options: { sliceSize: number },
@@ -138,12 +141,13 @@ export async function detectOfficeRuntime(
     'CompressedFile',
     '1.1',
   );
+  const documentUrl = await getDocumentUrl(office);
 
   return {
     bindingStore: createDocumentBindingStore(office),
     compressedFileAvailable,
-    documentUrl: office.context.document.url ?? '',
-    fileName: getSavedFileName(office.context.document.url, host),
+    documentUrl,
+    fileName: getSavedFileName(documentUrl, host),
     host,
     platform,
     provider: createCompressedFileProvider(office),
@@ -155,6 +159,27 @@ export async function detectOfficeRuntime(
     },
     requestAuthentication: (url) => requestAuthentication(office, url),
   };
+}
+
+function getDocumentUrl(office: OfficeApi): Promise<string> {
+  const document = office.context.document;
+  const fallback = document.url ?? '';
+  if (typeof document.getFilePropertiesAsync !== 'function') {
+    return Promise.resolve(fallback);
+  }
+  return new Promise((resolve) => {
+    document.getFilePropertiesAsync?.((result) => {
+      if (
+        result.status === office.AsyncResultStatus.Succeeded &&
+        typeof result.value?.url === 'string' &&
+        result.value.url.trim() !== ''
+      ) {
+        resolve(result.value.url);
+        return;
+      }
+      resolve(fallback);
+    });
+  });
 }
 
 export function getOfficeSliceSize(platform: OfficePlatform): number {

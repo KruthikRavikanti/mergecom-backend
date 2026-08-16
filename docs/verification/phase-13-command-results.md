@@ -6,11 +6,11 @@ dependency lock.
 
 ## Office and API boundaries
 
-- The Office add-in passed 18 unit cases across host callback adaptation, strict
-  dialog-message validation, Settings persistence, binding validation, URL-scoped
-  base isolation, local signed-grant rewriting, exact single/multipart uploads,
-  `office_addin` provenance, staged cleanup, cancellation, and original-error
-  preservation.
+- The Office add-in passed 19 unit cases across host callback adaptation, Mac saved
+  file-property fallback, strict dialog-message validation, Settings persistence,
+  binding validation, URL-scoped base isolation, local signed-grant rewriting, exact
+  single/multipart uploads, `office_addin` provenance, staged cleanup, cancellation,
+  and original-error preservation.
 - API startup and real PostgreSQL integration passed 24 cases, including exact Office
   CORS/CSRF acceptance, rejection of a lookalike hostile origin, one-use handoff
   exchange, pre-exchange session refusal, and replay rejection. Nine unrelated
