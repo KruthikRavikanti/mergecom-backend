@@ -6,6 +6,8 @@ const folderId = '50000000-0000-4000-8000-000000000001';
 const documentId = '60000000-0000-4000-8000-000000000001';
 const projectsPath = `/v1/organizations/${organizationId}/projects`;
 const projectPath = `${projectsPath}/${projectId}`;
+const documentPath = `${projectPath}/documents/${documentId}`;
+const versionPath = `${documentPath}/versions`;
 
 const currentUser = {
   activeOrganization: {
@@ -70,10 +72,86 @@ test.beforeEach(async ({ page }) => {
       updatedAt: '2026-08-15T12:00:00.000Z',
     },
   ];
+  const versions = [
+    {
+      artifact: {
+        byteSize: 182400,
+        detectedMediaType:
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        extension: '.pptx',
+        id: '80000000-0000-4000-8000-000000000002',
+        originalFilename: 'Confidential Information Memorandum.pptx',
+        scanStatus: 'pending',
+        sha256: 'b'.repeat(64),
+        storageChecksum: 'etag-v2',
+        storageVersion: null,
+      },
+      author: {
+        id: currentUser.user.id,
+        name: currentUser.user.displayName,
+      },
+      baseVersionId: '90000000-0000-4000-8000-000000000001',
+      branchId: '81000000-0000-4000-8000-000000000001',
+      conflictReason: 'base_version_is_not_current_head',
+      createdAt: '2026-08-15T14:00:00.000Z',
+      displayNumber: 2,
+      documentId,
+      id: '90000000-0000-4000-8000-000000000002',
+      mergeParentVersionId: null,
+      note: 'Work prepared from the earlier client draft',
+      parentVersionId: '90000000-0000-4000-8000-000000000001',
+      sequence: 2,
+      source: 'web_upload',
+      status: 'conflicted',
+    },
+    {
+      artifact: {
+        byteSize: 176200,
+        detectedMediaType:
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        extension: '.pptx',
+        id: '80000000-0000-4000-8000-000000000001',
+        originalFilename: 'Confidential Information Memorandum.pptx',
+        scanStatus: 'pending',
+        sha256: 'a'.repeat(64),
+        storageChecksum: 'etag-v1',
+        storageVersion: null,
+      },
+      author: {
+        id: currentUser.user.id,
+        name: currentUser.user.displayName,
+      },
+      baseVersionId: null,
+      branchId: '81000000-0000-4000-8000-000000000001',
+      conflictReason: null,
+      createdAt: '2026-08-15T13:00:00.000Z',
+      displayNumber: 1,
+      documentId,
+      id: '90000000-0000-4000-8000-000000000001',
+      mergeParentVersionId: null,
+      note: 'Initial management presentation',
+      parentVersionId: null,
+      sequence: 1,
+      source: 'web_upload',
+      status: 'pending_processing',
+    },
+  ];
+  let headVersionId = versions[1]!.id;
 
   await page.route('**/*', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === '/object-upload') {
+      await route.fulfill({
+        body: '',
+        headers: {
+          'access-control-allow-origin': '*',
+          etag: 'browser-upload-etag',
+        },
+        status: 200,
+      });
+      return;
+    }
     if (!url.pathname.startsWith('/api/')) {
       await route.continue();
       return;
@@ -228,8 +306,87 @@ test.beforeEach(async ({ page }) => {
       });
       return;
     }
-    if (path === `${projectPath}/documents/${documentId}` && method === 'GET') {
+    if (path === documentPath && method === 'GET') {
       await route.fulfill({ json: documents[0], status: 200 });
+      return;
+    }
+    if (path === versionPath && method === 'GET') {
+      await route.fulfill({
+        json: {
+          branch: {
+            headVersionId,
+            id: '81000000-0000-4000-8000-000000000001',
+            name: 'main',
+          },
+          items: versions,
+          nextCursor: null,
+        },
+        status: 200,
+      });
+      return;
+    }
+    if (path === `${documentPath}/uploads` && method === 'POST') {
+      await route.fulfill({
+        json: {
+          branch: {
+            headVersionId,
+            id: '81000000-0000-4000-8000-000000000001',
+            name: 'main',
+          },
+          expiresAt: '2026-08-16T14:00:00.000Z',
+          grant: {
+            expiresAt: '2026-08-16T14:00:00.000Z',
+            headers: {
+              'content-type':
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            },
+            method: 'PUT',
+            url: 'http://127.0.0.1:5173/object-upload',
+          },
+          id: '82000000-0000-4000-8000-000000000001',
+          mode: 'single',
+          multipart: null,
+        },
+        status: 201,
+      });
+      return;
+    }
+    if (
+      path ===
+        `${documentPath}/uploads/82000000-0000-4000-8000-000000000001/finalize` &&
+      method === 'POST'
+    ) {
+      const body = request.postDataJSON() as { note: string };
+      const created = {
+        ...versions[1]!,
+        artifact: {
+          ...versions[1]!.artifact,
+          id: '80000000-0000-4000-8000-000000000003',
+          sha256: 'c'.repeat(64),
+        },
+        baseVersionId: headVersionId,
+        createdAt: '2026-08-15T15:00:00.000Z',
+        displayNumber: 3,
+        id: '90000000-0000-4000-8000-000000000003',
+        note: body.note,
+        parentVersionId: headVersionId,
+        sequence: 3,
+      };
+      headVersionId = created.id;
+      versions.unshift(created);
+      await route.fulfill({
+        json: {
+          currentHeadVersionId: created.id,
+          outcome: 'created',
+          replayed: false,
+          version: created,
+        },
+        status: 201,
+      });
+      return;
+    }
+    if (path.includes('/uploads/') && method === 'DELETE') {
+      await route.fulfill({ status: 204 });
       return;
     }
     if (path === `${projectPath}/team` && method === 'GET') {
@@ -375,6 +532,31 @@ test('protected deep link returns after identity sign in', async ({ page }) => {
     .getByRole('button', { name: 'Continue with local identity' })
     .click();
   await expect(page).toHaveURL(/\/app\/settings$/u);
+});
+
+test('shows immutable history states and uploads a version with progress', async ({
+  page,
+}, testInfo) => {
+  await startIdentitySession(page);
+  await page.goto(`/app/projects/${projectId}/documents/${documentId}/history`);
+  await expect(page.getByText('Conflicting', { exact: true })).toBeVisible();
+  await expect(page.getByText('Processing', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Upload version' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Upload version' });
+  await dialog.getByLabel('Office file').setInputFiles({
+    buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x01]),
+    mimeType:
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    name: 'Board update.pptx',
+  });
+  await dialog.getByLabel('Version note').fill('Updated board narrative');
+  await dialog.getByRole('button', { name: 'Upload version' }).click();
+  await expect(page.getByRole('heading', { name: 'Version 3' })).toBeVisible();
+  await expect(page.getByText('Updated board narrative')).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath('phase4-history.png'),
+  });
 });
 
 test('support reports delivery failure', async ({ page }) => {

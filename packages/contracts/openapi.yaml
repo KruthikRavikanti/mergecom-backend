@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MergeCom API
-  version: 0.3.0
-  description: Identity, organization, RBAC, project, folder, and document metadata contracts.
+  version: 0.4.0
+  description: Identity, project, immutable artifact, and document version contracts.
 paths:
   /health/live:
     get:
@@ -777,6 +777,248 @@ paths:
       responses:
         '204': { description: Project membership removed. }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: createUploadIntent
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseVersionId, byteSize, filename, sha256]
+              properties:
+                baseVersionId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+                byteSize: { type: integer, minimum: 1 }
+                clientMediaType:
+                  oneOf: [{ type: string }, { type: 'null' }]
+                filename: { type: string, minLength: 1, maxLength: 255 }
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '200':
+          description: Existing upload intent replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadIntent' }
+        '201':
+          description: Upload intent created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadIntent' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/parts/{partNumber}/grant:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/UploadId'
+      - name: partNumber
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      operationId: getMultipartPartGrant
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Short-lived grant for one multipart part.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignedBlobGrant' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/multipart/complete:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/UploadId'
+    post:
+      operationId: completeMultipartUpload
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [parts]
+              properties:
+                parts:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [etag, partNumber]
+                    properties:
+                      etag: { type: string, minLength: 1 }
+                      partNumber: { type: integer, minimum: 1 }
+      responses:
+        '204': { description: Multipart upload assembled. }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/UploadId'
+    delete:
+      operationId: cancelUpload
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204': { description: Upload cancelled and staging cleanup requested. }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/finalize:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/UploadId'
+    post:
+      operationId: finalizeUpload
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 500 }
+                source: { type: string, enum: [web_upload, office_addin] }
+      responses:
+        '200':
+          description: Existing finalization replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinalizeVersionResult' }
+        '201':
+          description: Version created and branch head advanced.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinalizeVersionResult' }
+        '409':
+          description: Incoming version preserved but its base was stale, or request rejected.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FinalizeVersionResult'
+                  - $ref: '#/components/schemas/ApiError'
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: listDocumentVersions
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Immutable version graph nodes for the default branch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+    get:
+      operationId: getDocumentVersion
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Exact immutable version metadata and graph links.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentVersion' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/download:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+    post:
+      operationId: createVersionDownloadGrant
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Authorized short-lived URL and expected SHA-256.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DownloadGrant' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+    post:
+      operationId: restoreDocumentVersion
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedHeadVersionId, note]
+              properties:
+                expectedHeadVersionId: { type: string, format: uuid }
+                note: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Existing restore replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentVersion' }
+        '201':
+          description: Restore appended as a new version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentVersion' }
+        default: { $ref: '#/components/responses/ApiError' }
 components:
   securitySchemes:
     sessionCookie:
@@ -811,6 +1053,16 @@ components:
       schema: { type: string, format: uuid }
     DocumentId:
       name: documentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VersionId:
+      name: versionId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1063,6 +1315,167 @@ components:
           items: { $ref: '#/components/schemas/ProjectTeamMember' }
         nextCursor:
           oneOf: [{ type: string }, { type: 'null' }]
+    Artifact:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          sha256,
+          byteSize,
+          detectedMediaType,
+          originalFilename,
+          extension,
+          storageVersion,
+          storageChecksum,
+          scanStatus,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        byteSize: { type: integer, minimum: 1 }
+        detectedMediaType: { type: string }
+        originalFilename: { type: string }
+        extension: { type: string }
+        storageVersion:
+          oneOf: [{ type: string }, { type: 'null' }]
+        storageChecksum:
+          oneOf: [{ type: string }, { type: 'null' }]
+        scanStatus:
+          { type: string, enum: [pending, clean, quarantined, failed] }
+    DocumentVersion:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          documentId,
+          branchId,
+          sequence,
+          displayNumber,
+          parentVersionId,
+          mergeParentVersionId,
+          baseVersionId,
+          source,
+          status,
+          note,
+          conflictReason,
+          author,
+          artifact,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        documentId: { type: string, format: uuid }
+        branchId: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        displayNumber: { type: integer, minimum: 1 }
+        parentVersionId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        mergeParentVersionId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        baseVersionId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        source:
+          {
+            type: string,
+            enum: [web_upload, office_addin, restore, merge, import],
+          }
+        status:
+          {
+            type: string,
+            enum: [pending_processing, ready, conflicted, quarantined, failed],
+          }
+        note: { type: string }
+        conflictReason:
+          oneOf: [{ type: string }, { type: 'null' }]
+        author:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        artifact: { $ref: '#/components/schemas/Artifact' }
+        createdAt: { type: string, format: date-time }
+    VersionPage:
+      type: object
+      additionalProperties: false
+      required: [branch, items, nextCursor]
+      properties:
+        branch:
+          type: object
+          additionalProperties: false
+          required: [id, name, headVersionId]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            headVersionId:
+              oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DocumentVersion' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
+    SignedBlobGrant:
+      type: object
+      additionalProperties: false
+      required: [url, method, headers, expiresAt]
+      properties:
+        url: { type: string, format: uri }
+        method: { type: string, enum: [GET, PUT] }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        expiresAt: { type: string, format: date-time }
+    UploadIntent:
+      type: object
+      additionalProperties: false
+      required: [id, mode, expiresAt, branch, grant, multipart]
+      properties:
+        id: { type: string, format: uuid }
+        mode: { type: string, enum: [single, multipart] }
+        expiresAt: { type: string, format: date-time }
+        branch:
+          type: object
+          additionalProperties: false
+          required: [id, name, headVersionId]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            headVersionId:
+              oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        grant:
+          oneOf:
+            - $ref: '#/components/schemas/SignedBlobGrant'
+            - type: 'null'
+        multipart:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [partSize, partCount]
+              properties:
+                partSize: { type: integer, minimum: 1 }
+                partCount: { type: integer, minimum: 1 }
+            - type: 'null'
+    FinalizeVersionResult:
+      type: object
+      additionalProperties: false
+      required: [outcome, replayed, currentHeadVersionId, version]
+      properties:
+        outcome: { type: string, enum: [created, conflict] }
+        replayed: { type: boolean }
+        currentHeadVersionId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        version: { $ref: '#/components/schemas/DocumentVersion' }
+    DownloadGrant:
+      allOf:
+        - $ref: '#/components/schemas/SignedBlobGrant'
+        - type: object
+          required: [filename, sha256]
+          properties:
+            filename: { type: string }
+            sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
     Liveness:
       type: object
       additionalProperties: false

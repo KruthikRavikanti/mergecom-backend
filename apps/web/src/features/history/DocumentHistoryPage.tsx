@@ -1,23 +1,74 @@
-import { ErrorState, LoadingState } from '@mergecom/ui';
-import { ArrowLeft, Clock3, FileText } from 'lucide-react';
+import {
+  Dialog,
+  ErrorState,
+  LoadingState,
+  Toast,
+  type ToastKind,
+} from '@mergecom/ui';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Clock3,
+  Download,
+  FileText,
+  LoaderCircle,
+  RotateCcw,
+  Upload,
+} from 'lucide-react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
   type DocumentKind,
+  type DocumentVersion,
   useDocumentQuery,
+  useDownloadVersionMutation,
   useProjectQuery,
+  usePushVersionMutation,
+  useRestoreVersionMutation,
+  useVersionsQuery,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
+import { readFormString } from '../../services/contact';
 
 const kindLabels: Record<DocumentKind, string> = {
   presentation: 'Presentation',
   spreadsheet: 'Spreadsheet',
   word_document: 'Word document',
 };
+const acceptedFiles: Record<DocumentKind, string> = {
+  presentation: '.pptx,.pptm',
+  spreadsheet: '.xlsx,.xlsm',
+  word_document: '.docx,.docm',
+};
 const dateFormatter = new Intl.DateTimeFormat('en', {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+const byteFormatter = new Intl.NumberFormat('en', {
+  maximumFractionDigits: 1,
+  notation: 'compact',
+  style: 'unit',
+  unit: 'byte',
+  unitDisplay: 'narrow',
+});
+const statusLabels: Record<DocumentVersion['status'], string> = {
+  conflicted: 'Conflicting',
+  failed: 'Failed',
+  pending_processing: 'Processing',
+  quarantined: 'Quarantined',
+  ready: 'Ready',
+};
+const statusClasses: Record<DocumentVersion['status'], string> = {
+  conflicted: 'border-amber-300 bg-amber-50 text-amber-900',
+  failed: 'border-red-300 bg-red-50 text-red-800',
+  pending_processing: 'border-sky-300 bg-sky-50 text-sky-900',
+  quarantined: 'border-red-300 bg-red-50 text-red-800',
+  ready: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+};
+
+type UploadStage =
+  'conflict' | 'failed' | 'finalizing' | 'hashing' | 'idle' | 'uploading';
 
 export function DocumentHistoryPage() {
   const { documentId = '', projectId = '' } = useParams();
@@ -25,24 +76,147 @@ export function DocumentHistoryPage() {
   const organizationId = user?.activeOrganization?.id;
   const project = useProjectQuery(organizationId, projectId);
   const document = useDocumentQuery(organizationId, projectId, documentId);
+  const versions = useVersionsQuery(organizationId, projectId, documentId);
+  const pushVersion = usePushVersionMutation(user!);
+  const downloadVersion = useDownloadVersionMutation(user!);
+  const restoreVersion = useRestoreVersionMutation(user!);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [restoreTarget, setRestoreTarget] = useState<DocumentVersion | null>(
+    null,
+  );
+  const [toast, setToast] = useState<{
+    kind: ToastKind;
+    message: string;
+  } | null>(null);
+  const uploadAbort = useRef<AbortController | null>(null);
 
-  if (!user || project.isLoading || document.isLoading) {
-    return <LoadingState label="Loading document" />;
+  if (!user || project.isLoading || document.isLoading || versions.isLoading) {
+    return <LoadingState label="Loading document history" />;
   }
-  if (project.isError || document.isError) {
+  if (project.isError || document.isError || versions.isError) {
     return (
       <ErrorState
-        message="The document could not be loaded."
+        message="The document history could not be loaded."
         onRetry={() => {
           void project.refetch();
           void document.refetch();
+          void versions.refetch();
         }}
       />
     );
   }
-  if (!project.data || !document.data) {
+  if (!project.data || !document.data || !versions.data) {
     return <ErrorState message="This document is unavailable." />;
   }
+
+  const canWrite =
+    project.data.accessRole === 'project_lead' ||
+    project.data.accessRole === 'contributor';
+
+  function report(error: unknown, fallback: string) {
+    setToast({
+      kind: 'error',
+      message: error instanceof Error ? error.message : fallback,
+    });
+  }
+
+  async function submitUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const file = form.get('file');
+    if (!(file instanceof File) || !file.size) {
+      setToast({ kind: 'error', message: 'Choose an Office file to upload.' });
+      return;
+    }
+    const controller = new AbortController();
+    uploadAbort.current = controller;
+    setUploadPercent(0);
+    setUploadStage('hashing');
+    try {
+      const result = await pushVersion.mutateAsync({
+        baseVersionId: versions.data!.branch.headVersionId,
+        documentId,
+        file,
+        note: readFormString(form, 'note'),
+        onProgress: ({ loaded, total }) =>
+          setUploadPercent(Math.min(100, Math.round((loaded / total) * 100))),
+        onStage: setUploadStage,
+        projectId,
+        signal: controller.signal,
+      });
+      if (result.outcome === 'conflict') {
+        setUploadStage('conflict');
+        setToast({
+          kind: 'error',
+          message: `Version ${result.version.displayNumber} was preserved but conflicts with the latest team version.`,
+        });
+      } else {
+        setUploadOpen(false);
+        setUploadStage('idle');
+        setToast({
+          kind: 'success',
+          message: `Version ${result.version.displayNumber} is processing.`,
+        });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setUploadOpen(false);
+        setUploadStage('idle');
+        setToast({ kind: 'success', message: 'Upload cancelled.' });
+      } else {
+        setUploadStage('failed');
+        report(error, 'Version upload failed.');
+      }
+    } finally {
+      uploadAbort.current = null;
+    }
+  }
+
+  async function download(versionId: string) {
+    try {
+      await downloadVersion.mutateAsync({ documentId, projectId, versionId });
+    } catch (error) {
+      report(error, 'Download could not be started.');
+    }
+  }
+
+  async function submitRestore(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!restoreTarget || !versions.data?.branch.headVersionId) return;
+    try {
+      const restored = await restoreVersion.mutateAsync({
+        documentId,
+        expectedHeadVersionId: versions.data.branch.headVersionId,
+        note: readFormString(new FormData(event.currentTarget), 'note'),
+        projectId,
+        versionId: restoreTarget.id,
+      });
+      setRestoreTarget(null);
+      setToast({
+        kind: 'success',
+        message: `Version ${restoreTarget.displayNumber} was restored as version ${restored.displayNumber}.`,
+      });
+    } catch (error) {
+      report(error, 'Version could not be restored.');
+    }
+  }
+
+  const busy = ['hashing', 'uploading', 'finalizing'].includes(uploadStage);
+  const uploadCanBeCancelled = ['hashing', 'uploading'].includes(uploadStage);
+  const stageLabel =
+    uploadStage === 'hashing'
+      ? 'Verifying file integrity...'
+      : uploadStage === 'uploading'
+        ? `Uploading ${uploadPercent}%`
+        : uploadStage === 'finalizing'
+          ? 'Creating immutable version...'
+          : uploadStage === 'conflict'
+            ? 'Upload preserved with a conflict.'
+            : uploadStage === 'failed'
+              ? 'Upload failed. Review the error and retry.'
+              : null;
 
   return (
     <section>
@@ -53,27 +227,264 @@ export function DocumentHistoryPage() {
         <ArrowLeft aria-hidden="true" size={16} />
         {project.data.name}
       </Link>
-      <div className="mt-5 border-b border-slate-200 pb-6">
-        <p className="text-sm font-bold text-red-700">DOCUMENT</p>
-        <h1 className="page-title mt-1 break-words">{document.data.name}</h1>
-        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
-          <span className="inline-flex items-center gap-2">
-            <FileText aria-hidden="true" size={16} />
-            {kindLabels[document.data.kind]}
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <Clock3 aria-hidden="true" size={16} />
-            Updated {dateFormatter.format(new Date(document.data.updatedAt))}
-          </span>
+      <div className="mt-5 flex flex-col gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-red-700">DOCUMENT</p>
+          <h1 className="page-title mt-1 break-words">{document.data.name}</h1>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
+            <span className="inline-flex items-center gap-2">
+              <FileText aria-hidden="true" size={16} />
+              {kindLabels[document.data.kind]}
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Clock3 aria-hidden="true" size={16} />
+              Updated {dateFormatter.format(new Date(document.data.updatedAt))}
+            </span>
+          </div>
         </div>
+        {canWrite ? (
+          <button
+            className="button-primary shrink-0"
+            type="button"
+            onClick={() => {
+              setUploadStage('idle');
+              setUploadOpen(true);
+            }}
+          >
+            <Upload aria-hidden="true" size={17} />
+            Upload version
+          </button>
+        ) : null}
       </div>
-      <div className="mt-7 border border-dashed border-slate-300 bg-white p-8 text-center">
-        <h2 className="text-base font-bold text-slate-950">No versions yet</h2>
-        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-          This document record is ready for file uploads and version capture in
-          Phase 4.
-        </p>
+
+      <div className="mt-7 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-950">Version history</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            {versions.data.branch.name} branch
+          </p>
+        </div>
+        <span className="text-sm font-semibold text-slate-500">
+          {versions.data.items.length}{' '}
+          {versions.data.items.length === 1 ? 'version' : 'versions'}
+        </span>
       </div>
+
+      {versions.data.items.length ? (
+        <div className="mt-4 border border-slate-200 bg-white">
+          {versions.data.items.map((version) => {
+            const isHead = version.id === versions.data?.branch.headVersionId;
+            return (
+              <article
+                className="grid gap-4 border-b border-slate-200 p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+                key={version.id}
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-950">
+                      Version {version.displayNumber}
+                    </h3>
+                    {isHead ? (
+                      <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
+                        Latest
+                      </span>
+                    ) : null}
+                    <span
+                      className={`rounded border px-2 py-0.5 text-xs font-bold ${statusClasses[version.status]}`}
+                    >
+                      {statusLabels[version.status]}
+                    </span>
+                  </div>
+                  <p className="mt-2 break-words text-sm font-medium text-slate-800">
+                    {version.note}
+                  </p>
+                  {version.status === 'conflicted' ? (
+                    <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-amber-800">
+                      <AlertTriangle aria-hidden="true" size={16} />
+                      Based on an older team version; the latest was not
+                      changed.
+                    </p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+                    <span>{version.author.name}</span>
+                    <span>
+                      {dateFormatter.format(new Date(version.createdAt))}
+                    </span>
+                    <span>
+                      {byteFormatter.format(version.artifact.byteSize)}
+                    </span>
+                    <span className="font-mono">
+                      SHA-256 {version.artifact.sha256.slice(0, 12)}...
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    aria-label={`Download version ${version.displayNumber}`}
+                    className="button-secondary"
+                    title="Download exact version"
+                    type="button"
+                    onClick={() => void download(version.id)}
+                  >
+                    <Download aria-hidden="true" size={17} />
+                    Download
+                  </button>
+                  {canWrite && !isHead ? (
+                    <button
+                      aria-label={`Restore version ${version.displayNumber}`}
+                      className="button-secondary"
+                      title="Restore as a new version"
+                      type="button"
+                      onClick={() => setRestoreTarget(version)}
+                    >
+                      <RotateCcw aria-hidden="true" size={17} />
+                      Restore
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-4 border border-dashed border-slate-300 bg-white p-8 text-center">
+          <h2 className="text-base font-bold text-slate-950">
+            No versions yet
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+            Upload the first Office file to begin this document's immutable
+            history.
+          </p>
+        </div>
+      )}
+
+      <Dialog
+        description="The original Office package is retained exactly and checked against its SHA-256."
+        onClose={() => {
+          if (!busy) setUploadOpen(false);
+        }}
+        open={uploadOpen}
+        title="Upload version"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(event) => void submitUpload(event)}
+        >
+          <label className="block text-sm font-semibold text-slate-800">
+            Office file
+            <input
+              accept={acceptedFiles[document.data.kind]}
+              className="field mt-1 file:mr-3 file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:font-semibold"
+              disabled={busy}
+              name="file"
+              required
+              type="file"
+            />
+          </label>
+          <label className="block text-sm font-semibold text-slate-800">
+            Version note
+            <textarea
+              className="field mt-1 min-h-24 resize-y"
+              disabled={busy}
+              maxLength={500}
+              name="note"
+              placeholder="Summarize this version"
+              required
+            />
+          </label>
+          {stageLabel ? (
+            <div
+              className={`border-l-4 p-3 text-sm ${uploadStage === 'conflict' ? 'border-amber-500 bg-amber-50 text-amber-950' : uploadStage === 'failed' ? 'border-red-600 bg-red-50 text-red-950' : 'border-sky-600 bg-sky-50 text-sky-950'}`}
+              role="status"
+            >
+              <span className="inline-flex items-center gap-2 font-semibold">
+                {busy ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="animate-spin"
+                    size={16}
+                  />
+                ) : null}
+                {stageLabel}
+              </span>
+              {uploadStage === 'uploading' ? (
+                <progress
+                  aria-label="Upload progress"
+                  className="mt-2 block h-2 w-full accent-red-700"
+                  max={100}
+                  value={uploadPercent}
+                />
+              ) : null}
+            </div>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <button
+              className="button-secondary"
+              disabled={uploadStage === 'finalizing'}
+              type="button"
+              onClick={() => {
+                if (uploadCanBeCancelled) uploadAbort.current?.abort();
+                else setUploadOpen(false);
+              }}
+            >
+              {uploadStage === 'finalizing'
+                ? 'Finalizing...'
+                : uploadCanBeCancelled
+                  ? 'Cancel upload'
+                  : 'Cancel'}
+            </button>
+            <button className="button-primary" disabled={busy} type="submit">
+              <Upload aria-hidden="true" size={17} />
+              Upload version
+            </button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        description={`Version ${restoreTarget?.displayNumber ?? ''} will become a new version. Existing history remains unchanged.`}
+        onClose={() => setRestoreTarget(null)}
+        open={Boolean(restoreTarget)}
+        title="Restore as new version"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(event) => void submitRestore(event)}
+        >
+          <label className="block text-sm font-semibold text-slate-800">
+            Restore note
+            <textarea
+              className="field mt-1 min-h-24 resize-y"
+              defaultValue={
+                restoreTarget
+                  ? `Restore version ${restoreTarget.displayNumber}: ${restoreTarget.note}`
+                  : ''
+              }
+              maxLength={500}
+              name="note"
+              required
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button
+              className="button-secondary"
+              type="button"
+              onClick={() => setRestoreTarget(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button-primary"
+              disabled={restoreVersion.isPending}
+              type="submit"
+            >
+              <RotateCcw aria-hidden="true" size={17} />
+              Restore version
+            </button>
+          </div>
+        </form>
+      </Dialog>
+      {toast ? <Toast kind={toast.kind} message={toast.message} /> : null}
     </section>
   );
 }

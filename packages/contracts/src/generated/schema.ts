@@ -496,6 +496,194 @@ export interface paths {
         patch: operations["changeProjectMemberRole"];
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createUploadIntent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/parts/{partNumber}/grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+                partNumber: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["getMultipartPartGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/multipart/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeMultipartUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["cancelUpload"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["finalizeUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getDocumentVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createVersionDownloadGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restoreDocumentVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -641,6 +829,97 @@ export interface components {
             items: components["schemas"]["ProjectTeamMember"][];
             nextCursor: string | null;
         };
+        Artifact: {
+            /** Format: uuid */
+            id: string;
+            sha256: string;
+            byteSize: number;
+            detectedMediaType: string;
+            originalFilename: string;
+            extension: string;
+            storageVersion: string | null;
+            storageChecksum: string | null;
+            /** @enum {string} */
+            scanStatus: "pending" | "clean" | "quarantined" | "failed";
+        };
+        DocumentVersion: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            branchId: string;
+            sequence: number;
+            displayNumber: number;
+            parentVersionId: string | null;
+            mergeParentVersionId: string | null;
+            baseVersionId: string | null;
+            /** @enum {string} */
+            source: "web_upload" | "office_addin" | "restore" | "merge" | "import";
+            /** @enum {string} */
+            status: "pending_processing" | "ready" | "conflicted" | "quarantined" | "failed";
+            note: string;
+            conflictReason: string | null;
+            author: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            };
+            artifact: components["schemas"]["Artifact"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        VersionPage: {
+            branch: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                headVersionId: string | null;
+            };
+            items: components["schemas"]["DocumentVersion"][];
+            nextCursor: string | null;
+        };
+        SignedBlobGrant: {
+            /** Format: uri */
+            url: string;
+            /** @enum {string} */
+            method: "GET" | "PUT";
+            headers: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        UploadIntent: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            mode: "single" | "multipart";
+            /** Format: date-time */
+            expiresAt: string;
+            branch: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                headVersionId: string | null;
+            };
+            grant: components["schemas"]["SignedBlobGrant"] | null;
+            multipart: {
+                partSize: number;
+                partCount: number;
+            } | null;
+        };
+        FinalizeVersionResult: {
+            /** @enum {string} */
+            outcome: "created" | "conflict";
+            replayed: boolean;
+            currentHeadVersionId: string | null;
+            version: components["schemas"]["DocumentVersion"];
+        };
+        DownloadGrant: components["schemas"]["SignedBlobGrant"] & {
+            filename: string;
+            sha256: string;
+        };
         Liveness: {
             /** @constant */
             status: "alive";
@@ -673,6 +952,8 @@ export interface components {
         ProjectId: string;
         FolderId: string;
         DocumentId: string;
+        UploadId: string;
+        VersionId: string;
         ProjectMembershipId: string;
         IdempotencyKey: string;
     };
@@ -1763,6 +2044,326 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectTeamMember"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createUploadIntent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseVersionId: string | null;
+                    byteSize: number;
+                    clientMediaType?: string | null;
+                    filename: string;
+                    sha256: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Existing upload intent replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadIntent"];
+                };
+            };
+            /** @description Upload intent created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadIntent"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getMultipartPartGrant: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+                partNumber: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Short-lived grant for one multipart part. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignedBlobGrant"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    completeMultipartUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    parts: {
+                        etag: string;
+                        partNumber: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Multipart upload assembled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    cancelUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upload cancelled and staging cleanup requested. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    finalizeUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    note: string;
+                    /** @enum {string} */
+                    source?: "web_upload" | "office_addin";
+                };
+            };
+        };
+        responses: {
+            /** @description Existing finalization replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinalizeVersionResult"];
+                };
+            };
+            /** @description Version created and branch head advanced. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinalizeVersionResult"];
+                };
+            };
+            /** @description Incoming version preserved but its base was stale, or request rejected. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinalizeVersionResult"] | components["schemas"]["ApiError"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listDocumentVersions: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable version graph nodes for the default branch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getDocumentVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exact immutable version metadata and graph links. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentVersion"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createVersionDownloadGrant: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized short-lived URL and expected SHA-256. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadGrant"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    restoreDocumentVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    expectedHeadVersionId: string;
+                    note: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Existing restore replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentVersion"];
+                };
+            };
+            /** @description Restore appended as a new version. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentVersion"];
                 };
             };
             default: components["responses"]["ApiError"];

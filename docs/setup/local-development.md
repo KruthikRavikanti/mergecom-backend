@@ -29,7 +29,8 @@ pnpm dev
 
 Readiness endpoints are dependency-aware:
 
-- API: `http://localhost:3001/health/ready` requires PostgreSQL.
+- API: `http://localhost:3001/health/ready` requires PostgreSQL and the private
+  MinIO artifact bucket.
 - Worker: `http://localhost:3002/health/ready` requires Redis.
 - Document engine: `http://localhost:3003/health/ready` has no external dependency.
 
@@ -46,9 +47,9 @@ creates two organizations with every organization role, four projects, nested
 folders, document records, and all four project roles. Running it again is
 idempotent.
 
-Projects, project teams, folders, and document records always come from the API.
-There is no browser fixture flag. Document records intentionally have no fabricated
-versions; file upload and immutable version history begin in Phase 4.
+Projects, project teams, folders, documents, artifacts, and versions always come from
+the API. There is no browser fixture flag. New file versions remain in an honest
+`Processing` state until the secure Office ingestion pipeline is implemented.
 
 Mailpit receives local invitation messages through `SMTP_URL`. Non-production can
 also return the one-time acceptance URL to an authorized owner/admin when

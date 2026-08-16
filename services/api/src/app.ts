@@ -17,6 +17,12 @@ import { PostgresProjectStore } from './projects/postgres-store';
 import { registerProjectRoutes } from './projects/routes';
 import type { ProjectStore } from './projects/store';
 import { createPostgresReadinessProbe, type ReadinessProbe } from './readiness';
+import type { BlobStore } from './storage/blob-store';
+import { S3BlobStore } from './storage/s3-blob-store';
+import { PostgresVersionStore } from './versions/postgres-store';
+import { registerVersionRoutes } from './versions/routes';
+import { VersionService } from './versions/service';
+import type { VersionStore } from './versions/store';
 
 const DependencyState = Type.Union([
   Type.Literal('ready'),
@@ -33,12 +39,15 @@ const Readiness = Type.Object({
 });
 
 interface CreateAppOptions {
+  blobStore?: BlobStore;
   config?: ApiConfig;
   databaseUrl?: string | undefined;
   identityStore?: IdentityStore;
   logger?: boolean;
   projectStore?: ProjectStore;
   readinessProbe?: ReadinessProbe;
+  versionService?: VersionService;
+  versionStore?: VersionStore;
 }
 
 export async function createApp(options: CreateAppOptions = {}) {
@@ -46,10 +55,11 @@ export async function createApp(options: CreateAppOptions = {}) {
   const app = Fastify({
     logger: options.logger ?? false,
   }).withTypeProvider<TypeBoxTypeProvider>();
-  const readinessProbe =
-    options.readinessProbe ?? createPostgresReadinessProbe(options.databaseUrl);
   const database =
-    (!options.identityStore || !options.projectStore) && options.databaseUrl
+    (!options.identityStore ||
+      !options.projectStore ||
+      !options.versionStore) &&
+    options.databaseUrl
       ? createDatabase(options.databaseUrl)
       : null;
   const identityStore =
@@ -60,8 +70,37 @@ export async function createApp(options: CreateAppOptions = {}) {
   const projectStore =
     options.projectStore ??
     (database ? new PostgresProjectStore(database.pool) : null);
+  const blobStore =
+    options.blobStore ??
+    (config.blobStorage ? new S3BlobStore(config.blobStorage) : null);
+  const versionStore =
+    options.versionStore ??
+    (database && config.blobStorage
+      ? new PostgresVersionStore(
+          database.pool,
+          config.blobStorage.organizationQuotaBytes,
+        )
+      : null);
+  const versionService =
+    options.versionService ??
+    (versionStore && blobStore && config.blobStorage
+      ? new VersionService(versionStore, blobStore, config.blobStorage)
+      : null);
+  const readinessProbe =
+    options.readinessProbe ??
+    createPostgresReadinessProbe(options.databaseUrl, blobStore ?? undefined);
+  const cleanupTimer =
+    versionService && config.blobStorage
+      ? setInterval(() => {
+          void versionService.cleanup().catch((error: unknown) => {
+            app.log.error({ error }, 'Artifact cleanup failed.');
+          });
+        }, config.blobStorage.cleanupIntervalMilliseconds)
+      : null;
+  cleanupTimer?.unref();
 
   app.addHook('onClose', async () => {
+    if (cleanupTimer) clearInterval(cleanupTimer);
     await readinessProbe.close?.();
     await database?.close();
   });
@@ -75,7 +114,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'MergeCom API', version: '0.3.0' },
+      info: { title: 'MergeCom API', version: '0.4.0' },
       components: {
         securitySchemes: {
           sessionCookie: {
@@ -112,6 +151,12 @@ export async function createApp(options: CreateAppOptions = {}) {
     },
   );
 
+  app.get('/metrics', async (_request, reply) =>
+    reply
+      .type('text/plain; version=0.0.4; charset=utf-8')
+      .send(versionService?.metrics.render() ?? ''),
+  );
+
   if (identityStore) {
     const runtime = {
       config,
@@ -123,6 +168,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     registerIdentityRoutes(app, runtime);
     if (projectStore) {
       registerProjectRoutes(app, { ...runtime, projectStore });
+    }
+    if (versionService) {
+      registerVersionRoutes(app, { ...runtime, versionService });
     }
   }
 

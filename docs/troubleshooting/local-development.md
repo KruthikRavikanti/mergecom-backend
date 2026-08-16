@@ -25,13 +25,25 @@ The default ports are `5173`, `5174`, `3001`, `3002`, `3003`, `5432`, `6379`, `9
 `9001`, `1025`, and `8025`. Stop the conflicting process or update the corresponding
 service environment value and Compose mapping together.
 
-## Testcontainers tests are skipped
+## Infrastructure tests are skipped
 
-The real PostgreSQL check is intentionally gated. Start Docker and run:
+The PostgreSQL checks require `TEST_DATABASE_URL` or Testcontainers. The artifact
+suite also requires a real S3-compatible endpoint and initialized bucket. With local
+Compose running:
 
 ```bash
-RUN_TESTCONTAINERS=true pnpm test:integration
+TEST_DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom \
+TEST_S3_ENDPOINT=http://localhost:9000 \
+TEST_S3_ACCESS_KEY=mergecom-local \
+TEST_S3_SECRET_KEY=mergecom-local-only \
+pnpm test:integration
 ```
+
+## Direct upload fails while API readiness is green
+
+Confirm that the browser origin matches `WEB_ORIGIN`, MinIO is reachable from the
+browser at `S3_ENDPOINT`, and port `9000` is not routed only inside a container
+network. The API signs the configured endpoint verbatim.
 
 ## Web sign-in has no development demo button
 

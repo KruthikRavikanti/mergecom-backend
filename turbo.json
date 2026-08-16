@@ -19,7 +19,14 @@
     "test:integration": {
       "cache": false,
       "dependsOn": ["^build"],
-      "env": ["RUN_TESTCONTAINERS", "TEST_DATABASE_URL"],
+      "env": [
+        "RUN_TESTCONTAINERS",
+        "TEST_DATABASE_URL",
+        "TEST_S3_ENDPOINT",
+        "TEST_S3_ACCESS_KEY",
+        "TEST_S3_SECRET_KEY",
+        "TEST_S3_BUCKET"
+      ],
       "outputs": []
     },
     "test:unit": {

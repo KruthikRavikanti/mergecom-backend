@@ -1114,6 +1114,12 @@ export class PostgresProjectStore implements ProjectStore {
       );
       const row = result.rows[0];
       if (!row) throw new Error('Document creation failed.');
+      await client.query(
+        `insert into document_branches
+          (organization_id, document_id, name, is_default, created_by_user_id)
+         values ($1, $2, 'main', true, $3)`,
+        [input.actor.organizationId, row.id, input.actor.userId],
+      );
       await this.completeIdempotency(client, idempotency.recordId, row.id);
       await this.insertAudit(client, {
         action: 'document.created',

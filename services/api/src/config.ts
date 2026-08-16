@@ -1,6 +1,7 @@
 export interface ApiConfig {
   apiPublicOrigin: string;
   authMode: 'development' | 'entra';
+  blobStorage?: BlobStorageConfig;
   cookieSecure: boolean;
   databaseUrl: string;
   exposeInvitationLinks: boolean;
@@ -19,6 +20,21 @@ export interface ApiConfig {
   webOrigin: string;
 }
 
+export interface BlobStorageConfig {
+  accessKey: string;
+  bucket: string;
+  cleanupIntervalMilliseconds: number;
+  endpoint: string;
+  forcePathStyle: boolean;
+  maxUploadBytes: number;
+  multipartPartBytes: number;
+  multipartThresholdBytes: number;
+  organizationQuotaBytes: number;
+  region: string;
+  secretKey: string;
+  signedUrlSeconds: number;
+}
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required for this configuration.`);
@@ -31,6 +47,57 @@ function parsePositiveInteger(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return value;
+}
+
+function loadBlobStorageConfig(
+  nodeEnv: ApiConfig['nodeEnv'],
+): BlobStorageConfig {
+  const endpoint =
+    process.env.S3_ENDPOINT ??
+    (nodeEnv === 'production'
+      ? required('S3_ENDPOINT')
+      : 'http://localhost:9000');
+  const multipartPartBytes = parsePositiveInteger(
+    'UPLOAD_MULTIPART_PART_BYTES',
+    8 * 1024 * 1024,
+  );
+  const multipartThresholdBytes = parsePositiveInteger(
+    'UPLOAD_MULTIPART_THRESHOLD_BYTES',
+    16 * 1024 * 1024,
+  );
+  if (multipartPartBytes < 5 * 1024 * 1024) {
+    throw new Error('UPLOAD_MULTIPART_PART_BYTES must be at least 5242880.');
+  }
+  if (multipartThresholdBytes < multipartPartBytes) {
+    throw new Error(
+      'UPLOAD_MULTIPART_THRESHOLD_BYTES must be at least UPLOAD_MULTIPART_PART_BYTES.',
+    );
+  }
+
+  return {
+    accessKey:
+      process.env.S3_ACCESS_KEY ??
+      (nodeEnv === 'production' ? required('S3_ACCESS_KEY') : 'mergecom-local'),
+    bucket: process.env.S3_BUCKET ?? 'mergecom-artifacts',
+    cleanupIntervalMilliseconds:
+      parsePositiveInteger('UPLOAD_CLEANUP_MINUTES', 15) * 60 * 1000,
+    endpoint,
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
+    maxUploadBytes: parsePositiveInteger('UPLOAD_MAX_BYTES', 100 * 1024 * 1024),
+    multipartPartBytes,
+    multipartThresholdBytes,
+    organizationQuotaBytes: parsePositiveInteger(
+      'ORGANIZATION_STORAGE_QUOTA_BYTES',
+      5 * 1024 * 1024 * 1024,
+    ),
+    region: process.env.S3_REGION ?? 'us-east-1',
+    secretKey:
+      process.env.S3_SECRET_KEY ??
+      (nodeEnv === 'production'
+        ? required('S3_SECRET_KEY')
+        : 'mergecom-local-only'),
+    signedUrlSeconds: parsePositiveInteger('SIGNED_URL_SECONDS', 300),
+  };
 }
 
 export function loadConfig(): ApiConfig {
@@ -83,6 +150,7 @@ export function loadConfig(): ApiConfig {
   return {
     apiPublicOrigin,
     authMode,
+    blobStorage: loadBlobStorageConfig(nodeEnv),
     cookieSecure:
       process.env.COOKIE_SECURE === 'true' || nodeEnv === 'production',
     databaseUrl:

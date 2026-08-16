@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { currentUserQueryKey, type CurrentUser } from '../auth/session';
 import { apiClient } from './client';
+import { uploadBlob, type UploadProgress } from './blob-upload';
 
 type OrganizationRole = components['schemas']['OrganizationRole'];
 type MembershipStatus = components['schemas']['MembershipStatus'];
@@ -12,6 +13,10 @@ export type Project = components['schemas']['Project'];
 export type Folder = components['schemas']['Folder'];
 export type Document = components['schemas']['Document'];
 export type ProjectTeamMember = components['schemas']['ProjectTeamMember'];
+export type DocumentVersion = components['schemas']['DocumentVersion'];
+export type VersionPage = components['schemas']['VersionPage'];
+export type FinalizeVersionResult =
+  components['schemas']['FinalizeVersionResult'];
 
 export const queryKeys = {
   apiReadiness: ['api', 'readiness'] as const,
@@ -51,6 +56,15 @@ export const queryKeys = {
     ] as const,
   document: (organizationId: string, projectId: string, documentId: string) =>
     ['projects', organizationId, projectId, 'documents', documentId] as const,
+  versions: (organizationId: string, projectId: string, documentId: string) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'versions',
+    ] as const,
   projectTeam: (organizationId: string, projectId: string) =>
     ['projects', organizationId, projectId, 'team'] as const,
 };
@@ -242,6 +256,285 @@ export function useDocumentQuery(
       projectId,
       documentId,
     ),
+  });
+}
+
+export function useVersionsQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId && projectId && documentId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions',
+        {
+          params: {
+            path: { documentId, organizationId: organizationId!, projectId },
+            query: { limit: 100 },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Version history could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.versions(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+    ),
+  });
+}
+
+async function fileSha256(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    await file.arrayBuffer(),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export function usePushVersionMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      baseVersionId: string | null;
+      documentId: string;
+      file: File;
+      note: string;
+      onProgress: (progress: UploadProgress) => void;
+      onStage: (stage: 'finalizing' | 'uploading') => void;
+      projectId: string;
+      signal?: AbortSignal;
+    }): Promise<FinalizeVersionResult> => {
+      const organizationId = activeOrganizationId(currentUser);
+      const path = {
+        documentId: input.documentId,
+        organizationId,
+        projectId: input.projectId,
+      };
+      const intentKey = crypto.randomUUID();
+      const sha256 = await fileSha256(input.file);
+      if (input.signal?.aborted) {
+        throw new DOMException('Upload cancelled.', 'AbortError');
+      }
+      input.onStage('uploading');
+      const intentResult = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads',
+        {
+          body: {
+            baseVersionId: input.baseVersionId,
+            byteSize: input.file.size,
+            clientMediaType: input.file.type || null,
+            filename: input.file.name,
+            sha256,
+          },
+          params: {
+            header: {
+              'Idempotency-Key': intentKey,
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path,
+          },
+        },
+      );
+      if (!intentResult.response.ok || !intentResult.data) {
+        throw failure(
+          intentResult.error,
+          'Upload intent could not be created.',
+        );
+      }
+      const intent = intentResult.data;
+      try {
+        if (intent.mode === 'single') {
+          if (!intent.grant) throw new Error('Upload grant is unavailable.');
+          await uploadBlob(
+            intent.grant,
+            input.file,
+            input.onProgress,
+            input.signal,
+          );
+        } else {
+          if (!intent.multipart)
+            throw new Error('Multipart details are unavailable.');
+          const parts: { etag: string; partNumber: number }[] = [];
+          let completedBytes = 0;
+          for (
+            let partNumber = 1;
+            partNumber <= intent.multipart.partCount;
+            partNumber += 1
+          ) {
+            const start = (partNumber - 1) * intent.multipart.partSize;
+            const part = input.file.slice(
+              start,
+              Math.min(input.file.size, start + intent.multipart.partSize),
+            );
+            const grantResult = await apiClient.POST(
+              '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/parts/{partNumber}/grant',
+              {
+                params: {
+                  header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+                  path: { ...path, partNumber, uploadId: intent.id },
+                },
+              },
+            );
+            if (!grantResult.response.ok || !grantResult.data) {
+              throw failure(
+                grantResult.error,
+                'Multipart grant could not be created.',
+              );
+            }
+            const etag = await uploadBlob(
+              grantResult.data,
+              part,
+              ({ loaded }) =>
+                input.onProgress({
+                  loaded: completedBytes + loaded,
+                  total: input.file.size,
+                }),
+              input.signal,
+            );
+            if (!etag)
+              throw new Error('Object storage did not return a part ETag.');
+            parts.push({ etag, partNumber });
+            completedBytes += part.size;
+          }
+          const complete = await apiClient.POST(
+            '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/multipart/complete',
+            {
+              body: { parts },
+              params: {
+                header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+                path: { ...path, uploadId: intent.id },
+              },
+            },
+          );
+          if (!complete.response.ok) {
+            throw failure(
+              complete.error,
+              'Multipart upload could not be completed.',
+            );
+          }
+        }
+
+        input.onStage('finalizing');
+        const finalized = await apiClient.POST(
+          '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}/finalize',
+          {
+            body: { note: input.note, source: 'web_upload' },
+            params: {
+              header: {
+                'Idempotency-Key': crypto.randomUUID(),
+                'X-CSRF-Token': currentUser.session.csrfToken,
+              },
+              path: { ...path, uploadId: intent.id },
+            },
+          },
+        );
+        if (
+          finalized.response.status === 409 &&
+          finalized.error &&
+          'outcome' in finalized.error
+        ) {
+          return finalized.error as FinalizeVersionResult;
+        }
+        if (!finalized.response.ok || !finalized.data) {
+          throw failure(finalized.error, 'Version could not be finalized.');
+        }
+        return finalized.data;
+      } catch (error) {
+        await apiClient.DELETE(
+          '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/uploads/{uploadId}',
+          {
+            params: {
+              header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+              path: { ...path, uploadId: intent.id },
+            },
+          },
+        );
+        throw error;
+      }
+    },
+    onSuccess: async (_result, input) => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.versions(
+          activeOrganizationId(currentUser),
+          input.projectId,
+          input.documentId,
+        ),
+      });
+    },
+  });
+}
+
+export function useDownloadVersionMutation(currentUser: CurrentUser) {
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string;
+      projectId: string;
+      versionId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/download',
+        {
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId, ...input },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Download could not be authorized.');
+      window.location.assign(data.url);
+      return data;
+    },
+  });
+}
+
+export function useRestoreVersionMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string;
+      expectedHeadVersionId: string;
+      note: string;
+      projectId: string;
+      versionId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { documentId, expectedHeadVersionId, note, projectId, versionId } =
+        input;
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/restore',
+        {
+          body: { expectedHeadVersionId, note },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: { documentId, organizationId, projectId, versionId },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Version could not be restored.');
+      return data;
+    },
+    onSuccess: async (_result, input) => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.versions(
+          activeOrganizationId(currentUser),
+          input.projectId,
+          input.documentId,
+        ),
+      });
+    },
   });
 }
 

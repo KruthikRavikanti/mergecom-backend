@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -11,6 +12,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 export const organizationRole = pgEnum('organization_role', [
@@ -41,6 +43,45 @@ export const documentKind = pgEnum('document_kind', [
   'presentation',
   'spreadsheet',
   'word_document',
+]);
+export const artifactScanStatus = pgEnum('artifact_scan_status', [
+  'pending',
+  'clean',
+  'quarantined',
+  'failed',
+]);
+export const uploadMode = pgEnum('upload_mode', ['single', 'multipart']);
+export const stagedUploadStatus = pgEnum('staged_upload_status', [
+  'pending',
+  'finalized',
+  'cancelled',
+  'expired',
+  'failed',
+]);
+export const versionSource = pgEnum('version_source', [
+  'web_upload',
+  'office_addin',
+  'restore',
+  'merge',
+  'import',
+]);
+export const versionStatus = pgEnum('version_status', [
+  'pending_processing',
+  'ready',
+  'conflicted',
+  'quarantined',
+  'failed',
+]);
+export const processingJobStatus = pgEnum('processing_job_status', [
+  'queued',
+  'processing',
+  'succeeded',
+  'failed',
+]);
+export const outboxEventStatus = pgEnum('outbox_event_status', [
+  'pending',
+  'published',
+  'failed',
 ]);
 
 const timestamps = {
@@ -451,6 +492,10 @@ export const documents = pgTable(
       table.projectId,
       table.id,
     ),
+    uniqueIndex('documents_organization_id_uq').on(
+      table.organizationId,
+      table.id,
+    ),
   ],
 );
 
@@ -481,5 +526,265 @@ export const idempotencyRecords = pgTable(
       table.keyHash,
     ),
     index('idempotency_records_expires_idx').on(table.expiresAt),
+  ],
+);
+
+export const documentBranches = pgTable(
+  'document_branches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: text('name').notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    headVersionId: uuid('head_version_id'),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('document_branches_document_name_uq').on(
+      table.documentId,
+      sql`lower(${table.name})`,
+    ),
+    uniqueIndex('document_branches_default_uq')
+      .on(table.documentId)
+      .where(sql`${table.isDefault} = true`),
+    uniqueIndex('document_branches_organization_document_id_uq').on(
+      table.organizationId,
+      table.documentId,
+      table.id,
+    ),
+  ],
+);
+
+export const artifacts = pgTable(
+  'artifacts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'restrict' })
+      .notNull(),
+    objectKey: text('object_key').notNull(),
+    sha256: text('sha256').notNull(),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    detectedMediaType: text('detected_media_type').notNull(),
+    originalFilename: text('original_filename').notNull(),
+    extension: text('extension').notNull(),
+    storageVersion: text('storage_version'),
+    storageChecksum: text('storage_checksum'),
+    scanStatus: artifactScanStatus('scan_status').default('pending').notNull(),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('artifacts_object_key_uq').on(table.objectKey),
+    uniqueIndex('artifacts_organization_id_uq').on(
+      table.organizationId,
+      table.id,
+    ),
+    index('artifacts_organization_created_idx').on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    check('artifacts_byte_size_ck', sql`${table.byteSize} > 0`),
+    check('artifacts_sha256_ck', sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+export const documentVersions = pgTable(
+  'document_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'restrict' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'restrict' })
+      .notNull(),
+    branchId: uuid('branch_id')
+      .references(() => documentBranches.id, { onDelete: 'restrict' })
+      .notNull(),
+    artifactId: uuid('artifact_id')
+      .references(() => artifacts.id, { onDelete: 'restrict' })
+      .notNull(),
+    sequence: integer('sequence').notNull(),
+    displayNumber: integer('display_number').notNull(),
+    parentVersionId: uuid('parent_version_id').references(
+      (): AnyPgColumn => documentVersions.id,
+      { onDelete: 'restrict' },
+    ),
+    mergeParentVersionId: uuid('merge_parent_version_id').references(
+      (): AnyPgColumn => documentVersions.id,
+      { onDelete: 'restrict' },
+    ),
+    baseVersionId: uuid('base_version_id').references(
+      (): AnyPgColumn => documentVersions.id,
+      { onDelete: 'restrict' },
+    ),
+    source: versionSource('source').notNull(),
+    status: versionStatus('status').notNull(),
+    note: text('note').notNull(),
+    conflictReason: text('conflict_reason'),
+    authorUserId: uuid('author_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('document_versions_branch_sequence_uq').on(
+      table.branchId,
+      table.sequence,
+    ),
+    uniqueIndex('document_versions_organization_document_id_uq').on(
+      table.organizationId,
+      table.documentId,
+      table.id,
+    ),
+    index('document_versions_document_created_idx').on(
+      table.documentId,
+      table.createdAt,
+      table.id,
+    ),
+    check('document_versions_sequence_ck', sql`${table.sequence} > 0`),
+    check(
+      'document_versions_conflict_status_ck',
+      sql`(${table.status} = 'conflicted' and ${table.conflictReason} is not null)
+          or (${table.status} <> 'conflicted' and ${table.conflictReason} is null)`,
+    ),
+  ],
+);
+
+export const stagedUploads = pgTable(
+  'staged_uploads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    branchId: uuid('branch_id')
+      .references(() => documentBranches.id, { onDelete: 'cascade' })
+      .notNull(),
+    baseVersionId: uuid('base_version_id').references(
+      () => documentVersions.id,
+      { onDelete: 'restrict' },
+    ),
+    stagingObjectKey: text('staging_object_key').notNull(),
+    expectedSha256: text('expected_sha256').notNull(),
+    expectedByteSize: bigint('expected_byte_size', {
+      mode: 'number',
+    }).notNull(),
+    clientMediaType: text('client_media_type'),
+    originalFilename: text('original_filename').notNull(),
+    extension: text('extension').notNull(),
+    mode: uploadMode('mode').notNull(),
+    multipartUploadId: text('multipart_upload_id'),
+    partSize: integer('part_size'),
+    status: stagedUploadStatus('status').default('pending').notNull(),
+    failureCode: text('failure_code'),
+    finalizedVersionId: uuid('finalized_version_id').references(
+      () => documentVersions.id,
+      { onDelete: 'restrict' },
+    ),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    finalizedAt: timestamp('finalized_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('staged_uploads_staging_key_uq').on(table.stagingObjectKey),
+    index('staged_uploads_expiry_status_idx').on(table.status, table.expiresAt),
+    check(
+      'staged_uploads_sha256_ck',
+      sql`${table.expectedSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check('staged_uploads_byte_size_ck', sql`${table.expectedByteSize} > 0`),
+    check(
+      'staged_uploads_multipart_ck',
+      sql`(${table.mode} = 'single' and ${table.multipartUploadId} is null and ${table.partSize} is null)
+          or (${table.mode} = 'multipart' and ${table.multipartUploadId} is not null and ${table.partSize} is not null)`,
+    ),
+  ],
+);
+
+export const versionProcessingJobs = pgTable(
+  'version_processing_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    versionId: uuid('version_id')
+      .references(() => documentVersions.id, { onDelete: 'cascade' })
+      .notNull(),
+    jobType: text('job_type').notNull(),
+    status: processingJobStatus('status').default('queued').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('version_processing_jobs_version_type_uq').on(
+      table.versionId,
+      table.jobType,
+    ),
+    index('version_processing_jobs_queue_idx').on(
+      table.status,
+      table.availableAt,
+    ),
+  ],
+);
+
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    aggregateType: text('aggregate_type').notNull(),
+    aggregateId: uuid('aggregate_id').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: jsonb('payload')
+      .$type<Record<string, string | number | boolean | null>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    status: outboxEventStatus('status').default('pending').notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('outbox_events_delivery_idx').on(table.status, table.availableAt),
+    index('outbox_events_aggregate_idx').on(
+      table.aggregateType,
+      table.aggregateId,
+    ),
   ],
 );

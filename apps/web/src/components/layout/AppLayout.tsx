@@ -53,19 +53,20 @@ export function AppLayout() {
         </div>
         <nav
           aria-label="Workspace"
-          className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:pb-0"
+          className="grid grid-cols-4 gap-1 px-3 pb-3 sm:flex sm:overflow-x-auto lg:block lg:space-y-1 lg:pb-0"
         >
           {visibleNavigation.map(({ icon: Icon, label, to }) => (
             <NavLink
               className={({ isActive }) =>
-                `flex shrink-0 items-center gap-3 rounded px-3 py-2.5 text-sm font-medium ${isActive ? 'bg-red-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
+                `flex min-w-0 shrink-0 items-center justify-center gap-3 rounded px-2 py-2.5 text-sm font-medium sm:justify-start sm:px-3 ${isActive ? 'bg-red-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
               }
               end={to === '/app'}
               key={to}
+              title={label}
               to={to}
             >
               <Icon aria-hidden="true" size={18} />
-              {label}
+              <span className="hidden sm:inline">{label}</span>
             </NavLink>
           ))}
         </nav>

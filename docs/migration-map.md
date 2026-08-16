@@ -10,13 +10,13 @@ Phase 1 created the canonical repository structure and moved evidence without ca
 | `Mergecom V2 Excel/` | `legacy/office-spikes/excel/` | Preserved as excluded evidence; worksheet replacement pull remains prohibited | 1 complete |
 | Three add-in webpack/manifests | `apps/office-addin/` | Shared task-pane shell created; active host manifests and adapters remain Phase 3 work | 1 foundation complete |
 | `server.js` | `legacy/server-prototype/` | Archived as behavior evidence; excluded from production workspace and CI | 1 complete |
-| Root Express dependencies | `services/api/` | Replaced with Fastify/TypeBox/OpenAPI/Drizzle identity and project-resource boundaries; filesystem handlers were not ported | 3 complete |
+| Root Express dependencies | `services/api/` | Replaced with Fastify/TypeBox/OpenAPI/Drizzle identity, project-resource, and immutable artifact/version boundaries; filesystem handlers were not ported | 4 complete |
 | Global `saved_*.json` | none | Delete; no migration of document data | 0 |
 | Committed `cert/` | external developer cert store | Delete; generate with `office-addin-dev-certs` and ignore | 0 |
 | Four npm lockfiles | root `pnpm-lock.yaml` | Replaced by one pnpm lockfile; legacy projects are not installable workspace packages | 1 complete |
 | Tracked `node_modules` | none | Delete and ignore; install from lockfiles | 0 |
 | Prototype semantic JSON | `packages/contracts` and derived BlobStore snapshots | Document metadata is now contracted; semantic payloads remain a Phase 4-6 redesign and the prototype shape is not a product contract | 3 metadata complete |
-| Add-in push/pull | `packages/office-core` and API artifact flow | Replace with exact package capture, immutable upload, base-aware push, and exact-byte open/download | 3-4 |
+| Add-in push/pull | `packages/office-core` and API artifact flow | Immutable upload, base-aware push, and exact-byte download are implemented; Office host capture and binding remain later-phase work | 4 storage complete |
 | Browser mock identity/members/settings | PostgreSQL through `services/api` | Removed; immutable IdP mappings, server sessions, tenant checks, and RBAC are authoritative | 2 complete |
 | Browser mock projects/teams/documents | PostgreSQL through `services/api` | Removed; tenant-linked projects, explicit project memberships, nested folders, document records, archives, and audits are authoritative | 3 complete |
 

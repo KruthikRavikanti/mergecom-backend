@@ -1,9 +1,9 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 3
-adds PostgreSQL-backed projects, project teams, nested folders, document records,
-archive workflows, role-capped authorization, and an API-backed web experience.
-Immutable file capture, versions, diffing, and Office host behavior remain deferred.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 4
+adds immutable S3-compatible artifact capture, SHA-256 integrity, multipart uploads,
+an append-only version graph, stale-base conflicts, exact downloads, and restore as a
+new version. Semantic Office diffing and Office host behavior remain deferred.
 
 ## Repository map
 
@@ -70,15 +70,20 @@ pnpm test:e2e            # Playwright desktop/mobile route suite
 pnpm verify              # complete local quality gate
 ```
 
-Run the real PostgreSQL integration check with Docker available:
+Run the real PostgreSQL and MinIO integration checks with local infrastructure up:
 
 ```bash
-RUN_TESTCONTAINERS=true pnpm test:integration
+TEST_DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom \
+TEST_S3_ENDPOINT=http://localhost:9000 \
+TEST_S3_ACCESS_KEY=mergecom-local \
+TEST_S3_SECRET_KEY=mergecom-local-only \
+pnpm test:integration
 ```
 
 See [local setup](docs/setup/local-development.md),
 [identity and RBAC](docs/security/identity-rbac.md),
 [projects and folders](docs/product/projects-folders.md),
+[artifact versioning](docs/product/artifact-versioning.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.
 

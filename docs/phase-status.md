@@ -1,5 +1,23 @@
 # Phase status
 
+## Phase 4: immutable artifact storage and version graph
+
+Status: implementation complete on `phase-4/artifact-versioning`; pending owner review.
+
+- [x] PostgreSQL migrations cover opaque artifacts, default document branches, immutable version graph nodes, staged uploads, processing job references, and transactional outbox events.
+- [x] S3-compatible `BlobStore` and MinIO implementation provide private signed upload/download, byte streams, copy-to-immutable keys, multipart grants/completion/abort, object listing, and readiness.
+- [x] Upload intents validate extension, document compatibility, maximum size, serialized organization quota reservations, and base membership without trusting client media types.
+- [x] Finalization recomputes SHA-256 and size, validates ZIP magic, is idempotent, and atomically writes artifact, version, branch head, audit, processing, and outbox state.
+- [x] Branch locking and compare-and-swap preserve stale and simultaneous uploads as explicit conflicts without changing the latest team version.
+- [x] Authorized exact-version downloads return the expected SHA-256; restore appends a new node reusing the selected artifact and never mutates intermediate history.
+- [x] Expiry and orphan cleanup are reference checked and do not delete retained artifacts. Prometheus metrics cover bytes, duration, failures, conflicts, and storage errors.
+- [x] The web history uses the generated contract for direct upload progress, multipart completion, processing/conflict/failure states, exact download, and restore-as-new-version.
+- [x] Real PostgreSQL/MinIO tests cover duplicate finalize, mismatch, interrupted multipart, authorization, expiry, stale/simultaneous pushes, restore, and exact bytes. Desktop/mobile Playwright covers history and upload states.
+
+The protocol and lifecycle are documented in
+`docs/product/artifact-versioning.md`. Verification evidence is recorded in
+`docs/verification/phase-4-command-results.md`.
+
 ## Phase 3: projects, teams, folders, and documents
 
 Status: implementation complete on `phase-3/projects-documents`; pending owner review.
@@ -10,7 +28,7 @@ Status: implementation complete on `phase-3/projects-documents`; pending owner r
 - [x] Project roles are capped by active organization roles; owners/admins have automatic lead access and external reviewers always require explicit project scope.
 - [x] Project-scoped invitations atomically establish organization and project memberships on acceptance.
 - [x] The web dashboard, project content, nested breadcrumbs, team view, archives, destructive confirmations, and document metadata use the generated API client and query cache.
-- [x] Fake project, team, folder, document, and version adapters were removed. Documents truthfully show `No versions yet` until Phase 4.
+- [x] Fake project, team, folder, and document adapters were removed. Phase 4 later replaced the truthful empty history state with real immutable versions.
 - [x] Audit events cover successful mutations and denied/failed project operations.
 - [x] Real PostgreSQL tests cover two-session shared state, tenant denial, role caps, cycle and cross-project rejection, simultaneous rename conflicts, archive/restore/delete, audits, and cursor stability.
 - [x] Desktop and mobile Playwright checks cover real project routes, nested folders, project creation, document metadata, and project teams.

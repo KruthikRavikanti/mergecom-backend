@@ -501,7 +501,7 @@ export function ProjectContents({
         description={
           createType === 'folder'
             ? 'Add a nested folder at the current location.'
-            : 'Create document metadata. File upload and versions begin in Phase 4.'
+            : 'Create a document record, then upload its first Office version.'
         }
         onClose={() => setCreateType(null)}
         open={Boolean(createType)}

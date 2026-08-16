@@ -13,11 +13,13 @@
     "dev": "tsx watch src/server.ts",
     "lint": "eslint src test",
     "start": "node dist/server.js",
-    "test:integration": "vitest run --no-file-parallelism test/startup.test.ts test/postgres.test.ts test/identity.postgres.test.ts test/projects.postgres.test.ts",
+    "test:integration": "vitest run --no-file-parallelism test/startup.test.ts test/postgres.test.ts test/identity.postgres.test.ts test/projects.postgres.test.ts test/versions.postgres.test.ts",
     "test:unit": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1111.0",
+    "@aws-sdk/s3-request-presigner": "3.1111.0",
     "@fastify/cookie": "11.0.2",
     "@fastify/cors": "11.1.0",
     "@fastify/rate-limit": "11.1.0",

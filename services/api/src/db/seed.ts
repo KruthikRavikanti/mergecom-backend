@@ -251,6 +251,14 @@ try {
             owner.userId,
           ],
         );
+        await client.query(
+          `insert into document_branches
+            (organization_id, document_id, name, is_default, created_by_user_id)
+           values ($1, $2, 'main', true, $3)
+           on conflict (document_id, lower(name))
+           do update set is_default = true, updated_at = now()`,
+          [organizationId, document.id, owner.userId],
+        );
       }
       for (const [role, seeded] of seededMemberships) {
         const assignedRole =
@@ -280,7 +288,7 @@ try {
   }
   await client.query('commit');
   console.info(
-    'Seeded two local organizations, every organization role, and Phase 3 projects.',
+    'Seeded two local organizations, every role, projects, documents, and main branches.',
   );
 } catch (error) {
   await client.query('rollback');
