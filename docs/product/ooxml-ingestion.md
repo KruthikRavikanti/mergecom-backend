@@ -26,7 +26,7 @@ event share one transaction.
 
 ## Snapshot envelope
 
-The `1.0.0` schema contains:
+The Phase 6 `1.1.0` schema contains:
 
 - `schema_version`, `parser_version`, `file_type`, and source SHA-256;
 - deterministic package counts and detected feature flags;
@@ -35,9 +35,13 @@ The `1.0.0` schema contains:
 - a stable SHA-256 over the deterministic envelope fields.
 
 PowerPoint inventory includes slide order, slide relationships, layout/master parts,
-shape counts, and notes. Excel includes sheet order/name/visibility/dimensions,
-defined names, tables, and charts. Word includes sections, paragraphs, headings,
-tables, headers, footers, footnotes, endnotes, comments, and tracked changes.
+shape text, formatting markup hashes, embedded image hashes, shape counts, and notes
+presence.
+Excel includes sheet order/name/visibility/dimensions, bounded non-empty cell values,
+formulas, types and style indexes, defined-name formulas, tables, and charts. Word
+includes bounded body paragraphs and table cells with formatting markup hashes plus
+sections, headings, headers, footers, footnotes, endnotes, comments, and tracked
+change counts.
 
 Timestamps, worker IDs, lease data, temporary paths, and database IDs are excluded
 from stable content hashing. Processing the same immutable bytes with the same parser
@@ -62,6 +66,9 @@ Default limits are:
 | XML characters per part | 16 MiB |
 | XML nesting depth | 128 |
 | Recorded validation errors | 100 |
+| Semantic entities | 50,000 |
+| Semantic text | 1 MiB |
+| Comparison JSON input | 8 MiB |
 
 Preflight rejects absolute/traversing or duplicate part names, unsafe relationship
 targets, encrypted content, unsafe expansion, malformed relationships/content types,
@@ -69,15 +76,19 @@ DTD/XXE input, excessive XML depth, and corrupt ZIP content before SDK inventory
 
 ## Warnings and failures
 
-Non-executed features produce structured warnings and unsupported codes:
-`vba_macros`, `digital_signatures`, `external_links`, `embedded_objects`, and
-`binary_part`. Open XML schema errors are retained as validation results and do not
-change source bytes.
+Non-executed features produce structured warnings and unsupported codes, including
+semantic truncation, unmodeled Office feature content, custom XML, `vba_macros`,
+`digital_signatures`, `external_links`, `embedded_objects`, and `binary_part`. Open
+XML schema errors are retained as validation results and do not change source bytes.
 
 Security-limit, traversal, DTD, and encrypted-package codes quarantine the version.
 Malformed/corrupt packages and document-type mismatch fail permanently. Storage,
 database, network, and engine availability failures retry within the attempt bound.
 Source/object hash or size mismatch fails immediately as an integrity error.
+
+The internal `POST /internal/v1/comparisons` boundary uses the same constant-time
+worker token check and accepts only current-version normalized snapshots within the
+comparison input limit.
 
 The web history polls active jobs and shows queue/running attempts, scheduled retry,
 failure or quarantine code, warnings, parser/schema versions, stable hash, and the

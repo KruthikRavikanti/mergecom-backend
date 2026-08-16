@@ -10,6 +10,7 @@ import type {
   FinalizeVersionResult,
   UploadIntent,
   VersionActor,
+  VersionComparison,
   VersionPage,
   VersionSource,
 } from './types';
@@ -29,6 +30,10 @@ function secondsUntil(date: Date, maximum: number): number {
     Math.min(maximum, Math.floor((date.getTime() - Date.now()) / 1000)),
   );
 }
+
+export const COMPARISON_SCHEMA_VERSION = '1.0.0';
+export const DOCUMENT_ENGINE_VERSION = '1.0.0';
+export const DOCUMENT_PARSER_VERSION = '1.1.0';
 
 export class VersionService {
   public constructor(
@@ -471,6 +476,36 @@ export class VersionService {
     versionId: string;
   }): Promise<DocumentVersionSummary> {
     return (await this.store.getVersion(input)).version;
+  }
+
+  public async createComparison(input: {
+    actor: VersionActor;
+    baseVersionId: string;
+    documentId: string;
+    idempotencyKey: string;
+    projectId: string;
+    requestId: string;
+    targetVersionId: string;
+  }): Promise<{ comparison: VersionComparison; replayed: boolean }> {
+    return this.store.createComparison({
+      ...input,
+      comparisonSchemaVersion: COMPARISON_SCHEMA_VERSION,
+      engineVersion: DOCUMENT_ENGINE_VERSION,
+      parserVersion: DOCUMENT_PARSER_VERSION,
+      requestHash: requestHash({
+        baseVersionId: input.baseVersionId,
+        targetVersionId: input.targetVersionId,
+      }),
+    });
+  }
+
+  public async getComparison(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<VersionComparison> {
+    return this.store.getComparison(input);
   }
 
   public async createDownloadGrant(input: {

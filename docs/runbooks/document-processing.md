@@ -29,6 +29,13 @@ select id, version_id, attempts, max_attempts, available_at,
 from version_processing_jobs
 where status <> 'completed'
 order by created_at;
+
+select id, base_version_id, target_version_id, status, attempts, max_attempts,
+       available_at, lease_owner, heartbeat_at, lease_expires_at,
+       failure_code, trace_id
+from version_comparisons
+where status <> 'completed'
+order by created_at;
 ```
 
 Do not update active rows manually. A restarted worker redispatches eligible
@@ -53,6 +60,12 @@ For completed work, compare `normalized_snapshots.snapshot_sha256` with the exac
 object bytes and `stable_hash` with a second parse using the same parser/schema
 version. A deterministic mismatch or existing-key collision is an integrity incident;
 do not overwrite the object or row.
+
+Completed comparisons follow the same rule: verify
+`version_comparisons.result_sha256` against the immutable result object and compare
+`stable_hash` only after regenerating both snapshots with the recorded parser and
+comparison schema. A terminal row or existing object is never overwritten. Request
+a new comparison under a newer parser/schema version instead.
 
 ## Redis restart
 

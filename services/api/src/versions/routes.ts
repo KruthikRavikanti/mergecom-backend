@@ -9,7 +9,7 @@ import {
 import type { ProjectActor } from '../projects/types';
 import { VersionOperationError } from './store';
 import { VersionService } from './service';
-import type { DocumentVersionSummary } from './types';
+import type { DocumentVersionSummary, VersionComparison } from './types';
 import { UploadValidationError } from './validation';
 
 const Id = Type.String({ format: 'uuid' });
@@ -37,6 +37,10 @@ const UploadParams = Type.Intersect([
 const VersionParams = Type.Intersect([
   DocumentParams,
   Type.Object({ versionId: Id }),
+]);
+const ComparisonParams = Type.Intersect([
+  DocumentParams,
+  Type.Object({ comparisonId: Id }),
 ]);
 const VersionStatus = Type.Union([
   Type.Literal('pending_processing'),
@@ -151,6 +155,76 @@ const FinalizeResponse = Type.Object({
   replayed: Type.Boolean(),
   version: Version,
 });
+const ComparisonChange = Type.Object({
+  after: Type.Union([Type.String(), Type.Null()]),
+  before: Type.Union([Type.String(), Type.Null()]),
+  category: Type.Union([
+    Type.Literal('content'),
+    Type.Literal('feature'),
+    Type.Literal('structure'),
+    Type.Literal('validation'),
+  ]),
+  changeType: Type.Union([
+    Type.Literal('added'),
+    Type.Literal('modified'),
+    Type.Literal('moved'),
+    Type.Literal('removed'),
+  ]),
+  entityType: Type.String(),
+  id: Type.String(),
+  impact: Type.Union([
+    Type.Literal('high'),
+    Type.Literal('low'),
+    Type.Literal('medium'),
+  ]),
+  label: Type.String(),
+  path: Type.String(),
+});
+const ComparisonVersionReference = Type.Object({
+  artifactSha256: Type.String({ pattern: '^[0-9a-f]{64}$' }),
+  authorName: Type.String(),
+  createdAt: DateTime,
+  displayNumber: Type.Integer({ minimum: 1 }),
+  id: Id,
+  note: Type.String(),
+});
+const Comparison = Type.Object({
+  attempts: Type.Integer({ minimum: 0 }),
+  baseVersion: ComparisonVersionReference,
+  byteEqual: Type.Union([Type.Boolean(), Type.Null()]),
+  changes: Type.Array(ComparisonChange),
+  comparisonSchemaVersion: Type.String(),
+  completeness: Type.Union([
+    Type.Literal('complete'),
+    Type.Literal('partial'),
+    Type.Null(),
+  ]),
+  createdAt: DateTime,
+  engineVersion: Type.String(),
+  failureCode: Type.Union([Type.String(), Type.Null()]),
+  id: Id,
+  maxAttempts: Type.Integer({ minimum: 1 }),
+  nextAttemptAt: Type.Union([DateTime, Type.Null()]),
+  parserVersion: Type.String(),
+  semanticEqual: Type.Union([Type.Boolean(), Type.Null()]),
+  stableHash: Type.Union([
+    Type.String({ pattern: '^[0-9a-f]{64}$' }),
+    Type.Null(),
+  ]),
+  state: Type.Union([
+    Type.Literal('queued'),
+    Type.Literal('running'),
+    Type.Literal('retryable_failed'),
+    Type.Literal('permanently_failed'),
+    Type.Literal('quarantined'),
+    Type.Literal('completed'),
+  ]),
+  summary: Type.Record(Type.String(), Type.Integer({ minimum: 0 })),
+  supportTraceId: Id,
+  targetVersion: ComparisonVersionReference,
+  updatedAt: DateTime,
+  warnings: Type.Array(Type.String()),
+});
 const Errors = {
   400: ErrorResponse,
   401: ErrorResponse,
@@ -184,6 +258,23 @@ function serializeVersion(version: DocumentVersionSummary) {
       nextAttemptAt: version.processing.nextAttemptAt?.toISOString() ?? null,
       updatedAt: version.processing.updatedAt.toISOString(),
     },
+  };
+}
+
+function serializeComparison(comparison: VersionComparison) {
+  return {
+    ...comparison,
+    baseVersion: {
+      ...comparison.baseVersion,
+      createdAt: comparison.baseVersion.createdAt.toISOString(),
+    },
+    createdAt: comparison.createdAt.toISOString(),
+    nextAttemptAt: comparison.nextAttemptAt?.toISOString() ?? null,
+    targetVersion: {
+      ...comparison.targetVersion,
+      createdAt: comparison.targetVersion.createdAt.toISOString(),
+    },
+    updatedAt: comparison.updatedAt.toISOString(),
   };
 }
 
@@ -290,6 +381,13 @@ async function sendVersionError(
         409,
         'invalid_upload_state',
         'The upload is not in the required state.',
+      );
+    case 'comparison_unavailable':
+      return sendApiError(
+        reply,
+        409,
+        'comparison_unavailable',
+        'Both versions must be fully processed, clean, and belong to this document.',
       );
   }
 }
@@ -611,6 +709,79 @@ export function registerVersionRoutes(
           requestId: request.id,
           targetId: request.params.versionId,
           targetType: 'document_version',
+        });
+      }
+    },
+  );
+
+  typed.post(
+    `${basePath}/comparisons`,
+    {
+      preHandler: mutations,
+      schema: {
+        body: Type.Object({
+          baseVersionId: Id,
+          targetVersionId: Id,
+        }),
+        headers: IdempotentHeaders,
+        params: DocumentParams,
+        response: { 200: Comparison, 201: Comparison, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const result = await runtime.versionService.createComparison({
+          actor: currentActor,
+          baseVersionId: request.body.baseVersionId,
+          documentId: request.params.documentId,
+          idempotencyKey: request.headers['idempotency-key'],
+          projectId: request.params.projectId,
+          requestId: request.id,
+          targetVersionId: request.body.targetVersionId,
+        });
+        return reply
+          .code(result.replayed ? 200 : 201)
+          .send(serializeComparison(result.comparison));
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.request_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.documentId,
+          targetType: 'document',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/comparisons/:comparisonId`,
+    {
+      preHandler: reads,
+      schema: {
+        params: ComparisonParams,
+        response: { 200: Comparison, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return serializeComparison(
+          await runtime.versionService.getComparison({
+            actor: currentActor,
+            comparisonId: request.params.comparisonId,
+            documentId: request.params.documentId,
+            projectId: request.params.projectId,
+          }),
+        );
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.comparisonId,
+          targetType: 'version_comparison',
         });
       }
     },

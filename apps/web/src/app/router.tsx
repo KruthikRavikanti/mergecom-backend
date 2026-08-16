@@ -8,6 +8,7 @@ import { PublicLayout } from '../components/layout/PublicLayout';
 import { AdminPage } from '../features/admin/AdminPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DocumentHistoryPage } from '../features/history/DocumentHistoryPage';
+import { DocumentComparePage } from '../features/history/DocumentComparePage';
 import { InviteAcceptancePage } from '../features/invitations/InviteAcceptancePage';
 import { ProjectPage } from '../features/projects/ProjectPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -48,6 +49,10 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
           {
             element: <DocumentHistoryPage />,
             path: 'projects/:projectId/documents/:documentId/history',
+          },
+          {
+            element: <DocumentComparePage />,
+            path: 'projects/:projectId/documents/:documentId/history/comparisons/:comparisonId',
           },
           { element: <TeamPage />, path: 'team' },
           { element: <SettingsPage />, path: 'settings' },

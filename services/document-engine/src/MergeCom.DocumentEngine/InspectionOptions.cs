@@ -22,5 +22,11 @@ public sealed class InspectionOptions
 
     public int MaxValidationErrors { get; set; } = 100;
 
+    public int MaxSemanticItems { get; set; } = 50_000;
+
+    public int MaxSemanticTextCharacters { get; set; } = 1 * 1024 * 1024;
+
+    public long MaxComparisonInputBytes { get; set; } = 8 * 1024 * 1024;
+
     public string TempRoot { get; set; } = Path.Combine(Path.GetTempPath(), "mergecom-document-engine");
 }

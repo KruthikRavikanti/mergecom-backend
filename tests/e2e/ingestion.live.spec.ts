@@ -56,7 +56,7 @@ test('processes a valid OOXML package into a visible versioned snapshot', async 
   await expect(version.getByText('Ready', { exact: true })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(version).toContainText('Parser 1.0.0 / schema 1.0.0');
+  await expect(version).toContainText('Parser 1.1.0 / schema 1.1.0');
   await expect(version).toContainText('Snapshot');
   await expect(version).toContainText('Support');
   await page.screenshot({

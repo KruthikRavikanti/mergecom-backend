@@ -19,10 +19,14 @@ builder.Services
     .Validate(options => options.MaxXmlCharacters > 0, "Inspection XML character limit must be positive.")
     .Validate(options => options.MaxXmlDepth > 0, "Inspection XML depth limit must be positive.")
     .Validate(options => options.MaxValidationErrors > 0, "Inspection validation error limit must be positive.")
+    .Validate(options => options.MaxSemanticItems > 0, "Inspection semantic item limit must be positive.")
+    .Validate(options => options.MaxSemanticTextCharacters > 0, "Inspection semantic text limit must be positive.")
+    .Validate(options => options.MaxComparisonInputBytes > 0, "Comparison input limit must be positive.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.TempRoot), "Inspection temporary root is required.")
     .ValidateOnStart();
 builder.Services.AddSingleton(serviceProvider =>
     new OoxmlInspector(serviceProvider.GetRequiredService<IOptions<InspectionOptions>>().Value));
+builder.Services.AddSingleton<OoxmlComparator>();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
@@ -48,6 +52,9 @@ app.MapGet("/health/ready", () => Results.Ok(new
 }));
 
 app.MapPost("/internal/v1/inspections", InspectAsync)
+    .WithMetadata(new DisableRequestSizeLimitAttribute());
+
+app.MapPost("/internal/v1/comparisons", CompareAsync)
     .WithMetadata(new DisableRequestSizeLimitAttribute());
 
 app.Run();
@@ -125,6 +132,63 @@ static async Task<IResult> InspectAsync(
     }
 }
 
+static async Task<IResult> CompareAsync(
+    HttpRequest request,
+    OoxmlComparator comparator,
+    IOptions<InspectionOptions> configuredOptions,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken)
+{
+    var options = configuredOptions.Value;
+    if (!request.Headers.TryGetValue("X-MergeCom-Internal-Token", out var providedToken)
+        || !TokensEqual(providedToken.ToString(), options.InternalToken))
+    {
+        return Results.Json(new { code = "unauthorized", message = "Internal authentication is required." }, statusCode: 401);
+    }
+
+    var traceId = request.Headers["X-MergeCom-Trace-Id"].ToString();
+    if (!Guid.TryParse(traceId, out _))
+    {
+        return Results.BadRequest(new { code = "invalid_comparison_metadata", message = "Comparison metadata is invalid." });
+    }
+
+    if (request.ContentLength > options.MaxComparisonInputBytes)
+    {
+        return Results.Json(new { code = "input_too_large", message = "The normalized snapshots exceed the comparison input limit." }, statusCode: 413);
+    }
+
+    try
+    {
+        var comparisonRequest = await ReadBoundedJsonAsync<SnapshotComparisonRequest>(
+            request.Body,
+            options.MaxComparisonInputBytes,
+            cancellationToken);
+        if (comparisonRequest?.BaseSnapshot is null || comparisonRequest.TargetSnapshot is null)
+        {
+            return Results.BadRequest(new { code = "invalid_comparison_input", message = "A base and target snapshot are required." });
+        }
+
+        using (logger.BeginScope(new Dictionary<string, object> { ["TraceId"] = traceId }))
+        {
+            return Results.Ok(comparator.Compare(
+                comparisonRequest.BaseSnapshot,
+                comparisonRequest.TargetSnapshot));
+        }
+    }
+    catch (InputLimitExceededException)
+    {
+        return Results.Json(new { code = "input_too_large", message = "The normalized snapshots exceed the comparison input limit." }, statusCode: 413);
+    }
+    catch (JsonException)
+    {
+        return Results.BadRequest(new { code = "invalid_comparison_input", message = "The normalized snapshots are invalid." });
+    }
+    catch (InvalidComparisonException exception)
+    {
+        return Results.Json(new { code = exception.Code, message = exception.Message }, statusCode: 422);
+    }
+}
+
 static async Task<string> CopyBoundedAndHashAsync(
     Stream source,
     string destinationPath,
@@ -156,6 +220,37 @@ static async Task<string> CopyBoundedAndHashAsync(
 
     await destination.FlushAsync(cancellationToken);
     return Convert.ToHexStringLower(hash.GetHashAndReset());
+}
+
+static async Task<T?> ReadBoundedJsonAsync<T>(
+    Stream source,
+    long limit,
+    CancellationToken cancellationToken)
+{
+    using var destination = new MemoryStream();
+    var buffer = new byte[64 * 1024];
+    long total = 0;
+    int read;
+    while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+    {
+        total = checked(total + read);
+        if (total > limit)
+        {
+            throw new InputLimitExceededException();
+        }
+
+        await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+    }
+
+    destination.Position = 0;
+    return await JsonSerializer.DeserializeAsync<T>(
+        destination,
+        new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        },
+        cancellationToken);
 }
 
 static bool TokensEqual(string provided, string expected)

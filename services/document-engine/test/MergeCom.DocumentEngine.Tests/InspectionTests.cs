@@ -35,11 +35,25 @@ public sealed class InspectionTests : IClassFixture<WebApplicationFactory<Progra
         var second = new OoxmlInspector(options).Inspect(fixture.Path, fileType, sha256);
 
         Assert.Equal("completed", first.Outcome);
-        Assert.Equal("1.0.0", first.Snapshot.SchemaVersion);
-        Assert.Equal("1.0.0", first.Snapshot.ParserVersion);
+        Assert.Equal("1.1.0", first.Snapshot.SchemaVersion);
+        Assert.Equal("1.1.0", first.Snapshot.ParserVersion);
         Assert.Equal(first.Snapshot.StableHash, second.Snapshot.StableHash);
         Assert.Equal(64, first.Snapshot.StableHash.Length);
         Assert.True(first.Snapshot.Package.EntryCount > 0);
+    }
+
+    [Fact]
+    public void SemanticLimitsAreReportedAsUnsupportedPartialCoverage()
+    {
+        using var fixture = SyntheticOfficePackage.Word("Content beyond the configured semantic budget");
+        var result = new OoxmlInspector(new InspectionOptions
+        {
+            MaxSemanticTextCharacters = 4,
+        }).Inspect(fixture.Path, "word_document", Hash(fixture.Bytes));
+
+        Assert.Contains("semantic_content_truncated", result.Snapshot.UnsupportedFeatures);
+        Assert.Contains(result.Snapshot.Warnings, warning =>
+            warning.Code == "semantic_content_truncated");
     }
 
     [Fact]
@@ -201,7 +215,7 @@ public sealed class InspectionTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("completed", json.RootElement.GetProperty("outcome").GetString());
-        Assert.Equal("1.0.0", json.RootElement.GetProperty("snapshot").GetProperty("schema_version").GetString());
+        Assert.Equal("1.1.0", json.RootElement.GetProperty("snapshot").GetProperty("schema_version").GetString());
         var tempRoot = new InspectionOptions().TempRoot;
         Assert.Empty(Directory.EnumerateDirectories(tempRoot, "inspection-*"));
     }

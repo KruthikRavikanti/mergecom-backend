@@ -2,6 +2,7 @@ import type { PageInput } from '../projects/store';
 import type {
   ArtifactSummary,
   BranchSummary,
+  VersionComparison,
   DocumentAccess,
   DocumentVersionSummary,
   ExpiredUpload,
@@ -14,6 +15,7 @@ import type {
 } from './types';
 
 export type VersionOperationErrorCode =
+  | 'comparison_unavailable'
   | 'denied'
   | 'idempotency_conflict'
   | 'invalid_base'
@@ -65,6 +67,19 @@ export interface VersionStore {
     requestId: string;
     uploadId: string;
   }): Promise<StagedUploadRecord>;
+  createComparison(input: {
+    actor: VersionActor;
+    baseVersionId: string;
+    comparisonSchemaVersion: string;
+    documentId: string;
+    engineVersion: string;
+    idempotencyKey: string;
+    parserVersion: string;
+    projectId: string;
+    requestHash: string;
+    requestId: string;
+    targetVersionId: string;
+  }): Promise<{ comparison: VersionComparison; replayed: boolean }>;
   createUpload(input: {
     actor: VersionActor;
     baseVersionId: string | null;
@@ -112,6 +127,12 @@ export interface VersionStore {
     uploadId: string;
     write: boolean;
   }): Promise<StagedUploadRecord>;
+  getComparison(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<VersionComparison>;
   getVersion(input: {
     actor: VersionActor;
     documentId: string;

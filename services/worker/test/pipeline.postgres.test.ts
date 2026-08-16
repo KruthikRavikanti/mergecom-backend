@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ArtifactStorage } from '../src/artifact-storage';
 import type { WorkerConfig } from '../src/config';
 import { DocumentEngineClient } from '../src/document-engine-client';
-import { DocumentProcessor } from '../src/pipeline';
+import { ComparisonProcessor, DocumentProcessor } from '../src/pipeline';
 import { ProcessingStore } from '../src/processing-store';
 
 const databaseUrl = process.env.TEST_WORKER_DATABASE_URL;
@@ -53,7 +53,7 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
     await pool.end();
   });
 
-  it('recovers durable intent, persists one snapshot, and ignores duplicate delivery', async () => {
+  it('persists deterministic snapshots and comparisons across duplicate delivery', async () => {
     const organizationId = randomUUID();
     const userId = randomUUID();
     const projectId = randomUUID();
@@ -187,8 +187,82 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
       [versionId],
     );
     expect(duplicate.rows[0]?.count).toBe(1);
-    const snapshotKey = `organizations/${organizationId}/snapshots/${versionId}/schema-1.0.0-parser-1.0.0.json`;
+    const snapshotKey = `organizations/${organizationId}/snapshots/${versionId}/schema-1.1.0-parser-1.1.0.json`;
     keys.push(snapshotKey);
+
+    const targetVersionId = randomUUID();
+    const targetJobId = randomUUID();
+    const comparisonId = randomUUID();
+    await pool.query(
+      `insert into document_versions
+        (id, organization_id, document_id, branch_id, artifact_id, sequence,
+         display_number, parent_version_id, source, status, note,
+         author_user_id)
+       values ($1, $2, $3, $4, $5, 2, 2, $6, 'restore', 'ready',
+               'Exact-byte restore', $7)`,
+      [
+        targetVersionId,
+        organizationId,
+        documentId,
+        branchId,
+        artifactId,
+        versionId,
+        userId,
+      ],
+    );
+    await pool.query(
+      `insert into version_processing_jobs
+        (id, organization_id, version_id, job_type, status, attempts,
+         started_at, completed_at)
+       values ($1, $2, $3, 'semantic_ingestion', 'completed', 1, now(), now())`,
+      [targetJobId, organizationId, targetVersionId],
+    );
+    await pool.query(
+      `insert into version_comparisons
+        (id, organization_id, document_id, base_version_id,
+         target_version_id, requested_by_user_id)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [
+        comparisonId,
+        organizationId,
+        documentId,
+        versionId,
+        targetVersionId,
+        userId,
+      ],
+    );
+    const comparisonProcessor = new ComparisonProcessor(
+      store,
+      new ArtifactStorage(config),
+      new DocumentEngineClient(engineUrl!, config.documentEngineToken),
+      config.leaseMilliseconds,
+      config.heartbeatMilliseconds,
+    );
+    await comparisonProcessor.process(comparisonId);
+    const comparison = await pool.query<{
+      byte_equal: boolean;
+      result_object_key: string;
+      stable_hash: string;
+      status: string;
+    }>(
+      `select status, byte_equal, stable_hash, result_object_key
+         from version_comparisons where id = $1`,
+      [comparisonId],
+    );
+    expect(comparison.rows[0]).toMatchObject({
+      byte_equal: true,
+      status: 'completed',
+    });
+    expect(comparison.rows[0]?.stable_hash).toMatch(/^[0-9a-f]{64}$/u);
+    keys.push(comparison.rows[0]!.result_object_key);
+
+    await comparisonProcessor.process(comparisonId);
+    const comparisonEvents = await pool.query<{ count: number }>(
+      `select count(*)::int as count from outbox_events
+        where aggregate_id = $1 and event_type = 'version.comparison_finished'`,
+      [comparisonId],
+    );
+    expect(comparisonEvents.rows[0]?.count).toBe(1);
   });
 });
 

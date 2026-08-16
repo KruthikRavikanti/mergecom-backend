@@ -499,6 +499,11 @@ internal sealed class PackagePreflight(InspectionOptions options)
         {
             facts.UnsupportedFeatures.Add("binary_part");
         }
+
+        if (lower.StartsWith("customxml/", StringComparison.Ordinal))
+        {
+            facts.UnsupportedFeatures.Add("custom_xml_content");
+        }
     }
 
     private static void AddFeatureWarnings(PackageFacts facts)

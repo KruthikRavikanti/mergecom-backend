@@ -43,6 +43,56 @@ export interface VersionProcessingSummary {
   updatedAt: Date;
 }
 
+export type ComparisonChangeType = 'added' | 'modified' | 'moved' | 'removed';
+export type ComparisonCategory =
+  'content' | 'feature' | 'structure' | 'validation';
+export type ComparisonImpact = 'high' | 'low' | 'medium';
+
+export interface ComparisonChange {
+  after: string | null;
+  before: string | null;
+  category: ComparisonCategory;
+  changeType: ComparisonChangeType;
+  entityType: string;
+  id: string;
+  impact: ComparisonImpact;
+  label: string;
+  path: string;
+}
+
+export interface ComparisonVersionReference {
+  artifactSha256: string;
+  authorName: string;
+  createdAt: Date;
+  displayNumber: number;
+  id: string;
+  note: string;
+}
+
+export interface VersionComparison {
+  attempts: number;
+  baseVersion: ComparisonVersionReference;
+  byteEqual: boolean | null;
+  changes: ComparisonChange[];
+  comparisonSchemaVersion: string;
+  completeness: 'complete' | 'partial' | null;
+  createdAt: Date;
+  engineVersion: string;
+  failureCode: string | null;
+  id: string;
+  maxAttempts: number;
+  nextAttemptAt: Date | null;
+  parserVersion: string;
+  semanticEqual: boolean | null;
+  stableHash: string | null;
+  state: ProcessingJobStatus;
+  summary: Record<string, number>;
+  supportTraceId: string;
+  targetVersion: ComparisonVersionReference;
+  updatedAt: Date;
+  warnings: string[];
+}
+
 export interface ArtifactSummary {
   byteSize: number;
   detectedMediaType: string;

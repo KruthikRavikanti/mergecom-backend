@@ -621,6 +621,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createVersionComparison"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getVersionComparison"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}": {
         parameters: {
             query?: never;
@@ -911,6 +952,60 @@ export interface components {
             items: components["schemas"]["DocumentVersion"][];
             nextCursor: string | null;
         };
+        ComparisonVersionReference: {
+            /** Format: uuid */
+            id: string;
+            displayNumber: number;
+            note: string;
+            authorName: string;
+            artifactSha256: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ComparisonChange: {
+            id: string;
+            /** @enum {string} */
+            changeType: "added" | "modified" | "moved" | "removed";
+            /** @enum {string} */
+            category: "content" | "feature" | "structure" | "validation";
+            /** @enum {string} */
+            impact: "high" | "medium" | "low";
+            entityType: string;
+            label: string;
+            path: string;
+            before: string | null;
+            after: string | null;
+        };
+        VersionComparison: {
+            /** Format: uuid */
+            id: string;
+            baseVersion: components["schemas"]["ComparisonVersionReference"];
+            targetVersion: components["schemas"]["ComparisonVersionReference"];
+            comparisonSchemaVersion: string;
+            parserVersion: string;
+            engineVersion: string;
+            /** @enum {string} */
+            state: "queued" | "running" | "retryable_failed" | "permanently_failed" | "quarantined" | "completed";
+            attempts: number;
+            maxAttempts: number;
+            nextAttemptAt: string | null;
+            failureCode: string | null;
+            /** Format: uuid */
+            supportTraceId: string;
+            stableHash: string | null;
+            byteEqual: boolean | null;
+            semanticEqual: boolean | null;
+            completeness: ("complete" | "partial") | null;
+            summary: {
+                [key: string]: number;
+            };
+            warnings: string[];
+            changes: components["schemas"]["ComparisonChange"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         SignedBlobGrant: {
             /** Format: uri */
             url: string;
@@ -986,6 +1081,7 @@ export interface components {
         DocumentId: string;
         UploadId: string;
         VersionId: string;
+        ComparisonId: string;
         ProjectMembershipId: string;
         IdempotencyKey: string;
     };
@@ -2296,6 +2392,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createVersionComparison: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    baseVersionId: string;
+                    /** Format: uuid */
+                    targetVersionId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Existing directional comparison replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            /** @description Durable semantic comparison requested. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getVersionComparison: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted comparison state and typed semantic changes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionComparison"];
                 };
             };
             default: components["responses"]["ApiError"];

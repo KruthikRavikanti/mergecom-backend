@@ -832,6 +832,117 @@ export const normalizedSnapshots = pgTable(
   ],
 );
 
+export const versionComparisons = pgTable(
+  'version_comparisons',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    baseVersionId: uuid('base_version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    targetVersionId: uuid('target_version_id')
+      .references(() => documentVersions.id, { onDelete: 'restrict' })
+      .notNull(),
+    requestedByUserId: uuid('requested_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    comparisonSchemaVersion: text('comparison_schema_version')
+      .default('1.0.0')
+      .notNull(),
+    parserVersion: text('parser_version').default('1.1.0').notNull(),
+    engineVersion: text('engine_version').default('1.0.0').notNull(),
+    status: processingJobStatus('status').default('queued').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
+    lastError: text('last_error'),
+    traceId: uuid('trace_id').defaultRandom().notNull(),
+    resultObjectKey: text('result_object_key'),
+    resultSha256: text('result_sha256'),
+    stableHash: text('stable_hash'),
+    byteEqual: boolean('byte_equal'),
+    semanticEqual: boolean('semantic_equal'),
+    completeness: text('completeness'),
+    summary: jsonb('summary')
+      .$type<Record<string, number>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    warnings: jsonb('warnings')
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    changes: jsonb('changes')
+      .$type<
+        Array<{
+          after: string | null;
+          before: string | null;
+          category: 'content' | 'feature' | 'structure' | 'validation';
+          changeType: 'added' | 'modified' | 'moved' | 'removed';
+          entityType: string;
+          id: string;
+          impact: 'high' | 'low' | 'medium';
+          label: string;
+          path: string;
+        }>
+      >()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('version_comparisons_version_parser_uq').on(
+      table.baseVersionId,
+      table.targetVersionId,
+      table.comparisonSchemaVersion,
+      table.parserVersion,
+    ),
+    uniqueIndex('version_comparisons_result_object_uq').on(
+      table.resultObjectKey,
+    ),
+    index('version_comparisons_document_created_idx').on(
+      table.organizationId,
+      table.documentId,
+      table.createdAt,
+    ),
+    index('version_comparisons_queue_idx').on(table.status, table.availableAt),
+    index('version_comparisons_lease_idx').on(
+      table.status,
+      table.leaseExpiresAt,
+    ),
+    check(
+      'version_comparisons_distinct_versions_ck',
+      sql`${table.baseVersionId} <> ${table.targetVersionId}`,
+    ),
+    check(
+      'version_comparisons_attempts_ck',
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} > 0 and ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+    check(
+      'version_comparisons_hashes_ck',
+      sql`(${table.resultSha256} is null or ${table.resultSha256} ~ '^[0-9a-f]{64}$')
+          and (${table.stableHash} is null or ${table.stableHash} ~ '^[0-9a-f]{64}$')`,
+    ),
+    check(
+      'version_comparisons_completeness_ck',
+      sql`${table.completeness} is null or ${table.completeness} in ('complete', 'partial')`,
+    ),
+  ],
+);
+
 export const outboxEvents = pgTable(
   'outbox_events',
   {

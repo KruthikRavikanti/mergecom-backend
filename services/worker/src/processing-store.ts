@@ -1,10 +1,49 @@
 import { Pool, type PoolClient } from 'pg';
 
 import type {
+  ClaimedComparisonJob,
   ClaimedProcessingJob,
+  ComparisonResult,
+  DispatchableComparison,
   DispatchableJob,
   InspectionResult,
 } from './types';
+
+interface ComparisonClaimRow {
+  attempts: number;
+  base_byte_size: string | number;
+  base_extension: string;
+  base_object_key: string;
+  base_sha256: string;
+  base_version_id: string;
+  comparison_schema_version: string;
+  engine_version: string;
+  file_type: ClaimedComparisonJob['fileType'];
+  id: string;
+  max_attempts: number;
+  organization_id: string;
+  parser_version: string;
+  target_byte_size: string | number;
+  target_extension: string;
+  target_object_key: string;
+  target_sha256: string;
+  target_version_id: string;
+  trace_id: string;
+}
+
+interface LockedComparisonRow {
+  attempts: number;
+  comparison_schema_version: string;
+  engine_version: string;
+  lease_owner: string | null;
+  max_attempts: number;
+  organization_id: string;
+  parser_version: string;
+  result_object_key: string | null;
+  result_sha256: string | null;
+  stable_hash: string | null;
+  status: string;
+}
 
 interface ClaimRow {
   artifact_byte_size: string | number;
@@ -151,6 +190,80 @@ export class ProcessingStore {
     });
   }
 
+  public async listDispatchableComparisons(
+    limit = 100,
+  ): Promise<DispatchableComparison[]> {
+    await transaction(this.pool, async (client) => {
+      await client.query(
+        `update version_comparisons
+            set status = 'retryable_failed', available_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, updated_at = now(),
+                last_error = 'The worker lease expired before completion.'
+          where status = 'running' and lease_expires_at <= now()
+            and attempts < max_attempts`,
+      );
+      const exhausted = await client.query<{
+        id: string;
+        organization_id: string;
+      }>(
+        `update version_comparisons
+            set status = 'permanently_failed', completed_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, failure_code = 'lease_exhausted',
+                last_error = 'All attempts ended with an expired worker lease.',
+                updated_at = now()
+          where status = 'running' and lease_expires_at <= now()
+            and attempts >= max_attempts
+        returning id, organization_id`,
+      );
+      for (const row of exhausted.rows) {
+        await insertComparisonOutcomeEvent(client, {
+          comparisonId: row.id,
+          failureCode: 'lease_exhausted',
+          organizationId: row.organization_id,
+          outcome: 'permanently_failed',
+        });
+      }
+    });
+    const result = await this.pool.query<{
+      id: string;
+      max_attempts: number;
+    }>(
+      `select id, max_attempts
+         from version_comparisons
+        where status in ('queued', 'retryable_failed')
+          and available_at <= now() and attempts < max_attempts
+        order by available_at, created_at, id
+        limit $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      maxAttempts: row.max_attempts,
+    }));
+  }
+
+  public async markComparisonDispatched(
+    comparison: DispatchableComparison,
+  ): Promise<void> {
+    await transaction(this.pool, async (client) => {
+      await client.query(
+        `update version_comparisons
+            set dispatched_at = now(), updated_at = now()
+          where id = $1 and status in ('queued', 'retryable_failed')`,
+        [comparison.id],
+      );
+      await client.query(
+        `update outbox_events
+            set status = 'published', published_at = now(), last_error = null
+          where aggregate_id = $1 and event_type = 'version.comparison_requested'
+            and status = 'pending'`,
+        [comparison.id],
+      );
+    });
+  }
+
   public async claim(
     jobId: string,
     leaseOwner: string,
@@ -207,6 +320,85 @@ export class ProcessingStore {
               updated_at = now()
         where id = $1 and status = 'running' and lease_owner = $2`,
       [jobId, leaseOwner, leaseMilliseconds],
+    );
+    return result.rowCount === 1;
+  }
+
+  public async claimComparison(
+    comparisonId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<ClaimedComparisonJob | null> {
+    const result = await this.pool.query<ComparisonClaimRow>(
+      `with claimed as (
+         update version_comparisons
+            set status = 'running', attempts = attempts + 1,
+                started_at = coalesce(started_at, now()), heartbeat_at = now(),
+                lease_owner = $2,
+                lease_expires_at = now() + ($3::text || ' milliseconds')::interval,
+                failure_code = null, last_error = null, updated_at = now()
+          where id = $1 and status in ('queued', 'retryable_failed')
+            and available_at <= now() and attempts < max_attempts
+        returning *
+       )
+       select c.id, c.organization_id, c.attempts, c.max_attempts,
+              c.trace_id, c.comparison_schema_version, c.parser_version,
+              c.engine_version, d.kind as file_type,
+              bv.id as base_version_id, ba.object_key as base_object_key,
+              ba.sha256 as base_sha256, ba.byte_size as base_byte_size,
+              ba.extension as base_extension,
+              tv.id as target_version_id, ta.object_key as target_object_key,
+              ta.sha256 as target_sha256, ta.byte_size as target_byte_size,
+              ta.extension as target_extension
+         from claimed c
+         join documents d on d.id = c.document_id
+         join document_versions bv on bv.id = c.base_version_id
+         join artifacts ba on ba.id = bv.artifact_id
+         join document_versions tv on tv.id = c.target_version_id
+         join artifacts ta on ta.id = tv.artifact_id`,
+      [comparisonId, leaseOwner, leaseMilliseconds],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      attempts: row.attempts,
+      baseArtifact: {
+        byteSize: Number(row.base_byte_size),
+        extension: row.base_extension,
+        objectKey: row.base_object_key,
+        sha256: row.base_sha256,
+        versionId: row.base_version_id,
+      },
+      comparisonSchemaVersion: row.comparison_schema_version,
+      engineVersion: row.engine_version,
+      fileType: row.file_type,
+      id: row.id,
+      maxAttempts: row.max_attempts,
+      organizationId: row.organization_id,
+      parserVersion: row.parser_version,
+      targetArtifact: {
+        byteSize: Number(row.target_byte_size),
+        extension: row.target_extension,
+        objectKey: row.target_object_key,
+        sha256: row.target_sha256,
+        versionId: row.target_version_id,
+      },
+      traceId: row.trace_id,
+    };
+  }
+
+  public async heartbeatComparison(
+    comparisonId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `update version_comparisons
+          set heartbeat_at = now(),
+              lease_expires_at = now() + ($3::text || ' milliseconds')::interval,
+              updated_at = now()
+        where id = $1 and status = 'running' and lease_owner = $2`,
+      [comparisonId, leaseOwner, leaseMilliseconds],
     );
     return result.rowCount === 1;
   }
@@ -323,9 +515,147 @@ export class ProcessingStore {
     });
   }
 
+  public async completeComparison(input: {
+    comparison: ClaimedComparisonJob;
+    leaseOwner: string;
+    result: ComparisonResult;
+    resultObjectKey: string;
+    resultSha256: string;
+  }): Promise<void> {
+    await transaction(this.pool, async (client) => {
+      const comparison = await lockComparison(client, input.comparison.id);
+      if (!comparison) throw new Error('Comparison was not found.');
+      if (comparison.result_object_key) {
+        if (
+          comparison.result_object_key !== input.resultObjectKey ||
+          comparison.result_sha256 !== input.resultSha256 ||
+          comparison.stable_hash !== input.result.stable_hash
+        ) {
+          throw new Error('A deterministic comparison conflict was detected.');
+        }
+        return;
+      }
+      if (comparison.status !== 'running') return;
+      if (comparison.lease_owner !== input.leaseOwner) {
+        throw new Error(
+          'The comparison lease is no longer owned by this worker.',
+        );
+      }
+      if (
+        comparison.comparison_schema_version !==
+          input.result.comparison_schema_version ||
+        comparison.parser_version !== input.result.parser_version ||
+        comparison.engine_version !== input.result.engine_version
+      ) {
+        throw new Error('The comparison result version contract changed.');
+      }
+
+      const changes = input.result.changes.map((change) => ({
+        after: change.after,
+        before: change.before,
+        category: change.category,
+        changeType: change.change_type,
+        entityType: change.entity_type,
+        id: change.id,
+        impact: change.impact,
+        label: change.label,
+        path: change.path,
+      }));
+      await client.query(
+        `update version_comparisons
+            set status = 'completed', completed_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, failure_code = null, last_error = null,
+                result_object_key = $2, result_sha256 = $3, stable_hash = $4,
+                byte_equal = $5, semantic_equal = $6, completeness = $7,
+                summary = $8, warnings = $9, changes = $10,
+                updated_at = now()
+          where id = $1`,
+        [
+          input.comparison.id,
+          input.resultObjectKey,
+          input.resultSha256,
+          input.result.stable_hash,
+          input.result.byte_equal,
+          input.result.semantic_equal,
+          input.result.completeness,
+          JSON.stringify(input.result.summary),
+          JSON.stringify(input.result.warnings),
+          JSON.stringify(changes),
+        ],
+      );
+      await insertComparisonOutcomeEvent(client, {
+        comparisonId: input.comparison.id,
+        failureCode: null,
+        organizationId: comparison.organization_id,
+        outcome: 'completed',
+      });
+    });
+  }
+
+  public async recordComparisonFailure(input: {
+    comparison: ClaimedComparisonJob;
+    error: string;
+    failureCode: string;
+    leaseOwner: string;
+    retryable: boolean;
+    retryAt: Date;
+  }): Promise<boolean> {
+    return transaction(this.pool, async (client) => {
+      const comparison = await lockComparison(client, input.comparison.id);
+      if (!comparison || comparison.status !== 'running') return false;
+      if (comparison.lease_owner !== input.leaseOwner) return false;
+      const retry =
+        input.retryable && comparison.attempts < comparison.max_attempts;
+      if (retry) {
+        await client.query(
+          `update version_comparisons
+              set status = 'retryable_failed', available_at = $2,
+                  lease_owner = null, lease_expires_at = null,
+                  heartbeat_at = null, failure_code = $3, last_error = $4,
+                  updated_at = now()
+            where id = $1`,
+          [input.comparison.id, input.retryAt, input.failureCode, input.error],
+        );
+        return true;
+      }
+      await client.query(
+        `update version_comparisons
+            set status = 'permanently_failed', completed_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, failure_code = $2, last_error = $3,
+                updated_at = now()
+          where id = $1`,
+        [input.comparison.id, input.failureCode, input.error],
+      );
+      await insertComparisonOutcomeEvent(client, {
+        comparisonId: input.comparison.id,
+        failureCode: input.failureCode,
+        organizationId: comparison.organization_id,
+        outcome: 'permanently_failed',
+      });
+      return false;
+    });
+  }
+
   public async close(): Promise<void> {
     await this.pool.end();
   }
+}
+
+async function lockComparison(
+  client: PoolClient,
+  comparisonId: string,
+): Promise<LockedComparisonRow | null> {
+  const result = await client.query<LockedComparisonRow>(
+    `select organization_id, status, attempts, max_attempts, lease_owner,
+            comparison_schema_version, parser_version, engine_version,
+            result_object_key, result_sha256, stable_hash
+       from version_comparisons
+      where id = $1 for update`,
+    [comparisonId],
+  );
+  return result.rows[0] ?? null;
 }
 
 async function lockJob(
@@ -418,6 +748,31 @@ async function insertOutcomeEvent(
         failureCode: input.failureCode,
         outcome: input.outcome,
         versionId: input.versionId,
+      }),
+    ],
+  );
+}
+
+async function insertComparisonOutcomeEvent(
+  client: PoolClient,
+  input: {
+    comparisonId: string;
+    failureCode: string | null;
+    organizationId: string;
+    outcome: string;
+  },
+): Promise<void> {
+  await client.query(
+    `insert into outbox_events
+      (organization_id, aggregate_type, aggregate_id, event_type, payload)
+     values ($1, 'version_comparison', $2, 'version.comparison_finished', $3)`,
+    [
+      input.organizationId,
+      input.comparisonId,
+      JSON.stringify({
+        comparisonId: input.comparisonId,
+        failureCode: input.failureCode,
+        outcome: input.outcome,
       }),
     ],
   );

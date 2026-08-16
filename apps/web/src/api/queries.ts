@@ -15,6 +15,8 @@ export type Document = components['schemas']['Document'];
 export type ProjectTeamMember = components['schemas']['ProjectTeamMember'];
 export type DocumentVersion = components['schemas']['DocumentVersion'];
 export type VersionPage = components['schemas']['VersionPage'];
+export type VersionComparison = components['schemas']['VersionComparison'];
+export type ComparisonChange = components['schemas']['ComparisonChange'];
 export type FinalizeVersionResult =
   components['schemas']['FinalizeVersionResult'];
 
@@ -64,6 +66,21 @@ export const queryKeys = {
       'documents',
       documentId,
       'versions',
+    ] as const,
+  comparison: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    comparisonId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'comparisons',
+      comparisonId,
     ] as const,
   projectTeam: (organizationId: string, projectId: string) =>
     ['projects', organizationId, projectId, 'team'] as const,
@@ -293,6 +310,94 @@ export function useVersionsQuery(
       )
         ? 2_000
         : false,
+  });
+}
+
+export function useVersionComparisonQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  comparisonId: string,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId && projectId && documentId && comparisonId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}',
+        {
+          params: {
+            path: {
+              comparisonId,
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Comparison could not be loaded.');
+      return data;
+    },
+    queryKey: queryKeys.comparison(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      comparisonId,
+    ),
+    refetchInterval: (query) =>
+      query.state.data &&
+      ['queued', 'retryable_failed', 'running'].includes(query.state.data.state)
+        ? 2_000
+        : false,
+  });
+}
+
+export function useCreateComparisonMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      baseVersionId: string;
+      documentId: string;
+      projectId: string;
+      targetVersionId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons',
+        {
+          body: {
+            baseVersionId: input.baseVersionId,
+            targetVersionId: input.targetVersionId,
+          },
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: {
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Comparison could not be started.');
+      return data;
+    },
+    onSuccess: (comparison, input) => {
+      queryClient.setQueryData(
+        queryKeys.comparison(
+          activeOrganizationId(currentUser),
+          input.projectId,
+          input.documentId,
+          comparison.id,
+        ),
+        comparison,
+      );
+    },
   });
 }
 

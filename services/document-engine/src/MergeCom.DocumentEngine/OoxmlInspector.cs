@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
+using D = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using W = DocumentFormat.OpenXml.Wordprocessing;
@@ -11,8 +13,8 @@ namespace MergeCom.DocumentEngine;
 
 public sealed class OoxmlInspector(InspectionOptions options)
 {
-    public const string ParserVersion = "1.0.0";
-    public const string SchemaVersion = "1.0.0";
+    public const string ParserVersion = "1.1.0";
+    public const string SchemaVersion = "1.1.0";
 
     private static readonly JsonSerializerOptions StableJsonOptions = new()
     {
@@ -27,12 +29,24 @@ public sealed class OoxmlInspector(InspectionOptions options)
         object payload = new Dictionary<string, object>();
         var outcome = "completed";
         string? failureCode = null;
+        var semanticBudget = new SemanticBudget(
+            options.MaxSemanticItems,
+            options.MaxSemanticTextCharacters);
 
         try
         {
             facts = new PackagePreflight(options).Inspect(packagePath);
             warnings.AddRange(facts.Warnings);
-            (payload, validationErrors) = InspectWithSdk(packagePath, fileType);
+            (payload, validationErrors) = InspectWithSdk(packagePath, fileType, semanticBudget);
+            AddCoverageFeatures(facts, payload);
+            if (semanticBudget.Truncated)
+            {
+                facts.UnsupportedFeatures.Add("semantic_content_truncated");
+                warnings.Add(new(
+                    "semantic_content_truncated",
+                    "Semantic content exceeded the normalized snapshot limits.",
+                    null));
+            }
             if (validationErrors.Count > 0)
             {
                 warnings.Add(new(
@@ -102,7 +116,8 @@ public sealed class OoxmlInspector(InspectionOptions options)
 
     private (object Payload, List<ValidationIssue> ValidationErrors) InspectWithSdk(
         string packagePath,
-        string fileType)
+        string fileType,
+        SemanticBudget semanticBudget)
     {
         var settings = new OpenSettings
         {
@@ -112,9 +127,9 @@ public sealed class OoxmlInspector(InspectionOptions options)
 
         return fileType switch
         {
-            "presentation" => InspectPresentation(packagePath, settings),
-            "spreadsheet" => InspectSpreadsheet(packagePath, settings),
-            "word_document" => InspectWord(packagePath, settings),
+            "presentation" => InspectPresentation(packagePath, settings, semanticBudget),
+            "spreadsheet" => InspectSpreadsheet(packagePath, settings, semanticBudget),
+            "word_document" => InspectWord(packagePath, settings, semanticBudget),
             _ => throw new InspectionRejectedException(
                 "file_type_unsupported",
                 "The requested Office document type is unsupported.",
@@ -122,7 +137,10 @@ public sealed class OoxmlInspector(InspectionOptions options)
         };
     }
 
-    private (object, List<ValidationIssue>) InspectPresentation(string path, OpenSettings settings)
+    private (object, List<ValidationIssue>) InspectPresentation(
+        string path,
+        OpenSettings settings,
+        SemanticBudget semanticBudget)
     {
         using var document = PresentationDocument.Open(path, false, settings);
         var presentationPart = document.PresentationPart
@@ -149,6 +167,37 @@ public sealed class OoxmlInspector(InspectionOptions options)
                 ?? throw InvalidStructure("presentation_slide_xml_missing", "A slide XML root is missing.");
             var shapeTree = slide.CommonSlideData?.ShapeTree;
             var shapeCount = shapeTree?.ChildElements.Count(IsPresentationShape) ?? 0;
+            var shapes = new List<PresentationShape>(shapeCount);
+            if (shapeTree is not null)
+            {
+                var shapeIndex = 0;
+                var assetHashes = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var shape in shapeTree.ChildElements.Where(IsPresentationShape))
+                {
+                    shapeIndex++;
+                    var properties = shape.Descendants<P.NonVisualDrawingProperties>().FirstOrDefault();
+                    var id = properties?.Id?.Value.ToString() ?? $"position-{shapeIndex}";
+                    var values = new[]
+                    {
+                        properties?.Name?.Value ?? string.Empty,
+                        shape.InnerText,
+                    };
+                    if (!semanticBudget.TryCapture(values, out var captured))
+                    {
+                        continue;
+                    }
+
+                    shapes.Add(new(
+                        id,
+                        shapeIndex,
+                        captured[0] ?? string.Empty,
+                        shape.LocalName,
+                        captured[1] ?? string.Empty,
+                        HashText(shape.OuterXml),
+                        PresentationAssetHash(slidePart, shape, assetHashes)));
+                }
+            }
+
             slides.Add(new(
                 index + 1,
                 relationshipId,
@@ -157,13 +206,17 @@ public sealed class OoxmlInspector(InspectionOptions options)
                 slidePart.SlideLayoutPart?.SlideMasterPart?.Uri.ToString(),
                 shapeCount,
                 slidePart.Parts.Count() + slidePart.ExternalRelationships.Count(),
-                slidePart.NotesSlidePart is not null));
+                slidePart.NotesSlidePart is not null,
+                shapes));
         }
 
         return (new PresentationInventory(slides), Validate(document));
     }
 
-    private (object, List<ValidationIssue>) InspectSpreadsheet(string path, OpenSettings settings)
+    private (object, List<ValidationIssue>) InspectSpreadsheet(
+        string path,
+        OpenSettings settings,
+        SemanticBudget semanticBudget)
     {
         using var document = SpreadsheetDocument.Open(path, false, settings);
         var workbookPart = document.WorkbookPart
@@ -172,6 +225,10 @@ public sealed class OoxmlInspector(InspectionOptions options)
             ?? throw InvalidStructure("workbook_xml_missing", "The workbook XML root is missing.");
         var sheetElements = workbook.Sheets?.Elements<S.Sheet>().ToArray() ?? [];
         var sheets = new List<SpreadsheetSheet>(sheetElements.Length);
+        var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable?
+            .Elements<S.SharedStringItem>()
+            .Select(item => item.InnerText)
+            .ToArray() ?? [];
         var tableCount = 0;
         var chartCount = 0;
         for (var index = 0; index < sheetElements.Length; index++)
@@ -190,26 +247,78 @@ public sealed class OoxmlInspector(InspectionOptions options)
             chartCount += sheetCharts;
             var worksheet = worksheetPart.Worksheet
                 ?? throw InvalidStructure("worksheet_xml_missing", "A worksheet XML root is missing.");
+            var cells = new List<SpreadsheetCell>();
+            foreach (var cell in worksheet.Descendants<S.Cell>())
+            {
+                var reference = cell.CellReference?.Value;
+                if (string.IsNullOrWhiteSpace(reference))
+                {
+                    continue;
+                }
+
+                var formula = cell.CellFormula?.Text;
+                var value = CellValue(cell, sharedStrings);
+                if (value.Length == 0 && string.IsNullOrEmpty(formula))
+                {
+                    continue;
+                }
+
+                if (!semanticBudget.TryCapture([value, formula], out var captured))
+                {
+                    continue;
+                }
+
+                cells.Add(new(
+                    reference,
+                    captured[0] ?? string.Empty,
+                    captured[1],
+                    cell.DataType?.Value.ToString().ToLowerInvariant() ?? "number",
+                    cell.StyleIndex?.Value));
+            }
+
             sheets.Add(new(
                 index + 1,
+                sheet.SheetId?.Value,
                 sheet.Name?.Value ?? string.Empty,
                 relationshipId,
                 sheet.State?.Value.ToString().ToLowerInvariant() ?? "visible",
                 worksheet.SheetDimension?.Reference?.Value,
                 sheetTables,
-                sheetCharts));
+                sheetCharts,
+                worksheetPart.DrawingsPart is not null,
+                cells));
         }
 
-        var names = workbook.DefinedNames?
-            .Elements<S.DefinedName>()
-            .Select(item => item.Name?.Value ?? string.Empty)
-            .Where(name => name.Length > 0)
-            .Order(StringComparer.Ordinal)
-            .ToArray() ?? [];
+        var names = new List<SpreadsheetDefinedName>();
+        foreach (var item in workbook.DefinedNames?.Elements<S.DefinedName>() ?? [])
+        {
+            var name = item.Name?.Value;
+            if (string.IsNullOrWhiteSpace(name)
+                || !semanticBudget.TryCapture([name, item.Text ?? string.Empty], out var captured))
+            {
+                continue;
+            }
+
+            names.Add(new(
+                captured[0]!,
+                captured[1] ?? string.Empty,
+                item.LocalSheetId?.Value));
+        }
+
+        names.Sort((left, right) =>
+        {
+            var byName = StringComparer.Ordinal.Compare(left.Name, right.Name);
+            return byName != 0
+                ? byName
+                : Nullable.Compare(left.LocalSheetId, right.LocalSheetId);
+        });
         return (new SpreadsheetInventory(sheets, names, tableCount, chartCount), Validate(document));
     }
 
-    private (object, List<ValidationIssue>) InspectWord(string path, OpenSettings settings)
+    private (object, List<ValidationIssue>) InspectWord(
+        string path,
+        OpenSettings settings,
+        SemanticBudget semanticBudget)
     {
         using var document = WordprocessingDocument.Open(path, false, settings);
         var mainPart = document.MainDocumentPart
@@ -224,6 +333,7 @@ public sealed class OoxmlInspector(InspectionOptions options)
                 ?.StartsWith("Heading", StringComparison.OrdinalIgnoreCase) == true);
         var trackedChanges = wordDocument.Descendants()
             .Count(element => element.LocalName is "ins" or "del" or "moveFrom" or "moveTo");
+        var blocks = WordBlocks(body, semanticBudget);
         var inventory = new WordInventory(
             body.Descendants<W.SectionProperties>().Count(),
             paragraphs.Length,
@@ -234,8 +344,166 @@ public sealed class OoxmlInspector(InspectionOptions options)
             mainPart.FootnotesPart?.Footnotes?.Elements<W.Footnote>().Count() ?? 0,
             mainPart.EndnotesPart?.Endnotes?.Elements<W.Endnote>().Count() ?? 0,
             mainPart.WordprocessingCommentsPart?.Comments?.Elements<W.Comment>().Count() ?? 0,
-            trackedChanges);
+            mainPart.ImageParts.Count(),
+            trackedChanges,
+            blocks);
         return (inventory, Validate(document));
+    }
+
+    private static string CellValue(S.Cell cell, IReadOnlyList<string> sharedStrings)
+    {
+        if (cell.DataType?.Value == S.CellValues.SharedString
+            && int.TryParse(cell.CellValue?.Text, out var index)
+            && index >= 0
+            && index < sharedStrings.Count)
+        {
+            return sharedStrings[index];
+        }
+
+        return cell.DataType?.Value == S.CellValues.InlineString
+            ? cell.InlineString?.InnerText ?? string.Empty
+            : cell.CellValue?.Text ?? string.Empty;
+    }
+
+    private static IReadOnlyList<WordBlock> WordBlocks(W.Body body, SemanticBudget semanticBudget)
+    {
+        var blocks = new List<WordBlock>();
+        foreach (var paragraph in body.Descendants<W.Paragraph>())
+        {
+            AddWordBlock(
+                blocks,
+                semanticBudget,
+                WordBlockPath(body, paragraph),
+                paragraph.Ancestors<W.TableCell>().Any() ? "table_cell" : "paragraph",
+                paragraph);
+        }
+
+        return blocks;
+    }
+
+    private static string WordBlockPath(W.Body body, W.Paragraph paragraph)
+    {
+        var segments = new Stack<string>();
+        OpenXmlElement current = paragraph;
+        while (!ReferenceEquals(current, body))
+        {
+            var parent = current.Parent
+                ?? throw InvalidStructure("word_block_path_invalid", "A Word body block has no parent.");
+            var position = 0;
+            foreach (var sibling in parent.ChildElements)
+            {
+                if (string.Equals(sibling.LocalName, current.LocalName, StringComparison.Ordinal))
+                {
+                    position++;
+                }
+
+                if (ReferenceEquals(sibling, current))
+                {
+                    break;
+                }
+            }
+
+            segments.Push($"{current.LocalName}/{position}");
+            current = parent;
+        }
+
+        return $"/body/{string.Join('/', segments)}";
+    }
+
+    private static void AddWordBlock(
+        ICollection<WordBlock> blocks,
+        SemanticBudget semanticBudget,
+        string path,
+        string kind,
+        W.Paragraph paragraph)
+    {
+        var style = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
+        if (!semanticBudget.TryCapture([paragraph.InnerText, style], out var captured))
+        {
+            return;
+        }
+
+        blocks.Add(new(
+            path,
+            kind,
+            captured[0] ?? string.Empty,
+            captured[1],
+            HashText(paragraph.OuterXml)));
+    }
+
+    private static string? PresentationAssetHash(
+        SlidePart slidePart,
+        OpenXmlElement shape,
+        IDictionary<string, string> cache)
+    {
+        var relationshipId = shape.Descendants<D.Blip>()
+            .Select(blip => blip.Embed?.Value)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        if (relationshipId is null)
+        {
+            return null;
+        }
+
+        if (cache.TryGetValue(relationshipId, out var cached))
+        {
+            return cached;
+        }
+
+        if (slidePart.GetPartById(relationshipId) is not OpenXmlPart assetPart)
+        {
+            return null;
+        }
+
+        using var stream = assetPart.GetStream(FileMode.Open, FileAccess.Read);
+        var hash = Convert.ToHexStringLower(SHA256.HashData(stream));
+        cache[relationshipId] = hash;
+        return hash;
+    }
+
+    private static string HashText(string value)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    private static void AddCoverageFeatures(PackageFacts facts, object payload)
+    {
+        if (payload is PresentationInventory presentation
+            && presentation.Slides.Any(slide => slide.HasNotes))
+        {
+            facts.UnsupportedFeatures.Add("presentation_notes_content");
+        }
+
+        if (payload is PresentationInventory presentationWithLinkedVisuals
+            && presentationWithLinkedVisuals.Slides
+                .SelectMany(slide => slide.Shapes)
+                .Any(shape => shape.Kind == "graphicFrame"))
+        {
+            facts.UnsupportedFeatures.Add("presentation_linked_visual_content");
+        }
+
+        if (payload is SpreadsheetInventory spreadsheet
+            && (spreadsheet.TableCount > 0
+                || spreadsheet.ChartCount > 0
+                || spreadsheet.Sheets.Any(sheet => sheet.HasDrawings)))
+        {
+            facts.UnsupportedFeatures.Add("spreadsheet_table_chart_content");
+        }
+
+        if (payload is WordInventory word)
+        {
+            if (word.HeaderCount > 0
+                || word.FooterCount > 0
+                || word.FootnoteCount > 0
+                || word.EndnoteCount > 0
+                || word.CommentCount > 0
+                || word.ImageCount > 0)
+            {
+                facts.UnsupportedFeatures.Add("word_auxiliary_story_content");
+            }
+
+            if (word.TrackedChangeCount > 0)
+            {
+                facts.UnsupportedFeatures.Add("word_tracked_change_semantics");
+            }
+        }
     }
 
     private List<ValidationIssue> Validate(OpenXmlPackage package)

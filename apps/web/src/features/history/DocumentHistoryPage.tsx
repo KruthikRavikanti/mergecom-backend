@@ -11,17 +11,19 @@ import {
   Clock3,
   Download,
   FileText,
+  GitCompareArrows,
   LoaderCircle,
   ShieldAlert,
   RotateCcw,
   Upload,
 } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
   type DocumentKind,
   type DocumentVersion,
+  useCreateComparisonMutation,
   useDocumentQuery,
   useDownloadVersionMutation,
   useProjectQuery,
@@ -94,6 +96,7 @@ type UploadStage =
 export function DocumentHistoryPage() {
   const { documentId = '', projectId = '' } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const organizationId = user?.activeOrganization?.id;
   const project = useProjectQuery(organizationId, projectId);
   const document = useDocumentQuery(organizationId, projectId, documentId);
@@ -101,12 +104,14 @@ export function DocumentHistoryPage() {
   const pushVersion = usePushVersionMutation(user!);
   const downloadVersion = useDownloadVersionMutation(user!);
   const restoreVersion = useRestoreVersionMutation(user!);
+  const createComparison = useCreateComparisonMutation(user!);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
   const [uploadPercent, setUploadPercent] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<DocumentVersion | null>(
     null,
   );
+  const [selectedVersionIds, setSelectedVersionIds] = useState<string[]>([]);
   const [toast, setToast] = useState<{
     kind: ToastKind;
     message: string;
@@ -224,6 +229,36 @@ export function DocumentHistoryPage() {
     }
   }
 
+  async function compareSelected() {
+    const selected = versions
+      .data!.items.filter((version) => selectedVersionIds.includes(version.id))
+      .sort((left, right) => left.displayNumber - right.displayNumber);
+    if (selected.length !== 2) return;
+    try {
+      const comparison = await createComparison.mutateAsync({
+        baseVersionId: selected[0]!.id,
+        documentId,
+        projectId,
+        targetVersionId: selected[1]!.id,
+      });
+      await navigate(
+        `/app/projects/${projectId}/documents/${documentId}/history/comparisons/${comparison.id}`,
+      );
+    } catch (error) {
+      report(error, 'Comparison could not be started.');
+    }
+  }
+
+  const selectedVersions = versions.data.items
+    .filter((version) => selectedVersionIds.includes(version.id))
+    .sort((left, right) => left.displayNumber - right.displayNumber);
+  const eligibleVersionCount = versions.data.items.filter(
+    (version) =>
+      version.processing.state === 'completed' &&
+      version.artifact.scanStatus === 'clean' &&
+      (version.status === 'ready' || version.status === 'conflicted'),
+  ).length;
+
   const busy = ['hashing', 'uploading', 'finalizing'].includes(uploadStage);
   const uploadCanBeCancelled = ['hashing', 'uploading'].includes(uploadStage);
   const stageLabel =
@@ -291,137 +326,206 @@ export function DocumentHistoryPage() {
         </span>
       </div>
 
+      {eligibleVersionCount >= 2 ? (
+        <div className="mt-4 flex flex-col gap-3 border-y border-slate-200 bg-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap gap-x-6 gap-y-1 text-sm">
+            <span className="font-semibold text-slate-700">
+              Base{' '}
+              <strong className="text-slate-950">
+                {selectedVersions[0]
+                  ? `Version ${selectedVersions[0].displayNumber}`
+                  : 'Not selected'}
+              </strong>
+            </span>
+            <span className="font-semibold text-slate-700">
+              Target{' '}
+              <strong className="text-slate-950">
+                {selectedVersions[1]
+                  ? `Version ${selectedVersions[1].displayNumber}`
+                  : 'Not selected'}
+              </strong>
+            </span>
+          </div>
+          <button
+            className="button-primary shrink-0"
+            disabled={
+              selectedVersions.length !== 2 || createComparison.isPending
+            }
+            type="button"
+            onClick={() => void compareSelected()}
+          >
+            {createComparison.isPending ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin"
+                size={17}
+              />
+            ) : (
+              <GitCompareArrows aria-hidden="true" size={17} />
+            )}
+            Compare versions
+          </button>
+        </div>
+      ) : null}
+
       {versions.data.items.length ? (
         <div className="mt-4 border border-slate-200 bg-white">
           {versions.data.items.map((version) => {
             const isHead = version.id === versions.data?.branch.headVersionId;
+            const comparisonEligible =
+              version.processing.state === 'completed' &&
+              version.artifact.scanStatus === 'clean' &&
+              (version.status === 'ready' || version.status === 'conflicted');
+            const comparisonSelected = selectedVersionIds.includes(version.id);
             return (
               <article
                 className="grid gap-4 border-b border-slate-200 p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
                 key={version.id}
               >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-bold text-slate-950">
-                      Version {version.displayNumber}
-                    </h3>
-                    {isHead ? (
-                      <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
-                        Latest
-                      </span>
-                    ) : null}
-                    <span
-                      className={`rounded border px-2 py-0.5 text-xs font-bold ${statusClasses[version.status]}`}
-                    >
-                      {statusLabels[version.status]}
-                    </span>
-                    {version.processing.state !== 'completed' ? (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-bold ${processingClasses[version.processing.state]}`}
-                      >
-                        {version.processing.state === 'running' ? (
-                          <LoaderCircle
-                            aria-hidden="true"
-                            className="animate-spin"
-                            size={13}
-                          />
-                        ) : null}
-                        {processingLabels[version.processing.state]}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-2 break-words text-sm font-medium text-slate-800">
-                    {version.note}
-                  </p>
-                  {version.status === 'conflicted' ? (
-                    <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-amber-800">
-                      <AlertTriangle aria-hidden="true" size={16} />
-                      Based on an older team version; the latest was not
-                      changed.
-                    </p>
+                <div className="flex min-w-0 items-start gap-3">
+                  {comparisonEligible ? (
+                    <input
+                      aria-label={`Select version ${version.displayNumber} for comparison`}
+                      checked={comparisonSelected}
+                      className="mt-1 size-4 shrink-0 accent-red-700"
+                      disabled={
+                        !comparisonSelected && selectedVersionIds.length >= 2
+                      }
+                      title="Select for comparison"
+                      type="checkbox"
+                      onChange={() =>
+                        setSelectedVersionIds((current) =>
+                          current.includes(version.id)
+                            ? current.filter((id) => id !== version.id)
+                            : [...current, version.id],
+                        )
+                      }
+                    />
                   ) : null}
-                  {version.processing.state === 'queued' ? (
-                    <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-sky-900">
-                      <Clock3 aria-hidden="true" size={16} />
-                      Waiting for secure inspection
-                    </p>
-                  ) : null}
-                  {version.processing.state === 'running' ? (
-                    <p className="mt-2 text-sm font-semibold text-sky-900">
-                      Secure inspection attempt {version.processing.attempts} of{' '}
-                      {version.processing.maxAttempts}
-                    </p>
-                  ) : null}
-                  {version.processing.state === 'retryable_failed' ? (
-                    <p className="mt-2 inline-flex flex-wrap items-center gap-2 text-sm font-semibold text-amber-900">
-                      <Clock3 aria-hidden="true" size={16} />
-                      Attempt {version.processing.attempts} failed. Automatic
-                      retry
-                      {version.processing.nextAttemptAt
-                        ? ` ${dateFormatter.format(new Date(version.processing.nextAttemptAt))}`
-                        : ' pending'}
-                      .
-                    </p>
-                  ) : null}
-                  {version.processing.state === 'permanently_failed' ||
-                  version.processing.state === 'quarantined' ? (
-                    <p className="mt-2 inline-flex flex-wrap items-center gap-2 text-sm font-semibold text-red-800">
-                      <ShieldAlert aria-hidden="true" size={16} />
-                      {version.processing.state === 'quarantined'
-                        ? 'This package was isolated and is unavailable for processing.'
-                        : 'Secure inspection could not complete after bounded retries.'}
-                      {version.processing.failureCode ? (
-                        <span className="font-mono text-xs">
-                          {version.processing.failureCode}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-bold text-slate-950">
+                        Version {version.displayNumber}
+                      </h3>
+                      {isHead ? (
+                        <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
+                          Latest
                         </span>
                       ) : null}
-                    </p>
-                  ) : null}
-                  {version.processing.snapshot?.warnings.length ? (
-                    <div className="mt-3 border-l-2 border-amber-400 pl-3">
-                      {version.processing.snapshot.warnings.map((warning) => (
-                        <p
-                          className="mt-1 text-sm text-amber-900 first:mt-0"
-                          key={`${warning.code}:${warning.part ?? ''}:${warning.message}`}
+                      <span
+                        className={`rounded border px-2 py-0.5 text-xs font-bold ${statusClasses[version.status]}`}
+                      >
+                        {statusLabels[version.status]}
+                      </span>
+                      {version.processing.state !== 'completed' ? (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-bold ${processingClasses[version.processing.state]}`}
                         >
-                          <span className="font-semibold">
-                            {warning.message}
-                          </span>
-                          {warning.part ? (
-                            <span className="ml-2 break-all font-mono text-xs text-amber-800">
-                              {warning.part}
-                            </span>
+                          {version.processing.state === 'running' ? (
+                            <LoaderCircle
+                              aria-hidden="true"
+                              className="animate-spin"
+                              size={13}
+                            />
                           ) : null}
-                        </p>
-                      ))}
+                          {processingLabels[version.processing.state]}
+                        </span>
+                      ) : null}
                     </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-                    <span>{version.author.name}</span>
-                    <span>
-                      {dateFormatter.format(new Date(version.createdAt))}
-                    </span>
-                    <span>
-                      {byteFormatter.format(version.artifact.byteSize)}
-                    </span>
-                    <span className="font-mono">
-                      SHA-256 {version.artifact.sha256.slice(0, 12)}...
-                    </span>
-                    {version.processing.snapshot ? (
+                    <p className="mt-2 break-words text-sm font-medium text-slate-800">
+                      {version.note}
+                    </p>
+                    {version.status === 'conflicted' ? (
+                      <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-amber-800">
+                        <AlertTriangle aria-hidden="true" size={16} />
+                        Based on an older team version; the latest was not
+                        changed.
+                      </p>
+                    ) : null}
+                    {version.processing.state === 'queued' ? (
+                      <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-sky-900">
+                        <Clock3 aria-hidden="true" size={16} />
+                        Waiting for secure inspection
+                      </p>
+                    ) : null}
+                    {version.processing.state === 'running' ? (
+                      <p className="mt-2 text-sm font-semibold text-sky-900">
+                        Secure inspection attempt {version.processing.attempts}{' '}
+                        of {version.processing.maxAttempts}
+                      </p>
+                    ) : null}
+                    {version.processing.state === 'retryable_failed' ? (
+                      <p className="mt-2 inline-flex flex-wrap items-center gap-2 text-sm font-semibold text-amber-900">
+                        <Clock3 aria-hidden="true" size={16} />
+                        Attempt {version.processing.attempts} failed. Automatic
+                        retry
+                        {version.processing.nextAttemptAt
+                          ? ` ${dateFormatter.format(new Date(version.processing.nextAttemptAt))}`
+                          : ' pending'}
+                        .
+                      </p>
+                    ) : null}
+                    {version.processing.state === 'permanently_failed' ||
+                    version.processing.state === 'quarantined' ? (
+                      <p className="mt-2 inline-flex flex-wrap items-center gap-2 text-sm font-semibold text-red-800">
+                        <ShieldAlert aria-hidden="true" size={16} />
+                        {version.processing.state === 'quarantined'
+                          ? 'This package was isolated and is unavailable for processing.'
+                          : 'Secure inspection could not complete after bounded retries.'}
+                        {version.processing.failureCode ? (
+                          <span className="font-mono text-xs">
+                            {version.processing.failureCode}
+                          </span>
+                        ) : null}
+                      </p>
+                    ) : null}
+                    {version.processing.snapshot?.warnings.length ? (
+                      <div className="mt-3 border-l-2 border-amber-400 pl-3">
+                        {version.processing.snapshot.warnings.map((warning) => (
+                          <p
+                            className="mt-1 text-sm text-amber-900 first:mt-0"
+                            key={`${warning.code}:${warning.part ?? ''}:${warning.message}`}
+                          >
+                            <span className="font-semibold">
+                              {warning.message}
+                            </span>
+                            {warning.part ? (
+                              <span className="ml-2 break-all font-mono text-xs text-amber-800">
+                                {warning.part}
+                              </span>
+                            ) : null}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+                      <span>{version.author.name}</span>
                       <span>
-                        Parser {version.processing.snapshot.parserVersion} /
-                        schema {version.processing.snapshot.schemaVersion}
+                        {dateFormatter.format(new Date(version.createdAt))}
                       </span>
-                    ) : null}
-                    {version.processing.snapshot ? (
+                      <span>
+                        {byteFormatter.format(version.artifact.byteSize)}
+                      </span>
                       <span className="font-mono">
-                        Snapshot{' '}
-                        {version.processing.snapshot.stableHash.slice(0, 12)}...
+                        SHA-256 {version.artifact.sha256.slice(0, 12)}...
                       </span>
-                    ) : null}
-                    <span className="font-mono">
-                      Support {version.processing.supportTraceId.slice(0, 12)}
-                    </span>
+                      {version.processing.snapshot ? (
+                        <span>
+                          Parser {version.processing.snapshot.parserVersion} /
+                          schema {version.processing.snapshot.schemaVersion}
+                        </span>
+                      ) : null}
+                      {version.processing.snapshot ? (
+                        <span className="font-mono">
+                          Snapshot{' '}
+                          {version.processing.snapshot.stableHash.slice(0, 12)}
+                          ...
+                        </span>
+                      ) : null}
+                      <span className="font-mono">
+                        Support {version.processing.supportTraceId.slice(0, 12)}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

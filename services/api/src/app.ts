@@ -114,7 +114,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'MergeCom API', version: '0.4.0' },
+      info: { title: 'MergeCom API', version: '0.6.0' },
       components: {
         securitySchemes: {
           sessionCookie: {

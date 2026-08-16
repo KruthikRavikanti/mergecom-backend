@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using D = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using W = DocumentFormat.OpenXml.Wordprocessing;
@@ -20,7 +21,7 @@ internal sealed class SyntheticOfficePackage : IDisposable
 
     public byte[] Bytes => File.ReadAllBytes(Path);
 
-    public static SyntheticOfficePackage Word()
+    public static SyntheticOfficePackage Word(string heading = "Synthetic heading")
     {
         var fixture = New(".docx");
         using var document = WordprocessingDocument.Create(fixture.Path, WordprocessingDocumentType.Document);
@@ -29,14 +30,41 @@ internal sealed class SyntheticOfficePackage : IDisposable
             new W.Body(
                 new W.Paragraph(
                     new W.ParagraphProperties(new W.ParagraphStyleId { Val = "Heading1" }),
-                    new W.Run(new W.Text("Synthetic heading"))),
-                new W.Table(new W.TableRow(new W.TableCell(new W.Paragraph(new W.Run(new W.Text("Cell")))))),
+                    new W.Run(new W.Text(heading))),
+                new W.Table(
+                    new W.TableProperties(),
+                    new W.TableGrid(new W.GridColumn()),
+                    new W.TableRow(new W.TableCell(new W.Paragraph(new W.Run(new W.Text("Cell")))))),
                 new W.SectionProperties()));
         main.Document.Save();
         return fixture;
     }
 
-    public static SyntheticOfficePackage Spreadsheet()
+    public static SyntheticOfficePackage WordWithNestedTable(string value)
+    {
+        var fixture = New(".docx");
+        using var document = WordprocessingDocument.Create(fixture.Path, WordprocessingDocumentType.Document);
+        var main = document.AddMainDocumentPart();
+        main.Document = new W.Document(
+            new W.Body(
+                new W.Table(
+                    new W.TableProperties(),
+                    new W.TableGrid(new W.GridColumn()),
+                    new W.TableRow(
+                        new W.TableCell(
+                            new W.Table(
+                                new W.TableProperties(),
+                                new W.TableGrid(new W.GridColumn()),
+                                new W.TableRow(
+                                    new W.TableCell(
+                                        new W.Paragraph(new W.Run(new W.Text(value)))))),
+                            new W.Paragraph()))),
+                new W.SectionProperties()));
+        main.Document.Save();
+        return fixture;
+    }
+
+    public static SyntheticOfficePackage Spreadsheet(string value = "7")
     {
         var fixture = New(".xlsx");
         using var document = SpreadsheetDocument.Create(fixture.Path, SpreadsheetDocumentType.Workbook);
@@ -45,7 +73,11 @@ internal sealed class SyntheticOfficePackage : IDisposable
         var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
         worksheetPart.Worksheet = new S.Worksheet(
             new S.SheetDimension { Reference = "A1:C3" },
-            new S.SheetData(new S.Row(new S.Cell { CellValue = new S.CellValue("7") })));
+            new S.SheetData(new S.Row(new S.Cell
+            {
+                CellReference = "A1",
+                CellValue = new S.CellValue(value),
+            })));
         var sheets = workbookPart.Workbook.AppendChild(new S.Sheets());
         sheets.Append(new S.Sheet
         {
@@ -57,7 +89,7 @@ internal sealed class SyntheticOfficePackage : IDisposable
         return fixture;
     }
 
-    public static SyntheticOfficePackage Presentation()
+    public static SyntheticOfficePackage Presentation(string text = "Synthetic slide")
     {
         var fixture = New(".pptx");
         using var document = PresentationDocument.Create(fixture.Path, PresentationDocumentType.Presentation);
@@ -72,7 +104,16 @@ internal sealed class SyntheticOfficePackage : IDisposable
                         new P.NonVisualGroupShapeDrawingProperties(),
                         new P.ApplicationNonVisualDrawingProperties()),
                     new P.GroupShapeProperties(),
-                    new P.Shape())));
+                    new P.Shape(
+                        new P.NonVisualShapeProperties(
+                            new P.NonVisualDrawingProperties { Id = 2, Name = "Title" },
+                            new P.NonVisualShapeDrawingProperties(),
+                            new P.ApplicationNonVisualDrawingProperties()),
+                        new P.ShapeProperties(),
+                        new P.TextBody(
+                            new D.BodyProperties(),
+                            new D.ListStyle(),
+                            new D.Paragraph(new D.Run(new D.Text(text))))))));
         var slideIds = presentationPart.Presentation.AppendChild(new P.SlideIdList());
         slideIds.Append(new P.SlideId
         {

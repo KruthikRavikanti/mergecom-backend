@@ -1,5 +1,7 @@
 import type {
-  ClaimedProcessingJob,
+  ClaimedComparisonJob,
+  ComparisonResult,
+  DocumentFileType,
   InspectionResult,
   InspectionWarning,
   SnapshotEnvelope,
@@ -24,7 +26,7 @@ export class DocumentEngineClient {
   }
 
   public async inspect(
-    job: ClaimedProcessingJob,
+    job: InspectionInput,
     artifact: Uint8Array,
   ): Promise<InspectionResult> {
     const requestBody = new Uint8Array(artifact.byteLength);
@@ -54,11 +56,78 @@ export class DocumentEngineClient {
     }
     return parseInspectionResult(await response.json(), job);
   }
+
+  public async compare(
+    job: ClaimedComparisonJob,
+    baseArtifact: Uint8Array,
+    targetArtifact: Uint8Array,
+  ): Promise<ComparisonResult> {
+    const [baseResult, targetResult] = await Promise.all([
+      this.inspect(
+        {
+          artifactSha256: job.baseArtifact.sha256,
+          extension: job.baseArtifact.extension,
+          fileType: job.fileType,
+          traceId: job.traceId,
+        },
+        baseArtifact,
+      ),
+      this.inspect(
+        {
+          artifactSha256: job.targetArtifact.sha256,
+          extension: job.targetArtifact.extension,
+          fileType: job.fileType,
+          traceId: job.traceId,
+        },
+        targetArtifact,
+      ),
+    ]);
+    for (const result of [baseResult, targetResult]) {
+      if (result.outcome !== 'completed') {
+        throw new PermanentProcessingError(
+          result.failure_code ?? 'comparison_source_rejected',
+          'A source artifact could not be normalized for comparison.',
+        );
+      }
+    }
+
+    const response = await fetch(
+      new URL('/internal/v1/comparisons', this.endpoint),
+      {
+        body: JSON.stringify({
+          base_snapshot: baseResult.snapshot,
+          target_snapshot: targetResult.snapshot,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MergeCom-Internal-Token': this.internalToken,
+          'X-MergeCom-Trace-Id': job.traceId,
+        },
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      },
+    );
+    if (!response.ok) {
+      const error = await readEngineError(response);
+      if (response.status >= 500) {
+        throw new Error(`Document engine unavailable: ${error.code}.`);
+      }
+      throw new PermanentProcessingError(error.code, error.message);
+    }
+    return parseComparisonResult(await response.json(), job);
+  }
+}
+
+interface InspectionInput {
+  artifactSha256: string;
+  extension: string;
+  fileType: DocumentFileType;
+  traceId: string;
 }
 
 function parseInspectionResult(
   value: unknown,
-  job: ClaimedProcessingJob,
+  job: InspectionInput,
 ): InspectionResult {
   if (!isObject(value)) return invalidContract();
   const outcome = value.outcome;
@@ -80,10 +149,7 @@ function parseInspectionResult(
   };
 }
 
-function parseSnapshot(
-  value: unknown,
-  job: ClaimedProcessingJob,
-): SnapshotEnvelope {
+function parseSnapshot(value: unknown, job: InspectionInput): SnapshotEnvelope {
   if (!isObject(value)) return invalidContract();
   if (
     value.file_type !== job.fileType ||
@@ -140,6 +206,108 @@ function parseSnapshot(
     validation_errors: validationErrors,
     warnings,
   };
+}
+
+function parseComparisonResult(
+  value: unknown,
+  job: ClaimedComparisonJob,
+): ComparisonResult {
+  if (
+    !isObject(value) ||
+    value.comparison_schema_version !== job.comparisonSchemaVersion ||
+    value.parser_version !== job.parserVersion ||
+    value.engine_version !== job.engineVersion ||
+    value.file_type !== job.fileType ||
+    value.base_source_sha256 !== job.baseArtifact.sha256 ||
+    value.target_source_sha256 !== job.targetArtifact.sha256 ||
+    typeof value.byte_equal !== 'boolean' ||
+    (value.semantic_equal !== null &&
+      typeof value.semantic_equal !== 'boolean') ||
+    (value.completeness !== 'complete' && value.completeness !== 'partial') ||
+    !isSha256(value.stable_hash) ||
+    !isObject(value.summary) ||
+    !Array.isArray(value.warnings) ||
+    !Array.isArray(value.changes)
+  ) {
+    return invalidContract();
+  }
+  const summary: Record<string, number> = {};
+  for (const [key, count] of Object.entries(value.summary)) {
+    if (!Number.isInteger(count) || (count as number) < 0) {
+      return invalidContract();
+    }
+    summary[key] = count as number;
+  }
+  const warnings = value.warnings.map((warning) => {
+    if (typeof warning !== 'string') return invalidContract();
+    return warning;
+  });
+  const changes = value.changes.map((change) => {
+    if (
+      !isObject(change) ||
+      !isSha256(change.id) ||
+      !isChangeType(change.change_type) ||
+      !isCategory(change.category) ||
+      !isImpact(change.impact) ||
+      typeof change.entity_type !== 'string' ||
+      typeof change.label !== 'string' ||
+      typeof change.path !== 'string' ||
+      !nullableString(change.before) ||
+      !nullableString(change.after)
+    ) {
+      return invalidContract();
+    }
+    return {
+      after: change.after,
+      before: change.before,
+      category: change.category,
+      change_type: change.change_type,
+      entity_type: change.entity_type,
+      id: change.id,
+      impact: change.impact,
+      label: change.label,
+      path: change.path,
+    };
+  });
+  return {
+    base_source_sha256: job.baseArtifact.sha256,
+    byte_equal: value.byte_equal,
+    changes,
+    comparison_schema_version: job.comparisonSchemaVersion,
+    completeness: value.completeness,
+    engine_version: job.engineVersion,
+    file_type: job.fileType,
+    parser_version: job.parserVersion,
+    semantic_equal: value.semantic_equal,
+    stable_hash: value.stable_hash,
+    summary,
+    target_source_sha256: job.targetArtifact.sha256,
+    warnings,
+  };
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
+}
+
+function isChangeType(
+  value: unknown,
+): value is ComparisonResult['changes'][number]['change_type'] {
+  return ['added', 'modified', 'moved', 'removed'].includes(String(value));
+}
+
+function isCategory(
+  value: unknown,
+): value is ComparisonResult['changes'][number]['category'] {
+  return ['content', 'feature', 'structure', 'validation'].includes(
+    String(value),
+  );
+}
+
+function isImpact(
+  value: unknown,
+): value is ComparisonResult['changes'][number]['impact'] {
+  return ['high', 'low', 'medium'].includes(String(value));
 }
 
 function parseWarning(value: unknown): InspectionWarning {

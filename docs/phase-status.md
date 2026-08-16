@@ -1,5 +1,22 @@
 # Phase status
 
+## Phase 6: deterministic semantic comparison
+
+Status: implementation complete on `phase-6/semantic-comparison`; pending owner review.
+
+- [x] Directional base-to-target comparisons are authorized, idempotent, and persisted with parser, snapshot schema, comparison schema, and engine versions.
+- [x] PostgreSQL remains authoritative for queue, retry, lease, failure, result, typed changes, and outbox state; BullMQ provides deterministic delivery.
+- [x] The worker re-verifies both immutable artifacts, regenerates same-parser snapshots, writes one collision-checked comparison object, and transactionally completes the comparison row.
+- [x] Parser/schema `1.1.0` captures bounded PowerPoint shape text, formatting markup, and embedded image hashes; Excel cell values, formulas, types, styles, and defined-name formulas; and Word body blocks and formatting markup.
+- [x] Unsupported notes, tables/charts, auxiliary Word stories, tracked-change semantics, macros, signatures, links, embedded objects, validation issues, and semantic truncation produce explicit partial coverage.
+- [x] The engine returns stable typed `added`, `modified`, `moved`, and `removed` changes across content, structure, feature, and validation categories.
+- [x] Byte equality is independent of semantic equality; partial comparisons never claim equality when no modeled difference is found.
+- [x] Web history supports selecting exactly two processed clean versions, while the result route polls durable state and filters persisted changes by category.
+
+The contract is documented in `docs/product/semantic-comparison.md`; operational
+recovery is in `docs/runbooks/document-processing.md`, and command evidence is in
+`docs/verification/phase-6-command-results.md`.
+
 ## Phase 5: secure OOXML ingestion and durable processing
 
 Status: implementation complete on `phase-5/ooxml-ingestion`; pending owner review.

@@ -2,9 +2,9 @@ import { Queue, Worker } from 'bullmq';
 
 export const DOCUMENT_QUEUE_NAME = 'document-processing';
 
-export interface DocumentQueueJob {
-  processingJobId: string;
-}
+export type DocumentQueueJob =
+  | { jobId: string; kind: 'comparison' | 'inspection' }
+  | { processingJobId: string };
 
 export function createDocumentQueue(redisUrl: string) {
   return new Queue<DocumentQueueJob>(DOCUMENT_QUEUE_NAME, {
@@ -15,11 +15,11 @@ export function createDocumentQueue(redisUrl: string) {
 export function createDocumentWorker(
   redisUrl: string,
   concurrency: number,
-  processor: (processingJobId: string) => Promise<void>,
+  processor: (job: DocumentQueueJob) => Promise<void>,
 ) {
   return new Worker<DocumentQueueJob>(
     DOCUMENT_QUEUE_NAME,
-    async (job) => processor(job.data.processingJobId),
+    async (job) => processor(job.data),
     {
       concurrency,
       connection: { url: redisUrl },

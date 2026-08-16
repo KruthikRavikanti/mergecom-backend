@@ -17,6 +17,7 @@ import {
 } from './store';
 import type {
   BranchSummary,
+  ComparisonChange,
   DocumentAccess,
   DocumentVersionSummary,
   ExpiredUpload,
@@ -24,6 +25,7 @@ import type {
   StagedUploadRecord,
   UploadMode,
   VersionActor,
+  VersionComparison,
   VersionPage,
   ProcessingJobStatus,
   ProcessingWarning,
@@ -102,6 +104,40 @@ interface VersionRow {
   snapshot_unsupported_features: string[] | null;
   snapshot_validation_error_count: number | null;
   snapshot_warnings: ProcessingWarning[] | null;
+}
+
+interface ComparisonRow {
+  attempts: number;
+  available_at: Date;
+  base_artifact_sha256: string;
+  base_author_name: string;
+  base_created_at: Date;
+  base_display_number: number;
+  base_note: string;
+  base_version_id: string;
+  byte_equal: boolean | null;
+  changes: ComparisonChange[];
+  comparison_schema_version: string;
+  completeness: 'complete' | 'partial' | null;
+  created_at: Date;
+  engine_version: string;
+  failure_code: string | null;
+  id: string;
+  max_attempts: number;
+  parser_version: string;
+  semantic_equal: boolean | null;
+  stable_hash: string | null;
+  status: ProcessingJobStatus;
+  summary: Record<string, number>;
+  target_artifact_sha256: string;
+  target_author_name: string;
+  target_created_at: Date;
+  target_display_number: number;
+  target_note: string;
+  target_version_id: string;
+  trace_id: string;
+  updated_at: Date;
+  warnings: string[];
 }
 
 function hash(value: string): string {
@@ -197,6 +233,49 @@ function mapVersion(row: VersionRow): DocumentVersionSummary {
   };
 }
 
+function mapComparison(row: ComparisonRow): VersionComparison {
+  return {
+    attempts: row.attempts,
+    baseVersion: {
+      artifactSha256: row.base_artifact_sha256,
+      authorName: row.base_author_name,
+      createdAt: row.base_created_at,
+      displayNumber: row.base_display_number,
+      id: row.base_version_id,
+      note: row.base_note,
+    },
+    byteEqual: row.byte_equal,
+    changes: row.changes,
+    comparisonSchemaVersion: row.comparison_schema_version,
+    completeness: row.completeness,
+    createdAt: row.created_at,
+    engineVersion: row.engine_version,
+    failureCode: row.failure_code,
+    id: row.id,
+    maxAttempts: row.max_attempts,
+    nextAttemptAt:
+      row.status === 'queued' || row.status === 'retryable_failed'
+        ? row.available_at
+        : null,
+    parserVersion: row.parser_version,
+    semanticEqual: row.semantic_equal,
+    stableHash: row.stable_hash,
+    state: row.status,
+    summary: row.summary,
+    supportTraceId: row.trace_id,
+    targetVersion: {
+      artifactSha256: row.target_artifact_sha256,
+      authorName: row.target_author_name,
+      createdAt: row.target_created_at,
+      displayNumber: row.target_display_number,
+      id: row.target_version_id,
+      note: row.target_note,
+    },
+    updatedAt: row.updated_at,
+    warnings: row.warnings,
+  };
+}
+
 function encodeVersionCursor(row: VersionRow): string {
   return Buffer.from(
     JSON.stringify({ id: row.id, sequence: row.sequence }),
@@ -271,6 +350,22 @@ const versionColumns = `
   s.unsupported_features as snapshot_unsupported_features,
   s.validation_error_count as snapshot_validation_error_count`;
 
+const comparisonColumns = `
+  c.id, c.base_version_id, c.target_version_id,
+  c.comparison_schema_version, c.parser_version, c.engine_version,
+  c.status, c.attempts, c.max_attempts, c.available_at,
+  c.failure_code, c.trace_id, c.result_sha256, c.stable_hash,
+  c.byte_equal, c.semantic_equal, c.completeness,
+  c.summary, c.warnings, c.changes, c.created_at, c.updated_at,
+  bv.display_number as base_display_number, bv.note as base_note,
+  bv.created_at as base_created_at,
+  ba.sha256 as base_artifact_sha256,
+  bu.display_name as base_author_name,
+  tv.display_number as target_display_number, tv.note as target_note,
+  tv.created_at as target_created_at,
+  ta.sha256 as target_artifact_sha256,
+  tu.display_name as target_author_name`;
+
 export class PostgresVersionStore implements VersionStore {
   public constructor(
     private readonly pool: Pool,
@@ -336,6 +431,27 @@ export class PostgresVersionStore implements VersionStore {
          left join normalized_snapshots s on s.version_id = v.id
         where v.organization_id = $1 and v.document_id = $2 and v.id = $3`,
       [organizationId, documentId, versionId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async comparisonRow(
+    client: PoolClient,
+    organizationId: string,
+    documentId: string,
+    comparisonId: string,
+  ): Promise<ComparisonRow | null> {
+    const result = await client.query<ComparisonRow>(
+      `select ${comparisonColumns}
+         from version_comparisons c
+         join document_versions bv on bv.id = c.base_version_id
+         join artifacts ba on ba.id = bv.artifact_id
+         join users bu on bu.id = bv.author_user_id
+         join document_versions tv on tv.id = c.target_version_id
+         join artifacts ta on ta.id = tv.artifact_id
+         join users tu on tu.id = tv.author_user_id
+        where c.organization_id = $1 and c.document_id = $2 and c.id = $3`,
+      [organizationId, documentId, comparisonId],
     );
     return result.rows[0] ?? null;
   }
@@ -477,6 +593,186 @@ export class PostgresVersionStore implements VersionStore {
         input.write,
       );
       return { branch: mapBranch(row), documentKind: row.document_kind };
+    } finally {
+      client.release();
+    }
+  }
+
+  public async createComparison(input: {
+    actor: VersionActor;
+    baseVersionId: string;
+    comparisonSchemaVersion: string;
+    documentId: string;
+    engineVersion: string;
+    idempotencyKey: string;
+    parserVersion: string;
+    projectId: string;
+    requestHash: string;
+    requestId: string;
+    targetVersionId: string;
+  }): Promise<{ comparison: VersionComparison; replayed: boolean }> {
+    return inTransaction(this.pool, async (client) => {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      if (input.baseVersionId === input.targetVersionId) {
+        throw new VersionOperationError('comparison_unavailable');
+      }
+
+      const operation = `comparison.create:${input.documentId}`;
+      const idempotency = await this.lockIdempotency(
+        client,
+        input.actor,
+        operation,
+        input.idempotencyKey,
+      );
+      if (idempotency.record) {
+        if (idempotency.record.request_hash !== input.requestHash) {
+          throw new VersionOperationError('idempotency_conflict');
+        }
+        const replay = await this.comparisonRow(
+          client,
+          input.actor.organizationId,
+          input.documentId,
+          idempotency.record.resource_id,
+        );
+        if (!replay) throw new VersionOperationError('not_found');
+        return { comparison: mapComparison(replay), replayed: true };
+      }
+
+      const versions = await client.query<{ id: string }>(
+        `select v.id
+           from document_versions v
+           join artifacts a on a.id = v.artifact_id
+           join version_processing_jobs j on j.version_id = v.id
+            and j.job_type = 'semantic_ingestion'
+          where v.organization_id = $1 and v.document_id = $2
+            and v.id in ($3, $4)
+            and v.status in ('ready', 'conflicted')
+            and a.scan_status = 'clean' and j.status = 'completed'`,
+        [
+          input.actor.organizationId,
+          input.documentId,
+          input.baseVersionId,
+          input.targetVersionId,
+        ],
+      );
+      if (new Set(versions.rows.map((row) => row.id)).size !== 2) {
+        throw new VersionOperationError('comparison_unavailable');
+      }
+
+      const inserted = await client.query<{ id: string }>(
+        `insert into version_comparisons
+          (organization_id, document_id, base_version_id, target_version_id,
+           requested_by_user_id, comparison_schema_version, parser_version,
+           engine_version)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict (base_version_id, target_version_id,
+                      comparison_schema_version, parser_version)
+         do nothing
+         returning id`,
+        [
+          input.actor.organizationId,
+          input.documentId,
+          input.baseVersionId,
+          input.targetVersionId,
+          input.actor.userId,
+          input.comparisonSchemaVersion,
+          input.parserVersion,
+          input.engineVersion,
+        ],
+      );
+      const comparisonId =
+        inserted.rows[0]?.id ??
+        (
+          await client.query<{ id: string }>(
+            `select id from version_comparisons
+              where base_version_id = $1 and target_version_id = $2
+                and comparison_schema_version = $3 and parser_version = $4`,
+            [
+              input.baseVersionId,
+              input.targetVersionId,
+              input.comparisonSchemaVersion,
+              input.parserVersion,
+            ],
+          )
+        ).rows[0]?.id;
+      if (!comparisonId) {
+        throw new Error('Comparison could not be created or loaded.');
+      }
+
+      if (inserted.rows[0]) {
+        await client.query(
+          `insert into outbox_events
+            (organization_id, aggregate_type, aggregate_id, event_type, payload)
+           values ($1, 'version_comparison', $2,
+                   'version.comparison_requested', $3)`,
+          [
+            input.actor.organizationId,
+            comparisonId,
+            JSON.stringify({ comparisonId }),
+          ],
+        );
+      }
+      await this.saveIdempotency(client, {
+        actor: input.actor,
+        keyHash: idempotency.keyHash,
+        operation,
+        requestHash: input.requestHash,
+        resourceId: comparisonId,
+        response: { comparisonId },
+        statusCode: inserted.rows[0] ? 201 : 200,
+      });
+      await this.insertAudit(client, {
+        action: 'comparison.requested',
+        actor: input.actor,
+        metadata: {
+          baseVersionId: input.baseVersionId,
+          replayed: !inserted.rows[0],
+          targetVersionId: input.targetVersionId,
+        },
+        requestId: input.requestId,
+        targetId: comparisonId,
+        targetType: 'version_comparison',
+      });
+      const row = await this.comparisonRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        comparisonId,
+      );
+      if (!row) throw new Error('Created comparison could not be loaded.');
+      return { comparison: mapComparison(row), replayed: !inserted.rows[0] };
+    });
+  }
+
+  public async getComparison(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<VersionComparison> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const row = await this.comparisonRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        input.comparisonId,
+      );
+      if (!row) throw new VersionOperationError('not_found');
+      return mapComparison(row);
     } finally {
       client.release();
     }
@@ -1206,7 +1502,12 @@ export class PostgresVersionStore implements VersionStore {
       `select object_key from artifacts
        union
        select staging_object_key as object_key from staged_uploads
-        where status = 'pending'`,
+        where status = 'pending'
+       union
+       select object_key from normalized_snapshots
+       union
+       select result_object_key as object_key from version_comparisons
+        where result_object_key is not null`,
     );
     return new Set(result.rows.map((row) => row.object_key));
   }

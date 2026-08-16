@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MergeCom API
-  version: 0.4.0
-  description: Identity, project, immutable artifact, and document version contracts.
+  version: 0.6.0
+  description: Identity, project, immutable artifact, version, and semantic comparison contracts.
 paths:
   /health/live:
     get:
@@ -950,6 +950,56 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/VersionPage' }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: createVersionComparison
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseVersionId, targetVersionId]
+              properties:
+                baseVersionId: { type: string, format: uuid }
+                targetVersionId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Existing directional comparison replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionComparison' }
+        '201':
+          description: Durable semantic comparison requested.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionComparison' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ComparisonId'
+    get:
+      operationId: getVersionComparison
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Persisted comparison state and typed semantic changes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionComparison' }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -1063,6 +1113,11 @@ components:
       schema: { type: string, format: uuid }
     VersionId:
       name: versionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ComparisonId:
+      name: comparisonId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1495,6 +1550,121 @@ components:
           items: { $ref: '#/components/schemas/DocumentVersion' }
         nextCursor:
           oneOf: [{ type: string }, { type: 'null' }]
+    ComparisonVersionReference:
+      type: object
+      additionalProperties: false
+      required: [id, displayNumber, note, authorName, artifactSha256, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        displayNumber: { type: integer, minimum: 1 }
+        note: { type: string }
+        authorName: { type: string }
+        artifactSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        createdAt: { type: string, format: date-time }
+    ComparisonChange:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          changeType,
+          category,
+          impact,
+          entityType,
+          label,
+          path,
+          before,
+          after,
+        ]
+      properties:
+        id: { type: string }
+        changeType: { type: string, enum: [added, modified, moved, removed] }
+        category:
+          { type: string, enum: [content, feature, structure, validation] }
+        impact: { type: string, enum: [high, medium, low] }
+        entityType: { type: string }
+        label: { type: string }
+        path: { type: string }
+        before:
+          oneOf: [{ type: string }, { type: 'null' }]
+        after:
+          oneOf: [{ type: string }, { type: 'null' }]
+    VersionComparison:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          baseVersion,
+          targetVersion,
+          comparisonSchemaVersion,
+          parserVersion,
+          engineVersion,
+          state,
+          attempts,
+          maxAttempts,
+          nextAttemptAt,
+          failureCode,
+          supportTraceId,
+          stableHash,
+          byteEqual,
+          semanticEqual,
+          completeness,
+          summary,
+          warnings,
+          changes,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        baseVersion: { $ref: '#/components/schemas/ComparisonVersionReference' }
+        targetVersion:
+          { $ref: '#/components/schemas/ComparisonVersionReference' }
+        comparisonSchemaVersion: { type: string }
+        parserVersion: { type: string }
+        engineVersion: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              queued,
+              running,
+              retryable_failed,
+              permanently_failed,
+              quarantined,
+              completed,
+            ]
+        attempts: { type: integer, minimum: 0 }
+        maxAttempts: { type: integer, minimum: 1 }
+        nextAttemptAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        failureCode:
+          oneOf: [{ type: string }, { type: 'null' }]
+        supportTraceId: { type: string, format: uuid }
+        stableHash:
+          oneOf:
+            - { type: string, pattern: '^[0-9a-f]{64}$' }
+            - { type: 'null' }
+        byteEqual:
+          oneOf: [{ type: boolean }, { type: 'null' }]
+        semanticEqual:
+          oneOf: [{ type: boolean }, { type: 'null' }]
+        completeness:
+          oneOf:
+            - { type: string, enum: [complete, partial] }
+            - { type: 'null' }
+        summary:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        warnings:
+          type: array
+          items: { type: string }
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/ComparisonChange' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     SignedBlobGrant:
       type: object
       additionalProperties: false

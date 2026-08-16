@@ -337,6 +337,28 @@ describe.runIf(runInfrastructureTests)(
       return { intent, response };
     }
 
+    async function markVersionsProcessed(versionIds: string[]) {
+      await database.pool.query(
+        `update version_processing_jobs
+            set status = 'completed', completed_at = now(), updated_at = now()
+          where version_id = any($1::uuid[])`,
+        [versionIds],
+      );
+      await database.pool.query(
+        `update document_versions set status = 'ready'
+          where id = any($1::uuid[])`,
+        [versionIds],
+      );
+      await database.pool.query(
+        `update artifacts set scan_status = 'clean'
+          where id in (
+            select artifact_id from document_versions
+             where id = any($1::uuid[])
+          )`,
+        [versionIds],
+      );
+    }
+
     it('round-trips exact bytes, preserves stale work, replays finalize, and restores by appending', async () => {
       const owner = await login('alpha-owner');
       const v1Bytes = officeBytes('version-one-exact');
@@ -477,6 +499,75 @@ describe.runIf(runInfrastructureTests)(
         `select 1 from audit_events where metadata::text like '%X-Amz-%'`,
       );
       expect(leakedGrant.rowCount).toBe(0);
+    });
+
+    it('creates one authorized directional comparison and replays it idempotently', async () => {
+      const owner = await login('alpha-owner');
+      const viewer = await login('alpha-viewer');
+      const first = await push(owner, officeBytes('compare-one'), null, 'Base');
+      const baseVersionId = first.response.json().version.id as string;
+      const second = await push(
+        owner,
+        officeBytes('compare-two'),
+        baseVersionId,
+        'Target',
+      );
+      const targetVersionId = second.response.json().version.id as string;
+      await markVersionsProcessed([baseVersionId, targetVersionId]);
+      const idempotencyKey = randomUUID();
+      const create = await app.inject({
+        body: { baseVersionId, targetVersionId },
+        headers: headers(owner, idempotencyKey),
+        method: 'POST',
+        url: `${base()}/comparisons`,
+      });
+      expect(create.statusCode, create.payload).toBe(201);
+      expect(create.json()).toMatchObject({
+        baseVersion: { id: baseVersionId },
+        changes: [],
+        comparisonSchemaVersion: '1.0.0',
+        parserVersion: '1.1.0',
+        state: 'queued',
+        targetVersion: { id: targetVersionId },
+      });
+
+      const replay = await app.inject({
+        body: { baseVersionId, targetVersionId },
+        headers: headers(owner, idempotencyKey),
+        method: 'POST',
+        url: `${base()}/comparisons`,
+      });
+      expect(replay.statusCode, replay.payload).toBe(200);
+      expect(replay.json().id).toBe(create.json().id);
+
+      const read = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: `${base()}/comparisons/${create.json().id as string}`,
+      });
+      expect(read.statusCode, read.payload).toBe(200);
+      const denied = await app.inject({
+        headers: { cookie: viewer.cookie },
+        method: 'GET',
+        url: `${base()}/comparisons/${create.json().id as string}`,
+      });
+      expect(denied.statusCode).toBe(404);
+
+      const unavailable = await app.inject({
+        body: {
+          baseVersionId,
+          targetVersionId: baseVersionId,
+        },
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/comparisons`,
+      });
+      expect(unavailable.statusCode).toBe(409);
+      expect(unavailable.json().code).toBe('comparison_unavailable');
+      const rows = await database.pool.query<{ comparisons: number }>(
+        `select count(*)::int as comparisons from version_comparisons`,
+      );
+      expect(rows.rows[0]?.comparisons).toBe(1);
     });
 
     it('uses branch locking so only one simultaneous push advances the head', async () => {

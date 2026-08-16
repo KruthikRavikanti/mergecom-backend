@@ -33,22 +33,47 @@ public sealed record PresentationSlide(
     string? MasterPart,
     int ShapeCount,
     int RelationshipCount,
-    bool HasNotes);
+    bool HasNotes,
+    IReadOnlyList<PresentationShape> Shapes);
+
+public sealed record PresentationShape(
+    string Id,
+    int Position,
+    string Name,
+    string Kind,
+    string Text,
+    string MarkupHash,
+    string? AssetHash);
 
 public sealed record PresentationInventory(IReadOnlyList<PresentationSlide> Slides);
 
 public sealed record SpreadsheetSheet(
     int Position,
+    uint? SheetId,
     string Name,
     string RelationshipId,
     string Visibility,
     string? Dimension,
     int TableCount,
-    int ChartCount);
+    int ChartCount,
+    bool HasDrawings,
+    IReadOnlyList<SpreadsheetCell> Cells);
+
+public sealed record SpreadsheetCell(
+    string Reference,
+    string Value,
+    string? Formula,
+    string DataType,
+    uint? StyleIndex);
+
+public sealed record SpreadsheetDefinedName(
+    string Name,
+    string Formula,
+    uint? LocalSheetId);
 
 public sealed record SpreadsheetInventory(
     IReadOnlyList<SpreadsheetSheet> Sheets,
-    IReadOnlyList<string> DefinedNames,
+    IReadOnlyList<SpreadsheetDefinedName> DefinedNames,
     int TableCount,
     int ChartCount);
 
@@ -62,7 +87,16 @@ public sealed record WordInventory(
     int FootnoteCount,
     int EndnoteCount,
     int CommentCount,
-    int TrackedChangeCount);
+    int ImageCount,
+    int TrackedChangeCount,
+    IReadOnlyList<WordBlock> Blocks);
+
+public sealed record WordBlock(
+    string Path,
+    string Kind,
+    string Text,
+    string? Style,
+    string MarkupHash);
 
 public sealed record SnapshotEnvelope(
     string SchemaVersion,
@@ -129,4 +163,53 @@ internal sealed class InspectionRejectedException(
     public string Outcome { get; } = outcome;
 
     public string? Part { get; } = part;
+}
+
+internal sealed class SemanticBudget(int maxItems, int maxTextCharacters)
+{
+    private int items;
+    private int textCharacters;
+
+    public bool Truncated { get; private set; }
+
+    public bool TryCapture(string?[] values, out string?[] captured)
+    {
+        captured = new string?[values.Length];
+        if (items >= maxItems)
+        {
+            Truncated = true;
+            return false;
+        }
+
+        items++;
+        for (var index = 0; index < values.Length; index++)
+        {
+            var value = values[index];
+            if (value is null)
+            {
+                continue;
+            }
+
+            var remaining = maxTextCharacters - textCharacters;
+            if (remaining <= 0)
+            {
+                Truncated = true;
+                captured[index] = string.Empty;
+                continue;
+            }
+
+            if (value.Length > remaining)
+            {
+                Truncated = true;
+                captured[index] = value[..remaining];
+                textCharacters = maxTextCharacters;
+                continue;
+            }
+
+            captured[index] = value;
+            textCharacters += value.Length;
+        }
+
+        return true;
+    }
 }

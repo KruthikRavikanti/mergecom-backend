@@ -72,6 +72,50 @@ export class ArtifactStorage {
     snapshotSha256: string;
     stableHash: string;
   }): Promise<void> {
+    return this.putImmutableJson({
+      body: input.body,
+      conflictCode: 'snapshot_object_conflict',
+      conflictMessage:
+        'The immutable snapshot key already contains different bytes.',
+      key: input.key,
+      metadata: {
+        'schema-kind': 'normalized-ooxml-snapshot',
+        'snapshot-sha256': input.snapshotSha256,
+        'stable-hash': input.stableHash,
+      },
+      sha256: input.snapshotSha256,
+    });
+  }
+
+  public async putComparison(input: {
+    body: Uint8Array;
+    key: string;
+    resultSha256: string;
+    stableHash: string;
+  }): Promise<void> {
+    return this.putImmutableJson({
+      body: input.body,
+      conflictCode: 'comparison_object_conflict',
+      conflictMessage:
+        'The immutable comparison key already contains different bytes.',
+      key: input.key,
+      metadata: {
+        'result-sha256': input.resultSha256,
+        'schema-kind': 'ooxml-semantic-comparison',
+        'stable-hash': input.stableHash,
+      },
+      sha256: input.resultSha256,
+    });
+  }
+
+  private async putImmutableJson(input: {
+    body: Uint8Array;
+    conflictCode: string;
+    conflictMessage: string;
+    key: string;
+    metadata: Record<string, string>;
+    sha256: string;
+  }): Promise<void> {
     try {
       await this.client.send(
         new PutObjectCommand({
@@ -80,11 +124,7 @@ export class ArtifactStorage {
           ContentType: 'application/json',
           IfNoneMatch: '*',
           Key: input.key,
-          Metadata: {
-            'schema-kind': 'normalized-ooxml-snapshot',
-            'snapshot-sha256': input.snapshotSha256,
-            'stable-hash': input.stableHash,
-          },
+          Metadata: input.metadata,
         }),
       );
     } catch (error) {
@@ -93,10 +133,10 @@ export class ArtifactStorage {
       if (status !== 412) throw error;
       const existing = await this.readObject(input.key, 20 * 1024 * 1024);
       const existingHash = createHash('sha256').update(existing).digest('hex');
-      if (existingHash !== input.snapshotSha256) {
+      if (existingHash !== input.sha256) {
         throw new PermanentProcessingError(
-          'snapshot_object_conflict',
-          'The immutable snapshot key already contains different bytes.',
+          input.conflictCode,
+          input.conflictMessage,
         );
       }
     }
