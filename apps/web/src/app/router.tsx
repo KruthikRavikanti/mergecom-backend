@@ -40,6 +40,10 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
           { element: <DashboardPage />, index: true },
           { element: <ProjectPage />, path: 'projects/:projectId' },
           {
+            element: <ProjectPage />,
+            path: 'projects/:projectId/folders/:folderId',
+          },
+          {
             element: <DocumentHistoryPage />,
             path: 'projects/:projectId/documents/:documentId/history',
           },

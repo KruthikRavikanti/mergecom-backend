@@ -11,8 +11,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command:
-      'VITE_ENABLE_DEMO_DATA=true pnpm --filter @mergecom/web dev --host 127.0.0.1',
+    command: 'pnpm --filter @mergecom/web dev --host 127.0.0.1',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     url: 'http://127.0.0.1:5173',

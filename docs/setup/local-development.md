@@ -24,7 +24,7 @@ export AUTH_MODE=development
 export SMTP_URL=smtp://localhost:1025
 pnpm --filter @mergecom/api db:migrate
 pnpm --filter @mergecom/api db:seed
-VITE_ENABLE_DEMO_DATA=true pnpm dev
+pnpm dev
 ```
 
 Readiness endpoints are dependency-aware:
@@ -42,10 +42,13 @@ port `8025`.
 The development login control exchanges one of the identities created by `db:seed`
 for a database-backed API session. It does not use local storage, accept a role from
 the browser, or create an organization. The seed command refuses production and
-creates two organizations with every organization role.
+creates two organizations with every organization role, four projects, nested
+folders, document records, and all four project roles. Running it again is
+idempotent.
 
-`VITE_ENABLE_DEMO_DATA=true` enables only the deferred project/version fixtures. It
-does not affect identity, memberships, invitations, tenant checks, or RBAC.
+Projects, project teams, folders, and document records always come from the API.
+There is no browser fixture flag. Document records intentionally have no fabricated
+versions; file upload and immutable version history begin in Phase 4.
 
 Mailpit receives local invitation messages through `SMTP_URL`. Non-production can
 also return the one-time acceptance URL to an authorized owner/admin when

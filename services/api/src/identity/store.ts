@@ -6,6 +6,7 @@ import type {
   SessionContext,
   VerifiedIdentity,
 } from './types';
+import type { ProjectRole } from '../projects/types';
 
 export interface SessionMaterial {
   absoluteExpiresAt: Date;
@@ -34,6 +35,8 @@ export interface InvitationRecord {
   email: string;
   expiresAt: Date;
   id: string;
+  projectId: string | null;
+  projectRole: ProjectRole | null;
   role: OrganizationRole;
 }
 
@@ -78,6 +81,8 @@ export interface IdentityStore {
     email: string;
     expiresAt: Date;
     organizationId: string;
+    projectId?: string | null | undefined;
+    projectRole?: ProjectRole | null | undefined;
     requestId: string;
     role: OrganizationRole;
     tokenHash: string;

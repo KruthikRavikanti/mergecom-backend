@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MergeCom API
-  version: 0.2.0
-  description: Identity, organization, invitation, and membership contracts for Phase 2.
+  version: 0.3.0
+  description: Identity, organization, RBAC, project, folder, and document metadata contracts.
 paths:
   /health/live:
     get:
@@ -195,6 +195,8 @@ paths:
                 email: { type: string, format: email, maxLength: 320 }
                 role: { $ref: '#/components/schemas/OrganizationRole' }
                 expiresInDays: { type: integer, minimum: 1, maximum: 14 }
+                projectId: { type: string, format: uuid }
+                projectRole: { $ref: '#/components/schemas/ProjectRole' }
       responses:
         '201':
           description: Invitation created and delivered.
@@ -303,6 +305,478 @@ paths:
         '403': { $ref: '#/components/responses/ApiError' }
         '404': { $ref: '#/components/responses/ApiError' }
         '409': { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: listProjects
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: archived
+          in: query
+          schema: { type: boolean, default: false }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Accessible projects in stable updated order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+    post:
+      operationId: createProject
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 160 }
+                clientName:
+                  oneOf: [{ type: string, maxLength: 160 }, { type: 'null' }]
+      responses:
+        '201':
+          description: Project created or idempotently replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: getProject
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Project details visible to the actor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/ApiError' }
+    patch:
+      operationId: updateProject
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedUpdatedAt]
+              properties:
+                expectedUpdatedAt: { type: string, format: date-time }
+                name: { type: string, minLength: 1, maxLength: 160 }
+                clientName:
+                  oneOf: [{ type: string, maxLength: 160 }, { type: 'null' }]
+      responses:
+        '200':
+          description: Project updated from the expected base state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/ApiError' }
+    delete:
+      operationId: deleteProject
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: expectedUpdatedAt
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '204': { description: Project soft-deleted. }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      operationId: archiveProject
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        $ref: '#/components/requestBodies/ExpectedUpdate'
+      responses:
+        '200':
+          description: Project archived.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      operationId: restoreProject
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        $ref: '#/components/requestBodies/ExpectedUpdate'
+      responses:
+        '200':
+          description: Project restored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/folders:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listFolders
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: parentFolderId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Child folders in stable configured order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FolderPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+    post:
+      operationId: createFolder
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 160 }
+                parentFolderId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+      responses:
+        '201':
+          description: Folder created or idempotently replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Folder' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/folders/{folderId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/FolderId'
+    patch:
+      operationId: updateFolder
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedUpdatedAt]
+              properties:
+                expectedUpdatedAt: { type: string, format: date-time }
+                name: { type: string, minLength: 1, maxLength: 160 }
+                parentFolderId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+                sortOrder: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Folder renamed, moved, or reordered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Folder' }
+        default: { $ref: '#/components/responses/ApiError' }
+    delete:
+      operationId: deleteFolder
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: expectedUpdatedAt
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '204': { description: Empty folder soft-deleted. }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/folders/{folderId}/path:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/FolderId'
+    get:
+      operationId: getFolderPath
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Root-to-folder breadcrumb path.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/FolderPathItem' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listDocuments
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: folderId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: archived
+          in: query
+          schema: { type: boolean, default: false }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Documents in stable configured order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+    post:
+      operationId: createDocument
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, kind]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 255 }
+                kind: { $ref: '#/components/schemas/DocumentKind' }
+                folderId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+      responses:
+        '201':
+          description: Document record created or idempotently replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: getDocument
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Document metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        default: { $ref: '#/components/responses/ApiError' }
+    patch:
+      operationId: updateDocument
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedUpdatedAt]
+              properties:
+                expectedUpdatedAt: { type: string, format: date-time }
+                name: { type: string, minLength: 1, maxLength: 255 }
+                folderId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+                sortOrder: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Document renamed, moved, or reordered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        default: { $ref: '#/components/responses/ApiError' }
+    delete:
+      operationId: deleteDocument
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: expectedUpdatedAt
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '204': { description: Document soft-deleted. }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: archiveDocument
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        $ref: '#/components/requestBodies/ExpectedUpdate'
+      responses:
+        '200':
+          description: Document archived.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: restoreDocument
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        $ref: '#/components/requestBodies/ExpectedUpdate'
+      responses:
+        '200':
+          description: Document restored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/team:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listProjectMembers
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Active project team in stable name order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectTeamPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+    post:
+      operationId: addProjectMember
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [organizationMembershipId, role]
+              properties:
+                organizationMembershipId: { type: string, format: uuid }
+                role: { $ref: '#/components/schemas/ProjectRole' }
+      responses:
+        '201':
+          description: Existing organization member added to the project.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectTeamMember' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/team/{projectMembershipId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/ProjectMembershipId'
+    patch:
+      operationId: changeProjectMemberRole
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/ProjectRole' }
+      responses:
+        '200':
+          description: Project role changed within the organization-role cap.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectTeamMember' }
+        default: { $ref: '#/components/responses/ApiError' }
+    delete:
+      operationId: removeProjectMember
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204': { description: Project membership removed. }
+        default: { $ref: '#/components/responses/ApiError' }
 components:
   securitySchemes:
     sessionCookie:
@@ -325,6 +799,42 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    FolderId:
+      name: folderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProjectMembershipId:
+      name: projectMembershipId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+  requestBodies:
+    ExpectedUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expectedUpdatedAt]
+            properties:
+              expectedUpdatedAt: { type: string, format: date-time }
   responses:
     ApiError:
       description: Request rejected.
@@ -354,6 +864,12 @@ components:
     MembershipStatus:
       type: string
       enum: [active, suspended]
+    ProjectRole:
+      type: string
+      enum: [project_lead, contributor, reviewer, viewer]
+    DocumentKind:
+      type: string
+      enum: [presentation, spreadsheet, word_document]
     Organization:
       type: object
       additionalProperties: false
@@ -419,6 +935,134 @@ components:
         role: { $ref: '#/components/schemas/OrganizationRole' }
         expiresAt: { type: string, format: date-time }
         acceptanceUrl: { type: string, format: uri }
+        projectId: { type: string, format: uuid }
+        projectRole: { $ref: '#/components/schemas/ProjectRole' }
+    Project:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          name,
+          clientName,
+          accessRole,
+          archivedAt,
+          createdBy,
+          createdAt,
+          updatedAt,
+          folderCount,
+          documentCount,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        clientName:
+          oneOf: [{ type: string }, { type: 'null' }]
+        accessRole: { $ref: '#/components/schemas/ProjectRole' }
+        archivedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        folderCount: { type: integer }
+        documentCount: { type: integer }
+    ProjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Project' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
+    Folder:
+      type: object
+      additionalProperties: false
+      required: [id, name, parentFolderId, sortOrder, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        parentFolderId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        sortOrder: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    FolderPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Folder' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
+    FolderPathItem:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    Document:
+      type: object
+      additionalProperties: false
+      required:
+        [id, name, kind, folderId, sortOrder, archivedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/DocumentKind' }
+        folderId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        sortOrder: { type: integer }
+        archivedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DocumentPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Document' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
+    ProjectTeamMember:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organizationMembershipId,
+          userId,
+          name,
+          email,
+          organizationRole,
+          role,
+          addedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        organizationMembershipId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        organizationRole: { $ref: '#/components/schemas/OrganizationRole' }
+        role: { $ref: '#/components/schemas/ProjectRole' }
+        addedAt: { type: string, format: date-time }
+    ProjectTeamPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectTeamMember' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
     Liveness:
       type: object
       additionalProperties: false

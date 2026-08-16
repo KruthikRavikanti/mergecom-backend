@@ -13,6 +13,9 @@ import { registerIdentityRoutes } from './identity/identity-routes';
 import { OidcClient } from './identity/oidc';
 import { PostgresIdentityStore } from './identity/postgres-store';
 import type { IdentityStore } from './identity/store';
+import { PostgresProjectStore } from './projects/postgres-store';
+import { registerProjectRoutes } from './projects/routes';
+import type { ProjectStore } from './projects/store';
 import { createPostgresReadinessProbe, type ReadinessProbe } from './readiness';
 
 const DependencyState = Type.Union([
@@ -34,6 +37,7 @@ interface CreateAppOptions {
   databaseUrl?: string | undefined;
   identityStore?: IdentityStore;
   logger?: boolean;
+  projectStore?: ProjectStore;
   readinessProbe?: ReadinessProbe;
 }
 
@@ -45,7 +49,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   const readinessProbe =
     options.readinessProbe ?? createPostgresReadinessProbe(options.databaseUrl);
   const database =
-    !options.identityStore && options.databaseUrl
+    (!options.identityStore || !options.projectStore) && options.databaseUrl
       ? createDatabase(options.databaseUrl)
       : null;
   const identityStore =
@@ -53,6 +57,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     (database
       ? new PostgresIdentityStore(database.pool, config.sessionIdleMilliseconds)
       : null);
+  const projectStore =
+    options.projectStore ??
+    (database ? new PostgresProjectStore(database.pool) : null);
 
   app.addHook('onClose', async () => {
     await readinessProbe.close?.();
@@ -68,7 +75,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'MergeCom API', version: '0.2.0' },
+      info: { title: 'MergeCom API', version: '0.3.0' },
       components: {
         securitySchemes: {
           sessionCookie: {
@@ -114,6 +121,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     };
     registerAuthRoutes(app, runtime);
     registerIdentityRoutes(app, runtime);
+    if (projectStore) {
+      registerProjectRoutes(app, { ...runtime, projectStore });
+    }
   }
 
   return app;

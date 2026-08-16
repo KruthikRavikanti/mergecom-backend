@@ -83,9 +83,30 @@ There is no endpoint that accepts an organization name or owner role from a new 
 | Viewer | yes | yes | no | no | no |
 | External reviewer | yes | no | no | no | no |
 
-Phase 3 adds project-resource permissions beneath this organization policy. UI
-visibility is convenience only; all permissions above are enforced by API middleware
-and transactional membership checks.
+## Project authorization
+
+Project roles are subordinate to active organization membership. A project role can
+reduce access but cannot exceed the organization role's cap.
+
+| Organization role | Allowed project roles | Automatic access |
+| --- | --- | --- |
+| Owner | Project lead, contributor, reviewer, viewer | Project lead on every project |
+| Admin | Project lead, contributor, reviewer, viewer | Project lead on every project |
+| Project lead | Project lead, contributor, reviewer, viewer | None; explicit membership except on projects they create |
+| Contributor | Contributor, reviewer, viewer | None |
+| Reviewer | Reviewer, viewer | None |
+| Viewer | Viewer | None |
+| External reviewer | Reviewer, viewer | None; always explicitly scoped |
+
+Project leads manage project metadata and team assignments. Project leads and
+contributors create, rename, move, archive, restore, and delete folders or document
+records. Reviewers and viewers have read-only access. Owners and admins may create a
+project-scoped external invitation; acceptance creates both the organization
+membership and the capped project membership in one transaction.
+
+UI visibility is convenience only. Organization and project permissions are
+rechecked by API middleware and transactional mutations. Cross-tenant project paths
+use the same not-found response as unknown resources.
 
 ## Session and abuse controls
 
@@ -106,6 +127,7 @@ and transactional membership checks.
 
 Audit records contain actor, organization, action, target identifier/type, result,
 request ID, timestamp, and low-risk policy metadata. They do not contain tokens,
-document contents, or invitation email bodies. Events cover organization creation,
-login/logout/failure, invitation creation/acceptance/delivery failure, role changes,
-suspension/reactivation/removal, permission denial, and cross-tenant denial.
+  document contents, or invitation email bodies. Events cover organization creation,
+  login/logout/failure, invitation creation/acceptance/delivery failure, role changes,
+  suspension/reactivation/removal, project/folder/document mutations, project-team
+  changes, permission denial, and cross-tenant denial.

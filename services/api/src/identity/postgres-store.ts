@@ -1,5 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 
+import { projectRoleAllowed } from '../projects/authorization';
+import type { ProjectRole } from '../projects/types';
 import { canInviteAs, canManageMembership } from './authorization';
 import {
   IdentityOperationError,
@@ -483,6 +485,8 @@ export class PostgresIdentityStore implements IdentityStore {
     email: string;
     expiresAt: Date;
     organizationId: string;
+    projectId?: string | null | undefined;
+    projectRole?: ProjectRole | null | undefined;
     requestId: string;
     role: OrganizationRole;
     tokenHash: string;
@@ -490,7 +494,25 @@ export class PostgresIdentityStore implements IdentityStore {
     if (!canInviteAs(input.actorRole, input.role)) {
       throw new IdentityOperationError('denied');
     }
+    if (Boolean(input.projectId) !== Boolean(input.projectRole)) {
+      throw new IdentityOperationError('conflict');
+    }
+    if (
+      input.projectRole &&
+      !projectRoleAllowed(input.role, input.projectRole)
+    ) {
+      throw new IdentityOperationError('denied');
+    }
     return inTransaction(this.pool, async (client) => {
+      if (input.projectId) {
+        const project = await client.query(
+          `select 1 from projects
+            where organization_id = $1 and id = $2
+              and archived_at is null and deleted_at is null`,
+          [input.organizationId, input.projectId],
+        );
+        if (!project.rowCount) throw new IdentityOperationError('not_found');
+      }
       const existing = await client.query(
         `select 1
            from invitations i
@@ -509,16 +531,21 @@ export class PostgresIdentityStore implements IdentityStore {
         email: string;
         expires_at: Date;
         id: string;
+        project_id: string | null;
+        project_role: ProjectRole | null;
         role: OrganizationRole;
       }>(
         `insert into invitations
-          (organization_id, email, role, token_hash, invited_by_user_id, expires_at)
-         values ($1, $2, $3, $4, $5, $6)
-         returning id, email, role, expires_at`,
+          (organization_id, email, role, project_id, project_role, token_hash,
+           invited_by_user_id, expires_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         returning id, email, role, project_id, project_role, expires_at`,
         [
           input.organizationId,
           input.email,
           input.role,
+          input.projectId ?? null,
+          input.projectRole ?? null,
           input.tokenHash,
           input.actorUserId,
           input.expiresAt,
@@ -540,6 +567,8 @@ export class PostgresIdentityStore implements IdentityStore {
         email: invitation.email,
         expiresAt: invitation.expires_at,
         id: invitation.id,
+        projectId: invitation.project_id,
+        projectRole: invitation.project_role,
         role: invitation.role,
       };
     });
@@ -565,9 +594,12 @@ export class PostgresIdentityStore implements IdentityStore {
         id: string;
         invited_by_user_id: string;
         organization_id: string;
+        project_id: string | null;
+        project_role: ProjectRole | null;
         role: OrganizationRole;
       }>(
-        `select id, organization_id, email, role, invited_by_user_id
+        `select id, organization_id, email, role, project_id, project_role,
+                invited_by_user_id
            from invitations
           where token_hash = $1 and accepted_at is null and revoked_at is null
             and expires_at > $2
@@ -596,7 +628,32 @@ export class PostgresIdentityStore implements IdentityStore {
           invite.invited_by_user_id,
         ],
       );
-      if (!membership.rows[0]) throw new IdentityOperationError('conflict');
+      const membershipId = membership.rows[0]?.id;
+      if (!membershipId) throw new IdentityOperationError('conflict');
+      if (invite.project_id && invite.project_role) {
+        const project = await client.query(
+          `select 1 from projects
+            where organization_id = $1 and id = $2
+              and archived_at is null and deleted_at is null`,
+          [invite.organization_id, invite.project_id],
+        );
+        if (!project.rowCount) {
+          throw new IdentityOperationError('invalid_invitation');
+        }
+        await client.query(
+          `insert into project_memberships
+            (organization_id, project_id, organization_membership_id, role,
+             added_by_user_id)
+           values ($1, $2, $3, $4, $5)`,
+          [
+            invite.organization_id,
+            invite.project_id,
+            membershipId,
+            invite.project_role,
+            invite.invited_by_user_id,
+          ],
+        );
+      }
       await client.query(
         `update invitations
             set accepted_at = $2, accepted_by_user_id = $3, updated_at = $2

@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 export interface DialogProps {
   children: ReactNode;
@@ -17,6 +17,8 @@ export function Dialog({
   title,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const descriptionId = useId();
+  const titleId = useId();
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -29,8 +31,8 @@ export function Dialog({
   return (
     <dialog
       ref={dialogRef}
-      aria-describedby={description ? 'mergecom-dialog-description' : undefined}
-      aria-labelledby="mergecom-dialog-title"
+      aria-describedby={description ? descriptionId : undefined}
+      aria-labelledby={titleId}
       className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-md bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/55"
       onCancel={(event) => {
         event.preventDefault();
@@ -40,14 +42,11 @@ export function Dialog({
     >
       <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
         <div>
-          <h2 id="mergecom-dialog-title" className="text-lg font-semibold">
+          <h2 id={titleId} className="text-lg font-semibold">
             {title}
           </h2>
           {description ? (
-            <p
-              id="mergecom-dialog-description"
-              className="mt-1 text-sm text-slate-600"
-            >
+            <p id={descriptionId} className="mt-1 text-sm text-slate-600">
               {description}
             </p>
           ) : null}

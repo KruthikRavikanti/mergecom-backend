@@ -1,26 +1,48 @@
 import { ErrorState, LoadingState } from '@mergecom/ui';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Clock3, FileText } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 
-import { useProjectQuery, useVersionsQuery } from '../../api/queries';
-import { VersionTimeline } from './VersionTimeline';
+import {
+  type DocumentKind,
+  useDocumentQuery,
+  useProjectQuery,
+} from '../../api/queries';
+import { useAuth } from '../../auth/AuthContext';
+
+const kindLabels: Record<DocumentKind, string> = {
+  presentation: 'Presentation',
+  spreadsheet: 'Spreadsheet',
+  word_document: 'Word document',
+};
+const dateFormatter = new Intl.DateTimeFormat('en', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
 
 export function DocumentHistoryPage() {
   const { documentId = '', projectId = '' } = useParams();
-  const project = useProjectQuery(projectId);
-  const versions = useVersionsQuery(projectId, documentId);
+  const { user } = useAuth();
+  const organizationId = user?.activeOrganization?.id;
+  const project = useProjectQuery(organizationId, projectId);
+  const document = useDocumentQuery(organizationId, projectId, documentId);
 
-  if (project.isLoading || versions.isLoading)
-    return <LoadingState label="Loading document history" />;
-  if (project.isError || versions.isError)
-    return <ErrorState message="Document history could not be loaded." />;
-  const document = project.data?.documents.find(
-    (candidate) => candidate.id === documentId,
-  );
-  if (!project.data || !document)
+  if (!user || project.isLoading || document.isLoading) {
+    return <LoadingState label="Loading document" />;
+  }
+  if (project.isError || document.isError) {
     return (
-      <ErrorState message="This document does not exist in the development workspace." />
+      <ErrorState
+        message="The document could not be loaded."
+        onRetry={() => {
+          void project.refetch();
+          void document.refetch();
+        }}
+      />
     );
+  }
+  if (!project.data || !document.data) {
+    return <ErrorState message="This document is unavailable." />;
+  }
 
   return (
     <section>
@@ -32,15 +54,25 @@ export function DocumentHistoryPage() {
         {project.data.name}
       </Link>
       <div className="mt-5 border-b border-slate-200 pb-6">
-        <p className="text-sm font-bold text-red-700">VERSION HISTORY</p>
-        <h1 className="page-title mt-1 break-words">{document.name}</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          This Phase 1 view uses explicit development fixtures. It does not
-          capture, rebuild, or download Office files.
-        </p>
+        <p className="text-sm font-bold text-red-700">DOCUMENT</p>
+        <h1 className="page-title mt-1 break-words">{document.data.name}</h1>
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
+          <span className="inline-flex items-center gap-2">
+            <FileText aria-hidden="true" size={16} />
+            {kindLabels[document.data.kind]}
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <Clock3 aria-hidden="true" size={16} />
+            Updated {dateFormatter.format(new Date(document.data.updatedAt))}
+          </span>
+        </div>
       </div>
-      <div className="mt-7">
-        <VersionTimeline versions={versions.data ?? []} />
+      <div className="mt-7 border border-dashed border-slate-300 bg-white p-8 text-center">
+        <h2 className="text-base font-bold text-slate-950">No versions yet</h2>
+        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+          This document record is ready for file uploads and version capture in
+          Phase 4.
+        </p>
       </div>
     </section>
   );

@@ -1,5 +1,24 @@
 # Phase status
 
+## Phase 3: projects, teams, folders, and documents
+
+Status: implementation complete on `phase-3/projects-documents`; pending owner review.
+
+- [x] Tenant-linked projects, project memberships, folders, documents, archive state, soft deletion, ordering, and idempotency records are covered by PostgreSQL migrations.
+- [x] Composite foreign keys and a recursive database trigger reject cross-project parents and folder cycles.
+- [x] Project, folder, document, archive, and team APIs use stable cursor pagination, idempotent creates, input validation, consistent errors, and optimistic concurrency timestamps.
+- [x] Project roles are capped by active organization roles; owners/admins have automatic lead access and external reviewers always require explicit project scope.
+- [x] Project-scoped invitations atomically establish organization and project memberships on acceptance.
+- [x] The web dashboard, project content, nested breadcrumbs, team view, archives, destructive confirmations, and document metadata use the generated API client and query cache.
+- [x] Fake project, team, folder, document, and version adapters were removed. Documents truthfully show `No versions yet` until Phase 4.
+- [x] Audit events cover successful mutations and denied/failed project operations.
+- [x] Real PostgreSQL tests cover two-session shared state, tenant denial, role caps, cycle and cross-project rejection, simultaneous rename conflicts, archive/restore/delete, audits, and cursor stability.
+- [x] Desktop and mobile Playwright checks cover real project routes, nested folders, project creation, document metadata, and project teams.
+
+The resource contract and lifecycle are documented in
+`docs/product/projects-folders.md`. Verification evidence is recorded in
+`docs/verification/phase-3-command-results.md`.
+
 ## Phase 2: identity, tenancy, and organization RBAC
 
 Status: implementation complete on `phase-2/identity-rbac`; pending owner review.
@@ -15,9 +34,8 @@ Status: implementation complete on `phase-2/identity-rbac`; pending owner review
 - [x] The web app uses a protected route loader and real session client with loading, error, logout, organization, invitation, team, settings, and administration states.
 - [x] Local development seeds two organizations and every role without passwords or production secrets.
 
-The remaining `apps/web/src/demo/` boundary contains only synthetic project and
-version fixtures scheduled for Phase 3. It no longer supplies identity, memberships,
-or current-user settings.
+The synthetic project and version boundary retained at the end of Phase 2 was
+removed in Phase 3.
 
 Configuration and the authorization matrix are documented in
 `docs/security/identity-rbac.md`. Verification evidence is recorded in
@@ -38,8 +56,8 @@ Status: implementation complete on `phase-1/monorepo-foundation`; pending owner 
 - [x] Vitest, xUnit, Testcontainers, and Playwright scaffolding is active; public and authenticated routes have desktop/mobile smoke tests.
 - [x] CI covers formatting, lint, types, tests, builds, generated contracts, Compose configuration, and dependency scans.
 
-The Phase 1 mock identity/member/settings boundary was removed in Phase 2. Only
-synthetic project/version fixtures remain pending Phase 3.
+The Phase 1 mock identity/member/settings boundary was removed in Phase 2. The
+remaining project/version fixture boundary was removed in Phase 3.
 
 Local verification evidence and known environment limits are recorded in
 `docs/verification/phase-1-command-results.md`.

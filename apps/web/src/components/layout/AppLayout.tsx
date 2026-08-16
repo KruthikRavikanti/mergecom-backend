@@ -1,6 +1,5 @@
 import {
   Building2,
-  FileClock,
   FolderKanban,
   LogOut,
   Settings,
@@ -17,11 +16,6 @@ import { Brand } from './Brand';
 
 const navigation = [
   { icon: FolderKanban, label: 'Projects', to: '/app' },
-  {
-    icon: FileClock,
-    label: 'Recent history',
-    to: '/app/projects/proj-meridian/documents/doc-cim/history',
-  },
   { icon: Users, label: 'Team', to: '/app/team' },
   { icon: Settings, label: 'Settings', to: '/app/settings' },
   {

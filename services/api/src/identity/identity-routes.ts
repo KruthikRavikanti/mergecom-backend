@@ -20,6 +20,12 @@ const Role = Type.Union([
   Type.Literal('viewer'),
   Type.Literal('external_reviewer'),
 ]);
+const ProjectRole = Type.Union([
+  Type.Literal('project_lead'),
+  Type.Literal('contributor'),
+  Type.Literal('reviewer'),
+  Type.Literal('viewer'),
+]);
 const Status = Type.Union([Type.Literal('active'), Type.Literal('suspended')]);
 const ErrorResponse = Type.Object({
   code: Type.String(),
@@ -249,6 +255,8 @@ export function registerIdentityRoutes(
           expiresInDays: Type.Optional(
             Type.Integer({ maximum: 14, minimum: 1 }),
           ),
+          projectId: Type.Optional(Type.String({ format: 'uuid' })),
+          projectRole: Type.Optional(ProjectRole),
           role: Role,
         }),
         headers: Type.Object({ 'x-csrf-token': Type.String() }),
@@ -259,6 +267,8 @@ export function registerIdentityRoutes(
             email: Type.String({ format: 'email' }),
             expiresAt: Type.String({ format: 'date-time' }),
             id: Type.String({ format: 'uuid' }),
+            projectId: Type.Optional(Type.String({ format: 'uuid' })),
+            projectRole: Type.Optional(ProjectRole),
             role: Role,
           }),
           400: ErrorResponse,
@@ -272,6 +282,16 @@ export function registerIdentityRoutes(
     },
     async (request, reply) => {
       const context = request.sessionContext!;
+      if (
+        Boolean(request.body.projectId) !== Boolean(request.body.projectRole)
+      ) {
+        return sendApiError(
+          reply,
+          400,
+          'invalid_project_assignment',
+          'Project and project role must be provided together.',
+        );
+      }
       if (!runtime.invitationMailer && !runtime.config.exposeInvitationLinks) {
         return sendApiError(
           reply,
@@ -291,6 +311,8 @@ export function registerIdentityRoutes(
           email: request.body.email.trim().toLowerCase(),
           expiresAt,
           organizationId: request.params.organizationId,
+          projectId: request.body.projectId,
+          projectRole: request.body.projectRole,
           requestId: request.id,
           role: request.body.role,
           tokenHash: hashToken(token),
@@ -328,6 +350,12 @@ export function registerIdentityRoutes(
           email: invitation.email,
           expiresAt: invitation.expiresAt.toISOString(),
           id: invitation.id,
+          ...(invitation.projectId && invitation.projectRole
+            ? {
+                projectId: invitation.projectId,
+                projectRole: invitation.projectRole,
+              }
+            : {}),
           role: invitation.role,
         });
       } catch (error) {

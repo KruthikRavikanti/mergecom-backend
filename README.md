@@ -1,9 +1,9 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 2
-adds Microsoft Entra OIDC, server-owned sessions, PostgreSQL organizations and
-memberships, centralized RBAC, invitations, audit events, and an authenticated web
-experience. Document capture, diffing, and Office host behavior remain deferred.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 3
+adds PostgreSQL-backed projects, project teams, nested folders, document records,
+archive workflows, role-capped authorization, and an API-backed web experience.
+Immutable file capture, versions, diffing, and Office host behavior remain deferred.
 
 ## Repository map
 
@@ -43,7 +43,7 @@ export AUTH_MODE=development
 export SMTP_URL=smtp://localhost:1025
 pnpm --filter @mergecom/api db:migrate
 pnpm --filter @mergecom/api db:seed
-VITE_ENABLE_DEMO_DATA=true pnpm dev
+pnpm dev
 ```
 
 The web app is available at `http://localhost:5173`, the Office shell at
@@ -78,6 +78,7 @@ RUN_TESTCONTAINERS=true pnpm test:integration
 
 See [local setup](docs/setup/local-development.md),
 [identity and RBAC](docs/security/identity-rbac.md),
+[projects and folders](docs/product/projects-folders.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.
 

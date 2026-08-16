@@ -24,6 +24,85 @@ const organizations = [
   { name: 'Alpha Advisory', slug: 'alpha-advisory' },
   { name: 'Beta Capital', slug: 'beta-capital' },
 ] as const;
+const projectSeeds = {
+  'alpha-advisory': [
+    {
+      clientName: 'Northstar Holdings',
+      documents: [
+        {
+          folderId: null,
+          id: '60000000-0000-4000-8000-000000000001',
+          kind: 'presentation',
+          name: 'Confidential Information Memorandum.pptx',
+        },
+        {
+          folderId: '50000000-0000-4000-8000-000000000001',
+          id: '60000000-0000-4000-8000-000000000002',
+          kind: 'spreadsheet',
+          name: 'Operating Model.xlsx',
+        },
+      ],
+      folders: [
+        {
+          id: '50000000-0000-4000-8000-000000000001',
+          name: 'Financial Analysis',
+          parentFolderId: null,
+        },
+        {
+          id: '50000000-0000-4000-8000-000000000002',
+          name: 'Supporting Schedules',
+          parentFolderId: '50000000-0000-4000-8000-000000000001',
+        },
+      ],
+      id: '40000000-0000-4000-8000-000000000001',
+      name: 'Project Meridian',
+    },
+    {
+      clientName: 'Cedar Ridge Software',
+      documents: [
+        {
+          folderId: null,
+          id: '60000000-0000-4000-8000-000000000003',
+          kind: 'word_document',
+          name: 'Investment Committee Brief.docx',
+        },
+      ],
+      folders: [],
+      id: '40000000-0000-4000-8000-000000000002',
+      name: 'Project Atlas',
+    },
+    {
+      clientName: 'Beacon Industrial',
+      documents: [
+        {
+          folderId: null,
+          id: '60000000-0000-4000-8000-000000000004',
+          kind: 'presentation',
+          name: 'Board Review Deck.pptx',
+        },
+      ],
+      folders: [],
+      id: '40000000-0000-4000-8000-000000000003',
+      name: 'Project Harbor',
+    },
+  ],
+  'beta-capital': [
+    {
+      clientName: 'Lighthouse Systems',
+      documents: [
+        {
+          folderId: null,
+          id: '60000000-0000-4000-8000-000000000101',
+          kind: 'spreadsheet',
+          name: 'Revenue Build.xlsx',
+        },
+      ],
+      folders: [],
+      id: '40000000-0000-4000-8000-000000000101',
+      name: 'Project Aurora',
+    },
+  ],
+} as const;
 
 const database = createDatabase(databaseUrl);
 const client = await database.pool.connect();
@@ -39,6 +118,10 @@ try {
     );
     const organizationId = organizationResult.rows[0]?.id;
     if (!organizationId) throw new Error('Could not seed an organization.');
+    const seededMemberships = new Map<
+      (typeof roles)[number],
+      { membershipId: string; userId: string }
+    >();
 
     for (const role of roles) {
       const roleLabel = role.replaceAll('_', '-');
@@ -88,19 +171,117 @@ try {
             and provider_subject = $3`,
         [userId, email, subject],
       );
-      await client.query(
+      const membership = await client.query<{ id: string }>(
         `insert into memberships (organization_id, user_id, role)
          values ($1, $2, $3)
          on conflict (organization_id, user_id)
          do update set role = excluded.role, status = 'active',
                        suspended_at = null, suspended_by_user_id = null,
-                       updated_at = now()`,
+                       updated_at = now()
+         returning id`,
         [organizationId, userId, role],
       );
+      const membershipId = membership.rows[0]?.id;
+      if (!membershipId) throw new Error('Could not seed a membership.');
+      seededMemberships.set(role, { membershipId, userId });
+    }
+
+    const owner = seededMemberships.get('owner');
+    if (!owner) throw new Error('Could not find the seeded owner.');
+    for (const project of projectSeeds[organization.slug]) {
+      await client.query(
+        `insert into projects
+          (id, organization_id, name, client_name, created_by_user_id)
+         values ($1, $2, $3, $4, $5)
+         on conflict (id) do update
+           set organization_id = excluded.organization_id,
+               name = excluded.name, client_name = excluded.client_name,
+               deleted_at = null, deleted_by_user_id = null,
+               updated_at = now()`,
+        [
+          project.id,
+          organizationId,
+          project.name,
+          project.clientName,
+          owner.userId,
+        ],
+      );
+      for (const [index, folder] of project.folders.entries()) {
+        await client.query(
+          `insert into project_folders
+            (id, organization_id, project_id, parent_folder_id, name,
+             sort_order, created_by_user_id)
+           values ($1, $2, $3, $4, $5, $6, $7)
+           on conflict (id) do update
+             set parent_folder_id = excluded.parent_folder_id,
+                 name = excluded.name, sort_order = excluded.sort_order,
+                 deleted_at = null, deleted_by_user_id = null,
+                 updated_at = now()`,
+          [
+            folder.id,
+            organizationId,
+            project.id,
+            folder.parentFolderId,
+            folder.name,
+            (index + 1) * 1000,
+            owner.userId,
+          ],
+        );
+      }
+      for (const [index, document] of project.documents.entries()) {
+        await client.query(
+          `insert into documents
+            (id, organization_id, project_id, folder_id, name, kind,
+             sort_order, created_by_user_id)
+           values ($1, $2, $3, $4, $5, $6, $7, $8)
+           on conflict (id) do update
+             set folder_id = excluded.folder_id, name = excluded.name,
+                 kind = excluded.kind, sort_order = excluded.sort_order,
+                 archived_at = null, archived_by_user_id = null,
+                 deleted_at = null, deleted_by_user_id = null,
+                 updated_at = now()`,
+          [
+            document.id,
+            organizationId,
+            project.id,
+            document.folderId,
+            document.name,
+            document.kind,
+            (index + 1) * 1000,
+            owner.userId,
+          ],
+        );
+      }
+      for (const [role, seeded] of seededMemberships) {
+        const assignedRole =
+          role === 'owner' || role === 'admin' || role === 'project_lead'
+            ? 'project_lead'
+            : role === 'external_reviewer'
+              ? 'reviewer'
+              : role;
+        await client.query(
+          `insert into project_memberships
+            (organization_id, project_id, organization_membership_id, role,
+             added_by_user_id)
+           values ($1, $2, $3, $4, $5)
+           on conflict (project_id, organization_membership_id)
+             where removed_at is null
+           do update set role = excluded.role, updated_at = now()`,
+          [
+            organizationId,
+            project.id,
+            seeded.membershipId,
+            assignedRole,
+            owner.userId,
+          ],
+        );
+      }
     }
   }
   await client.query('commit');
-  console.info('Seeded two local organizations and every organization role.');
+  console.info(
+    'Seeded two local organizations, every organization role, and Phase 3 projects.',
+  );
 } catch (error) {
   await client.query('rollback');
   throw error;

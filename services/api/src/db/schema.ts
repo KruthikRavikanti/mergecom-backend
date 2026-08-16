@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -28,6 +30,17 @@ export const auditResult = pgEnum('audit_result', [
   'succeeded',
   'denied',
   'failed',
+]);
+export const projectRole = pgEnum('project_role', [
+  'project_lead',
+  'contributor',
+  'reviewer',
+  'viewer',
+]);
+export const documentKind = pgEnum('document_kind', [
+  'presentation',
+  'spreadsheet',
+  'word_document',
 ]);
 
 const timestamps = {
@@ -131,6 +144,8 @@ export const invitations = pgTable(
       .notNull(),
     email: text('email').notNull(),
     role: organizationRole('role').notNull(),
+    projectId: uuid('project_id'),
+    projectRole: projectRole('project_role'),
     tokenHash: text('token_hash').notNull(),
     invitedByUserId: uuid('invited_by_user_id')
       .references(() => users.id, { onDelete: 'restrict' })
@@ -283,5 +298,188 @@ export const auditEvents = pgTable(
       table.occurredAt,
     ),
     index('audit_events_actor_idx').on(table.actorUserId),
+  ],
+);
+
+export const projects = pgTable(
+  'projects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: text('name').notNull(),
+    clientName: text('client_name'),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    archivedByUserId: uuid('archived_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedByUserId: uuid('deleted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    index('projects_organization_updated_idx').on(
+      table.organizationId,
+      table.updatedAt,
+      table.id,
+    ),
+    uniqueIndex('projects_organization_name_active_uq')
+      .on(table.organizationId, sql`lower(${table.name})`)
+      .where(sql`${table.deletedAt} is null`),
+  ],
+);
+
+export const projectMemberships = pgTable(
+  'project_memberships',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    projectId: uuid('project_id')
+      .references(() => projects.id, { onDelete: 'cascade' })
+      .notNull(),
+    organizationMembershipId: uuid('organization_membership_id')
+      .references(() => memberships.id, { onDelete: 'cascade' })
+      .notNull(),
+    role: projectRole('role').notNull(),
+    addedByUserId: uuid('added_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    removedByUserId: uuid('removed_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    index('project_memberships_project_idx').on(table.projectId),
+    index('project_memberships_organization_membership_idx').on(
+      table.organizationMembershipId,
+    ),
+    uniqueIndex('project_memberships_active_uq')
+      .on(table.projectId, table.organizationMembershipId)
+      .where(sql`${table.removedAt} is null`),
+  ],
+);
+
+export const projectFolders = pgTable(
+  'project_folders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    projectId: uuid('project_id')
+      .references(() => projects.id, { onDelete: 'cascade' })
+      .notNull(),
+    parentFolderId: uuid('parent_folder_id'),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').default(1000).notNull(),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedByUserId: uuid('deleted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    index('project_folders_parent_order_idx').on(
+      table.organizationId,
+      table.projectId,
+      table.parentFolderId,
+      table.sortOrder,
+      table.id,
+    ),
+    uniqueIndex('project_folders_project_id_uq').on(
+      table.organizationId,
+      table.projectId,
+      table.id,
+    ),
+    check(
+      'project_folders_not_self_parent_ck',
+      sql`${table.parentFolderId} is null or ${table.parentFolderId} <> ${table.id}`,
+    ),
+  ],
+);
+
+export const documents = pgTable(
+  'documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    projectId: uuid('project_id')
+      .references(() => projects.id, { onDelete: 'cascade' })
+      .notNull(),
+    folderId: uuid('folder_id'),
+    name: text('name').notNull(),
+    kind: documentKind('kind').notNull(),
+    sortOrder: integer('sort_order').default(1000).notNull(),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    archivedByUserId: uuid('archived_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedByUserId: uuid('deleted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    index('documents_folder_order_idx').on(
+      table.organizationId,
+      table.projectId,
+      table.folderId,
+      table.sortOrder,
+      table.id,
+    ),
+    uniqueIndex('documents_project_id_uq').on(
+      table.organizationId,
+      table.projectId,
+      table.id,
+    ),
+  ],
+);
+
+export const idempotencyRecords = pgTable(
+  'idempotency_records',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    actorUserId: uuid('actor_user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    operation: text('operation').notNull(),
+    keyHash: text('key_hash').notNull(),
+    requestHash: text('request_hash').notNull(),
+    response: jsonb('response').$type<Record<string, unknown>>(),
+    statusCode: integer('status_code'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idempotency_records_actor_operation_key_uq').on(
+      table.actorUserId,
+      table.operation,
+      table.keyHash,
+    ),
+    index('idempotency_records_expires_idx').on(table.expiresAt),
   ],
 );
