@@ -7,6 +7,7 @@ import {
 } from '@mergecom/ui';
 import {
   ArrowLeft,
+  ArrowUpRight,
   Ban,
   Check,
   CheckCircle2,
@@ -497,17 +498,27 @@ export function DocumentReviewPage() {
                       {change.path}
                     </p>
                   </div>
-                  {item.capabilities.canComment ? (
-                    <button
-                      aria-label={`Discuss ${change.label}`}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      aria-label={`Open ${change.label} in comparison`}
                       className="button-secondary"
-                      type="button"
-                      onClick={() => setAnchorTarget(change)}
+                      to={`/app/projects/${projectId}/documents/${documentId}/history/comparisons/${item.comparisonId}?change=${change.id}&mode=structured`}
                     >
-                      <MessageSquarePlus aria-hidden="true" size={17} />
-                      Discuss
-                    </button>
-                  ) : null}
+                      <ArrowUpRight aria-hidden="true" size={17} />
+                      Open
+                    </Link>
+                    {item.capabilities.canComment ? (
+                      <button
+                        aria-label={`Discuss ${change.label}`}
+                        className="button-secondary"
+                        type="button"
+                        onClick={() => setAnchorTarget(change)}
+                      >
+                        <MessageSquarePlus aria-hidden="true" size={17} />
+                        Discuss
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}

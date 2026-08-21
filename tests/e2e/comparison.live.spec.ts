@@ -85,19 +85,47 @@ test('compares two normalized versions and displays typed content changes', asyn
     path: testInfo.outputPath(`phase6-history-${testInfo.project.name}.png`),
   });
   await page.getByRole('button', { name: 'Compare versions' }).click();
-  await expect(page).toHaveURL(/\/history\/comparisons\/[0-9a-f-]+$/u);
+  await expect(page).toHaveURL(/\/history\/comparisons\/[0-9a-f-]+/u);
   await expect(page.getByText('Changes detected', { exact: true })).toBeVisible(
     {
       timeout: 20_000,
     },
   );
-  await expect(page.getByRole('article')).toContainText(
-    'Quarterly operating review',
-  );
-  await expect(page.getByRole('article')).toContainText(
-    'Annual operating review',
-  );
-  await expect(page.getByText('Complete', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Changes' })).toBeVisible();
+  const renderedPages = page.getByLabel('Rendered page 1');
+  await expect(renderedPages).toHaveCount(2, { timeout: 30_000 });
+  await expect(
+    page.locator('canvas[aria-label="Rendered page 1"]:visible').first(),
+  ).toBeVisible();
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`phase6-visual-${testInfo.project.name}.png`),
+  });
+  await page.getByRole('button', { name: 'Structured' }).click();
+  if (testInfo.project.name === 'mobile-chromium') {
+    await page.getByRole('button', { name: 'Before', exact: true }).click();
+    await expect(page.getByRole('article')).toContainText(
+      'Quarterly operating review',
+    );
+    await page.getByRole('button', { name: 'After', exact: true }).click();
+    await expect(page.getByRole('article')).toContainText(
+      'Annual operating review',
+    );
+  } else {
+    await expect(page.getByRole('article').nth(0)).toContainText(
+      'Quarterly operating review',
+    );
+    await expect(page.getByRole('article').nth(1)).toContainText(
+      'Annual operating review',
+    );
+  }
+  await page.getByRole('option').first().click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('mode'))
+    .toBe('structured');
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('change'))
+    .toMatch(/^[0-9a-f]{64}$/u);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

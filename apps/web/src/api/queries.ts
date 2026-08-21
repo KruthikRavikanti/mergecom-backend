@@ -22,6 +22,11 @@ export type ProjectTeamMember = components['schemas']['ProjectTeamMember'];
 export type DocumentVersion = components['schemas']['DocumentVersion'];
 export type VersionPage = components['schemas']['VersionPage'];
 export type VersionComparison = components['schemas']['VersionComparison'];
+export type VersionRendition = components['schemas']['VersionRendition'];
+export type RenditionViewGrant = components['schemas']['RenditionViewGrant'];
+export type VersionVisualData = components['schemas']['VersionVisualData'];
+export type ComparisonVisualization =
+  components['schemas']['ComparisonVisualization'];
 export type DocumentMerge = components['schemas']['DocumentMerge'];
 export type NotificationPreferences =
   components['schemas']['NotificationPreferences'];
@@ -99,6 +104,56 @@ export const queryKeys = {
       documentId,
       'comparisons',
       comparisonId,
+    ] as const,
+  comparisonVisualization: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    comparisonId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'comparisons',
+      comparisonId,
+      'visualization',
+    ] as const,
+  rendition: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    versionId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'versions',
+      versionId,
+      'rendition',
+    ] as const,
+  renditionGrant: (organizationId: string, renditionId: string) =>
+    ['renditions', organizationId, renditionId, 'grant'] as const,
+  visualData: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    versionId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'versions',
+      versionId,
+      'visual-data',
     ] as const,
   merge: (
     organizationId: string,
@@ -551,6 +606,253 @@ export function useVersionComparisonQuery(
       ['queued', 'retryable_failed', 'running'].includes(query.state.data.state)
         ? 2_000
         : false,
+  });
+}
+
+export function useComparisonVisualizationQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  comparisonId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: Boolean(
+      enabled && organizationId && projectId && documentId && comparisonId,
+    ),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/visualization',
+        {
+          params: {
+            path: {
+              comparisonId,
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Visual change locations are unavailable.');
+      return data;
+    },
+    queryKey: queryKeys.comparisonVisualization(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      comparisonId,
+    ),
+    retry: false,
+  });
+}
+
+export function useRecordComparisonViewerEventMutation(
+  currentUser: CurrentUser,
+) {
+  return useMutation({
+    mutationFn: async (input: {
+      comparisonId: string;
+      documentId: string;
+      durationMilliseconds: number;
+      outcome: 'failed' | 'loaded';
+      projectId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/viewer-events',
+        {
+          body: {
+            durationMilliseconds: input.durationMilliseconds,
+            outcome: input.outcome,
+          },
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: {
+              comparisonId: input.comparisonId,
+              documentId: input.documentId,
+              organizationId,
+              projectId: input.projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok)
+        throw failure(error, 'Viewer telemetry could not be recorded.');
+    },
+    retry: false,
+  });
+}
+
+export function useVersionRenditionQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  versionId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: Boolean(
+      enabled && organizationId && projectId && documentId && versionId,
+    ),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/rendition',
+        {
+          params: {
+            path: {
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+              versionId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Visual rendition is unavailable.');
+      return data;
+    },
+    queryKey: queryKeys.rendition(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      versionId,
+    ),
+    refetchInterval: (query) =>
+      query.state.data &&
+      ['queued', 'retryable_failed', 'running'].includes(query.state.data.state)
+        ? 2_000
+        : false,
+    retry: false,
+  });
+}
+
+export function useRequestRenditionMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string;
+      projectId: string;
+      versionId: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/renditions',
+        {
+          params: {
+            header: {
+              'Idempotency-Key': crypto.randomUUID(),
+              'X-CSRF-Token': currentUser.session.csrfToken,
+            },
+            path: { organizationId, ...input },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Visual rendition could not be requested.');
+      return data;
+    },
+    onSuccess: (rendition, input) => {
+      queryClient.setQueryData(
+        queryKeys.rendition(
+          activeOrganizationId(currentUser),
+          input.projectId,
+          input.documentId,
+          input.versionId,
+        ),
+        rendition,
+      );
+    },
+  });
+}
+
+export function useRenditionGrantQuery(
+  currentUser: CurrentUser | null,
+  projectId: string,
+  documentId: string,
+  versionId: string,
+  renditionId: string,
+  enabled: boolean,
+) {
+  const organizationId = currentUser?.activeOrganization?.id;
+  return useQuery({
+    enabled: Boolean(enabled && currentUser && organizationId && renditionId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/renditions/{renditionId}/grant',
+        {
+          params: {
+            header: { 'X-CSRF-Token': currentUser!.session.csrfToken },
+            path: {
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+              renditionId,
+              versionId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Visual rendition access expired.');
+      return data;
+    },
+    queryKey: queryKeys.renditionGrant(
+      organizationId ?? 'unavailable',
+      renditionId,
+    ),
+    refetchInterval: (query) => {
+      const expiresAt = query.state.data?.expiresAt;
+      if (!expiresAt) return false;
+      return Math.max(
+        5_000,
+        new Date(expiresAt).getTime() - Date.now() - 30_000,
+      );
+    },
+    retry: 1,
+    staleTime: 15_000,
+  });
+}
+
+export function useVersionVisualDataQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  versionId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: Boolean(
+      enabled && organizationId && projectId && documentId && versionId,
+    ),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/visual-data',
+        {
+          params: {
+            path: {
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+              versionId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data)
+        throw failure(error, 'Structured visual data is unavailable.');
+      return data;
+    },
+    queryKey: queryKeys.visualData(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      versionId,
+    ),
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 
