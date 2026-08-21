@@ -28,7 +28,7 @@ RUN test -n "${VITE_WEB_APP_BASE_URL}" \
       "${OFFICE_ADDIN_ORIGIN}" /opt/mergecom-manifests
 
 FROM nginx:1.28.3-alpine3.23 AS runtime
-LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/Mergecom"
+LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/mergecom-backend"
 COPY infra/deployment/nginx.office-addin.conf /etc/nginx/nginx.conf
 COPY --from=build --chown=nginx:nginx /workspace/apps/office-addin/dist /usr/share/nginx/html
 COPY --from=build --chown=nginx:nginx /opt/mergecom-manifests /usr/share/nginx/html/manifests

@@ -338,7 +338,8 @@ Local verification evidence and known environment limits are recorded in
 
 ## Phase 0: security containment, repository normalization, architecture record
 
-Status: current-tree containment and architecture record complete on `phase-0/security-normalization`; history rewrite intentionally deferred pending explicit owner approval.
+Status: containment and architecture record complete. The replacement public history
+starts at the sanitized Phase 0 tree; pre-containment refs remain local only.
 
 Safety point:
 
@@ -358,20 +359,24 @@ Safety point:
 - [x] Full document payload logging removed from server and add-in spike paths identified by the audit.
 - [x] Legacy server requires explicit startup, uses generated certificates, and restricts development CORS in code.
 - [x] As-is, gaps, target, version semantics, migration, exposure, and architecture decisions documented.
-- [x] History-cleaning procedure prepared but not executed.
+- [x] History-cleaning procedure prepared; clean replacement publication selected
+  instead of rewriting the removed former remote.
 - [x] Generated localhost certificate chain and contained server behavior verified over HTTPS.
 - [x] Final builds and acceptance scans recorded.
 
 ## Historical exposure
 
-Current-tree deletion does not remove blobs from existing commits, the local safety tag, remote `main`, or the local backup stash. The old private key is treated as compromised and must never be reused. History cleaning requires owner approval immediately before rewrite/force-push; see `docs/runbooks/history-cleaning.md`.
+Current-tree deletion does not remove blobs from old local commits, reflogs, the local
+safety tag, the local backup stash, or copies made before the former remote was
+removed. The replacement public repository excludes those refs. The old private key
+is treated as compromised and must never be reused.
 
 ## Manual/external follow-up
 
 - Confirm the interactive macOS Keychain trust prompt before Office sideload testing. The generated chain and server were verified directly, but system trust was not claimed.
-- Configure a monitored project-controlled private security reporting channel before any pilot.
-- Review and accept the Phase 0 branch before committing/pushing it. Do not publish the local safety tag or generated-data stash.
-- Coordinate history cleaning separately if the owner chooses to replace public history.
+- Keep GitHub private vulnerability reporting enabled before any pilot.
+- Do not publish the local safety tag, generated-data stash, or any branch based on
+  the pre-containment ancestry.
 
 ## Phase 1 entry gate
 

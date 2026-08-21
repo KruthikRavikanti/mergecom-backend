@@ -1,6 +1,13 @@
 # Git history-cleaning runbook
 
-Status: prepared only. Do not execute the rewrite or any force-push without explicit repository-owner approval immediately before the operation.
+Status: superseded for public development by the clean `mergecom-backend` publication
+boundary on 2026-08-20. The former `Mergecom` remote no longer exists. This procedure
+is retained only for any private pre-containment mirror that might be republished.
+
+The replacement repository starts from the sanitized Phase 0 tree and contains only
+replayed Phase 1 and later implementation commits. No old branch, tag, stash, or
+pre-containment object was pushed. Do not push a local legacy ref into the replacement
+repository.
 
 History rewriting changes commit IDs, invalidates open branch ancestry, disrupts forks/clones, and requires every collaborator to re-clone or carefully rebase. It does not erase already copied data or make the old private key trustworthy.
 
@@ -123,4 +130,3 @@ These commands are destructive to remote history and are intentionally not execu
 6. Close/recreate or retarget pull requests whose ancestry is invalid.
 7. Check forks, package/release artifacts, caches, and mirrors separately; contact hosting support where needed. Git history cleaning cannot delete third-party copies.
 8. Continue treating the key as compromised permanently.
-

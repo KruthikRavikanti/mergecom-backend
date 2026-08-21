@@ -1,25 +1,37 @@
 # Security policy
 
-## Current status
+## Supported code
 
-MergeCom is a pre-production prototype. It has not completed a security assessment and must not process confidential, customer, or production documents.
+Only the latest commit on `main` is supported. Phase branches and files under
+`legacy/` are historical evidence and must not be deployed.
 
-A monitored, project-controlled private security reporting channel has not yet been configured. Configuring and publishing that channel is a prerequisite for a pilot. Until it exists, do not include vulnerability details, credentials, private keys, or document data in a public GitHub issue.
+## Report a vulnerability
 
-## Known Phase 0 exposure
+Use the repository's **Security** tab and select **Report a vulnerability** to open a
+private GitHub security advisory. Do not open a public issue for a suspected security
+problem.
 
-Earlier commits contain a localhost development private key/certificate, generated Office-content JSON, and a dependency tree. Those files have been removed from the current Phase 0 branch but remain in Git history until the owner approves a coordinated history rewrite. The exact non-content inventory and cleanup procedure are documented in:
+Include the affected commit, component, reproduction steps using synthetic data, and
+the expected impact. Do not attach real Office documents, credentials, identity
+tokens, signed object URLs, connection strings, or personal information.
 
-- `docs/security/phase-0-exposure-inventory.md`
-- `docs/runbooks/history-cleaning.md`
+The repository is a controlled pilot implementation, not a production-approved
+service. See `docs/runbooks/pilot-deployment.md` for the remaining operator-owned
+security and operations controls.
 
-Treat the old key as compromised even though it was a local development key. Do not reuse or distribute it.
+## Repository history
+
+The public `mergecom-backend` history starts from the sanitized Phase 0 tree. The
+pre-containment commits, retired local development key, generated Office JSON,
+dependency trees, local safety tag, and local backup stash were not published to this
+repository. The old key remains permanently compromised and must never be reused.
 
 ## Handling requirements
 
-- Do not commit secrets, private keys, local certificates, real document data, or generated semantic snapshots.
+- Do not commit secrets, private keys, local certificates, real document data, or
+  generated semantic snapshots.
 - Do not log Office file bytes or document contents.
-- Use synthetic, reviewed fixtures only.
+- Use only reviewed synthetic fixtures.
 - Keep original Office package bytes immutable and authorization-scoped.
-- Record and investigate security-relevant failures without exposing document content.
-
+- Record and investigate security-relevant failures without exposing document
+  content.

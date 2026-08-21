@@ -14,7 +14,7 @@ RUN dotnet publish \
     --output /opt/mergecom
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-bookworm-slim AS runtime
-LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/Mergecom"
+LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/mergecom-backend"
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*

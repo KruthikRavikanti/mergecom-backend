@@ -29,6 +29,10 @@ saved_*.json
 
 # Logs and temporary files
 *.log
+*.backup
+*.dump
+*.dump.sha256
+*.sarif
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,0 +1,18 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.docx binary
+*.docm binary
+*.xlsx binary
+*.xlsm binary
+*.pptx binary
+*.pptm binary
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.png binary
+*.p12 binary
+*.pfx binary

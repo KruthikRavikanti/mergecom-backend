@@ -1,5 +1,7 @@
 # MergeCom
 
+[![CI](https://github.com/KruthikRavikanti/mergecom-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/KruthikRavikanti/mergecom-backend/actions/workflows/ci.yml)
+
 MergeCom is a document version review workspace for Microsoft Office files. Phase 15
 adds a provider-neutral pilot deployment baseline: hardened non-root images, immutable
 digest deployment, migration gating, production configuration preflight, hosted Office
@@ -105,6 +107,7 @@ The codebase has a controlled pilot deployment path but is not production-approv
 and must not be used with confidential files without an explicit security and
 operations review.
 Legacy prototypes remain historical evidence only and are excluded from pnpm, Turbo,
-CI builds, and deployment paths. Historical credential exposure and the deferred
-history-cleaning decision remain documented in
+CI builds, and deployment paths. The replacement public repository excludes the
+pre-containment Git ancestry; the original exposure and residual local copies remain
+documented in
 [the Phase 0 exposure inventory](docs/security/phase-0-exposure-inventory.md).

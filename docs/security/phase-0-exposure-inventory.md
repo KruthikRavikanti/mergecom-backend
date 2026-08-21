@@ -49,6 +49,13 @@ This is a scoped repository inventory, not proof that every arbitrary secret for
 
 ## Residual exposure
 
-The blobs remain reachable from remote `main`, existing clones/forks, local reflogs, the local safety tag, and the local backup stash. A rewrite cannot revoke copied material. The old key must remain permanently retired.
+The replacement public `mergecom-backend` repository was initialized from the
+sanitized Phase 0 tree and replays only Phase 1 and later implementation commits. No
+pre-containment branch, tag, stash, certificate, generated Office JSON, or historical
+dependency tree was pushed. The absent former `Mergecom` remote was not rewritten.
 
-History cleaning has not been executed. It requires owner approval immediately before force-pushing and must follow `docs/runbooks/history-cleaning.md`.
+The blobs remain reachable in this machine's local pre-containment branches, reflogs,
+safety tag, and backup stash, and may remain in copies made before the former remote
+was removed. A clean replacement repository cannot revoke copied material. The old
+key must remain permanently retired. The retained rewrite procedure in
+`docs/runbooks/history-cleaning.md` applies only if an old mirror is ever republished.
