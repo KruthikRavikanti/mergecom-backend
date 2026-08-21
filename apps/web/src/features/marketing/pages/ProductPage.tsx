@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react';
 
 import { FormatCapabilities } from '../components/FormatCapabilities';
 import { FormatProofStrip } from '../components/FormatProofStrip';
+import { FinalCta } from '../components/FinalCta';
 import { HeroProductStage } from '../components/HeroProductStage';
 import {
   DisplayHeading,
@@ -40,6 +41,7 @@ export function ProductPage() {
       <WhyMergeCom />
       <WorkflowStory />
       <FormatCapabilities />
+      <FinalCta />
     </main>
   );
 }

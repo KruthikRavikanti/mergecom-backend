@@ -20,7 +20,7 @@ import {
 } from '../../api/queries';
 import { roleLabels } from '../../auth/roles';
 import type { CurrentUser, OrganizationRole } from '../../auth/session';
-import { readFormString } from '../../services/contact';
+import { readFormString } from '../../services/forms';
 
 const projectRoleLabels: Record<ProjectRole, string> = {
   contributor: 'Contributor',

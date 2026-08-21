@@ -8,7 +8,7 @@ import {
   useProjectTeamQuery,
 } from '../../api/queries';
 import type { CurrentUser } from '../../auth/session';
-import { readFormString } from '../../services/contact';
+import { readFormString } from '../../services/forms';
 
 interface ReviewRequestDialogProps {
   comparisonId: string | null;

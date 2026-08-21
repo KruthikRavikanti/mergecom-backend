@@ -19,8 +19,9 @@ export const createPublicRoutes = (): RouteObject[] => [
         handle: { marketingMeta: publicPageMetadata.security },
         path: 'security',
         lazy: async () => {
-          const { SecurityPage } = await import('../pages/SecurityPage');
-          return { Component: SecurityPage };
+          const { MarketingSecurityPage } =
+            await import('../features/marketing/pages/MarketingSecurityPage');
+          return { Component: MarketingSecurityPage };
         },
       },
       {
@@ -36,8 +37,18 @@ export const createPublicRoutes = (): RouteObject[] => [
         handle: { marketingMeta: publicPageMetadata.support },
         path: 'support',
         lazy: async () => {
-          const { SupportPage } = await import('../pages/SupportPage');
-          return { Component: SupportPage };
+          const { MarketingSupportPage } =
+            await import('../features/marketing/pages/MarketingSupportPage');
+          return { Component: MarketingSupportPage };
+        },
+      },
+      {
+        handle: { marketingMeta: publicPageMetadata.requestAccess },
+        path: 'request-access',
+        lazy: async () => {
+          const { RequestAccessPage } =
+            await import('../features/marketing/pages/RequestAccessPage');
+          return { Component: RequestAccessPage };
         },
       },
       {

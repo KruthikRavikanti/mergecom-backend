@@ -36,7 +36,7 @@ import {
   useVersionComparisonQuery,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
-import { readFormString } from '../../services/contact';
+import { readFormString } from '../../services/forms';
 
 type DecisionValue = 'approved' | 'changes_requested';
 

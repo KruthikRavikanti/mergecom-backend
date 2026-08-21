@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 
 import { MarketingHeader } from '../../features/marketing/components/MarketingHeader';
+import { MarketingFooter } from '../../features/marketing/components/MarketingFooter';
 import { MarketingMetadata } from '../../features/marketing/components/MarketingMetadata';
 import '../../features/marketing/styles/marketing.css';
 
@@ -15,6 +16,7 @@ export function PublicLayout() {
       <div id="main-content">
         <Outlet />
       </div>
+      <MarketingFooter />
     </div>
   );
 }

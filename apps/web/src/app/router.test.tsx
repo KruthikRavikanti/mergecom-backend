@@ -48,8 +48,9 @@ describe('public routes', () => {
   it.each([
     ['/', 'Version control for the documents that run your firm.'],
     ['/product', 'Document version control for Word, Excel, and PowerPoint.'],
-    ['/security', 'Current security posture'],
-    ['/support', 'Support'],
+    ['/security', 'Implemented controls, stated precisely.'],
+    ['/support', 'Help for the current workspace.'],
+    ['/request-access', 'Request access to MergeCom.'],
     ['/login', 'Sign in to MergeCom'],
     ['/signup', 'Join MergeCom'],
     ['/missing', 'Page not found'],

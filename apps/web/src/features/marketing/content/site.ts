@@ -39,10 +39,11 @@ export const marketingConfig = {
     href: '/product#formats',
     message: 'Visual version comparison for Word, Excel, and PowerPoint.',
   },
-  contactEmail: '',
+  contactEmail: import.meta.env.VITE_MARKETING_CONTACT_EMAIL?.trim() ?? '',
   previewLabel: 'Controlled preview',
   productStatus:
     'MergeCom is in controlled preview and is not approved for production use.',
+  supportEmail: import.meta.env.VITE_SUPPORT_EMAIL?.trim() ?? '',
 } as const;
 
 export const marketingNavigation: MarketingNavigationItem[] = [

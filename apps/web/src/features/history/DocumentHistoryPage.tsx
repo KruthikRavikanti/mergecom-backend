@@ -39,7 +39,7 @@ import {
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
 import { ReviewRequestDialog } from '../reviews/ReviewRequestDialog';
-import { readFormString } from '../../services/contact';
+import { readFormString } from '../../services/forms';
 
 const kindLabels: Record<DocumentKind, string> = {
   presentation: 'Presentation',

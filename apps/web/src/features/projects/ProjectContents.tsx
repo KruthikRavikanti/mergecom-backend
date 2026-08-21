@@ -39,7 +39,7 @@ import {
   useUpdateFolderMutation,
 } from '../../api/queries';
 import type { CurrentUser } from '../../auth/session';
-import { readFormString } from '../../services/contact';
+import { readFormString } from '../../services/forms';
 
 const documentIcons: Record<DocumentKind, typeof FileText> = {
   presentation: Presentation,

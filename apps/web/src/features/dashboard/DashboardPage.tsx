@@ -18,7 +18,7 @@ import {
   useUpdateProjectMutation,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
-import { readFormString } from '../../services/contact';
+import { readFormString } from '../../services/forms';
 import { ProjectCard } from './ProjectCard';
 
 export function DashboardPage() {
