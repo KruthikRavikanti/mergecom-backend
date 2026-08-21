@@ -7,16 +7,17 @@ malware scanning integration, and incident response.
 
 ## Deployment boundary
 
-The bundle runs five stateless images: web, Office add-in, API, worker, and document
-engine. PostgreSQL, Redis, S3-compatible object storage, SMTP, Entra ID, TLS, DNS, and
-backup storage are external managed dependencies. Only the web and Office Nginx
-containers bind host ports, on loopback by default. API, worker, and document engine
-have no host port.
+The bundle runs six stateless images: web, Office add-in, API, worker, document
+engine, and rendition engine. PostgreSQL, Redis, S3-compatible object storage, SMTP,
+Entra ID, TLS, DNS, and backup storage are external managed dependencies. Only the
+web and Office Nginx containers bind host ports, on loopback by default. API, worker,
+document engine, and rendition engine have no host port.
 
 Use a dedicated pilot account or subscription. Permit ingress only on 443 to the
 external TLS proxy. Permit application egress only to the configured PostgreSQL,
 Redis, S3, SMTP, Entra, DNS, and time services. Do not allow direct internet ingress
-to ports 3001 through 3003, 8080, or 8081.
+to ports 3001 through 3004, 8080, or 8081. The rendition network is internal and
+permits only worker-to-renderer traffic with no external egress.
 
 ## Prerequisites
 
@@ -46,7 +47,7 @@ bucket remains private; clients receive only short-lived signed grants.
 Run the `Pilot images` GitHub Actions workflow from the reviewed commit. Supply both
 hosted HTTPS origins. The workflow builds Linux AMD64 and ARM64 images, generates
 hosted Word/Excel/PowerPoint manifests, publishes SBOM and provenance attestations,
-and reports five `image@sha256:digest` references in its job summaries.
+and reports six `image@sha256:digest` references in its job summaries.
 
 Before rollout, review dependency audits and image scan results. Copy only digest
 references into the deployment configuration. Tags, including a commit SHA tag, are
@@ -56,10 +57,10 @@ not accepted by the preflight.
 
 Create the configuration from `infra/deployment/.env.pilot.example` in the secret
 manager or in a protected path on the deployment host. Replace every `REPLACE_ME`
-value and leave `MERGECOM_SYNTHETIC_CONFIG=false`. Generate a random document-engine
-token of at least 32 characters. Keep automatic PowerPoint and Excel merge disabled
-for the first rollout; enabling either requires an explicit organization UUID
-allowlist.
+value and leave `MERGECOM_SYNTHETIC_CONFIG=false`. Generate separate random document
+engine and rendition-engine tokens of at least 32 characters. Keep automatic
+PowerPoint and Excel merge disabled for the first rollout; enabling either requires
+an explicit organization UUID allowlist.
 
 `API_PUBLIC_ORIGIN` must be the web origin followed by `/api`. PostgreSQL must include
 `sslmode=require`, `verify-ca`, or `verify-full`; prefer `verify-full`. Redis uses
@@ -90,7 +91,7 @@ a restrictive `frame-ancestors` policy at the Office origin.
 
 ## Release
 
-1. Record the reviewed commit, five current digests, five proposed digests, database
+1. Record the reviewed commit, six current digests, six proposed digests, database
    snapshot identifier, object-backup evidence, and rollback owner.
 2. Confirm PostgreSQL point-in-time recovery and object versioning/encryption before
    changing application images.
@@ -106,22 +107,26 @@ node infra/deployment/verify-release.mjs /secure/path/mergecom-pilot.env
 6. Sideload one generated manifest from
    `https://<office-origin>/manifests/manifest.powerpoint.xml` (or Word/Excel), sign
    in, link a saved synthetic file, push exact bytes, wait for processing, retrieve
-   the exact version, and compare its SHA-256 with the source.
+   the exact version, compare its SHA-256 with the source, then create a visual
+   comparison and verify both private renditions and mapped change navigation.
 7. Inspect tenant denial, invitation delivery, processing retry, audit, and structured
    log evidence before admitting pilot users.
 
 ## Monitoring
 
 Collect container stdout/stderr as structured logs and alert on restarts, migration
-failure, HTTP 5xx rate, readiness failure, processing retries/dead letters, SMTP
-failure, PostgreSQL saturation, Redis memory/eviction, and object-store errors. Redact
+failure, HTTP 5xx rate, readiness failure, processing retries/dead letters, rendition
+queue age/timeouts/crash loops/output growth, viewer failures, mapping coverage,
+cleanup failure, SMTP failure, PostgreSQL saturation, Redis memory/eviction, and
+object-store errors. Redact
 authorization, cookies, CSRF tokens, internal tokens, signed URLs, connection strings,
 and document content in the log platform.
 
 The API Prometheus endpoint is `/metrics` on the private API listener. Public Nginx
 returns 404 for `/api/metrics`; attach the collector to the backend network or use an
 authenticated private monitoring path. Liveness proves only process health.
-Readiness must be used for rollout decisions.
+Readiness must be used for rollout decisions. Collect rendition-engine and worker
+`/metrics` only on their private listeners.
 
 ## Backup and restore
 
@@ -149,14 +154,17 @@ PGHOST=restore-db.example PGUSER=restore_operator PGSSLMODE=verify-full \
 For S3-compatible providers that implement the AWS APIs, verify private bucket
 access, versioning, and server-side encryption with
 `verify-object-protection.sh`. Otherwise capture equivalent provider evidence. A
-database restore without the matching immutable object versions is not a successful
-MergeCom restore. Exercise object restoration and exact SHA-256 retrieval quarterly.
+database restore without the matching immutable source object versions is not a
+successful MergeCom restore. Renditions and visualization maps are regenerable, but
+their database references must either resolve to matching objects or be regenerated
+under a new versioned profile. Exercise source restoration and exact SHA-256
+retrieval quarterly.
 
 ## Rollback
 
 Stop admission of new writes, preserve logs and failed artifacts, and identify
 whether a schema migration completed. For a backward-compatible schema, replace all
-five image values with the recorded prior digests and rerun `deploy-pilot.sh`, then
+six image values with the recorded prior digests and rerun `deploy-pilot.sh`, then
 rerun release verification. Never run ad hoc down migrations.
 
 If the prior application cannot use the migrated schema, restore PostgreSQL and the

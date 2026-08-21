@@ -21,7 +21,7 @@ retry the endpoint. Liveness may still return 200 because the process itself is 
 
 ## Ports are already in use
 
-The default ports are `5173`, `5176`, `3001`, `3002`, `3003`, `5432`, `6379`, `9000`,
+The default ports are `5173`, `5176`, `3001`, `3002`, `3003`, `3004`, `5432`, `6379`, `9000`,
 `9001`, `1025`, and `8025`. Stop the conflicting process or update the corresponding
 service environment value and Compose mapping together.
 
@@ -38,6 +38,7 @@ TEST_S3_ACCESS_KEY=mergecom-local \
 TEST_S3_SECRET_KEY=mergecom-local-only \
 TEST_WORKER_DATABASE_URL=postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom \
 TEST_DOCUMENT_ENGINE_URL=http://localhost:3003 \
+TEST_RENDITION_ENGINE_URL=http://localhost:3004 \
 pnpm test:integration
 ```
 
@@ -47,6 +48,14 @@ Check worker readiness for all four dependencies and inspect the durable row usi
 `docs/runbooks/document-processing.md`. Restarting the worker is safe: deterministic
 BullMQ IDs and PostgreSQL claims prevent duplicate snapshots. Do not manually change
 leases or terminal states.
+
+## Renditions stay queued or unavailable
+
+Check `http://localhost:3004/health/ready`, then inspect
+`docs/runbooks/rendition-processing.md`. A valid source must first have clean,
+completed semantic ingestion. Standard `.docx`, `.xlsx`, and `.pptx` are supported;
+macro-enabled, encrypted, corrupt, oversized, or unsafe packages intentionally fail.
+Rendition failure never removes the typed semantic comparison.
 
 ## Direct upload fails while API readiness is green
 

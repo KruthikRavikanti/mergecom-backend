@@ -35,7 +35,7 @@ all Node image build stages.
 
 Docker is not installed on this machine. Local application image builds and Docker
 Compose expansion could not be run. CI now runs `docker compose config --quiet` for
-the synthetic pilot configuration and `docker buildx build --check` for all five
+the synthetic pilot configuration and `docker buildx build --check` for all six
 Dockerfiles. The manual `Pilot images` workflow performs the complete multi-platform
 build and registry publication; a real release still requires that workflow plus the
 external health and Office smoke checks in the operator runbook.

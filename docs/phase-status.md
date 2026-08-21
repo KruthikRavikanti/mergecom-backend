@@ -1,12 +1,111 @@
 # Phase status
 
+## Phases 16-25: Visual comparison workspace
+
+Status: implementation complete in the current worktree; organization pilot
+enablement and operator acceptance remain intentionally off by default.
+
+### Phase 16: Contract and rendering spike
+
+- [x] Product and architecture contracts separate immutable Office sources,
+  semantic truth, private PDF renditions, and versioned visual mappings.
+- [x] Sanitized Word, Excel, PowerPoint, linked-workbook, macro, and corrupt fixtures
+  exercise the pinned LibreOffice/qpdf pipeline without logging package content.
+- [x] Native spike evidence records bounded conversion time, output size, page
+  consistency, representative fidelity language, and explicit renderer/font identity.
+
+### Phase 17: Durable rendition pipeline
+
+- [x] PostgreSQL owns immutable rendition identity, lifecycle, leases, retries,
+  terminal evidence, outbox dispatch, cache references, and completion metadata.
+- [x] Tenant-scoped APIs request/status renditions, return short-lived inline grants,
+  and expose authorized normalized visual data without changing source artifacts.
+- [x] Repeated requests and same-source versions share one tenant-private cache object;
+  cleanup retains it while any rendition row references it.
+
+### Phase 18: Isolated rendition engine
+
+- [x] A worker-authenticated Node service validates standard OOXML packages before
+  invoking LibreOffice in a random profile and validates qpdf output before return.
+- [x] Macro, encrypted, corrupt, traversal, archive-expansion, invalid PDF action,
+  timeout, input-size, and output-size paths fail closed with bounded error contracts.
+- [x] Local and pilot topology runs the non-root service read-only, without egress,
+  with dropped capabilities and bounded processes, memory, CPU, files, and temporary
+  storage.
+
+### Phase 19: Side-by-side workspace MVP
+
+- [x] The comparison route now uses a three-region visual workspace with a semantic
+  change rail, two PDF.js viewers, collapsible inspector, and dense toolbar.
+- [x] Zoom, fit, rotate, page navigation, synchronized navigation, pane swap/hide,
+  overlay, full screen, grant refresh, URL selection, typed degradation, and mobile
+  Before/After behavior are implemented.
+- [x] Desktop, tablet, and mobile Playwright profiles cover the browser surface.
+
+### Phase 20: Change mapping
+
+- [x] A separate versioned `comparison_visualizations` artifact maps every stable
+  change to exact, approximate, or explicitly unavailable locators.
+- [x] Navigation preserves added/removed placeholders, page/slide/sheet/cell/path
+  context, normalized bounds, mapping confidence, and independent coverage metrics.
+
+### Phase 21: PowerPoint visual comparison
+
+- [x] Parser/schema `1.2.0` models slide size and stable shape bounds in addition to
+  shape identity, order, text, category, notes, and package limitations.
+- [x] Slide filmstrips, per-page change counts, shape overlays, direct slide
+  navigation, structured slide geometry, and onion-skin blending are available.
+
+### Phase 22: Excel visual comparison
+
+- [x] Authorized snapshot data drives a row/column-virtualized grid with sheet tabs,
+  coordinates, headers, formula bar, stored formulas/values, styles, merged ranges,
+  hidden state, synchronized viewport, and change heat map.
+- [x] The browser never recalculates formulas; unsupported charts, drawings, links,
+  and macros remain explicit semantic coverage limitations.
+
+### Phase 23: Word visual comparison
+
+- [x] Word offers visual PDF and deterministic structured modes for headings,
+  paragraphs, lists, tables, sections, and exact stable paths.
+- [x] Inline token differences, added/removed ghost blocks, exact table-cell
+  selection, ordered whitespace, and nearest visual-page navigation preserve the
+  semantic result without claiming Office layout fidelity.
+
+### Phase 24: Review integration
+
+- [x] The inspector hosts anchored append-only threads, replies, resolution, review
+  requests, and approval/changes-requested decisions under existing authorization.
+- [x] Review pages, copied links, and anchored notifications reopen the immutable
+  comparison, stable change, mode, and side context.
+
+### Phase 25: Security, performance, and pilot controls
+
+- [x] Comparison creation prewarms both renditions without blocking semantic work;
+  lazy PDF ranges and virtualized workbook regions bound browser loading.
+- [x] Source/renderer/font cache identity, unique-object quota accounting,
+  reference-safe cleanup, signed grants, CORS/CSP policy, and organization/file-type
+  feature gates are implemented.
+- [x] Metrics cover queue age, conversion and viewer duration, failures, timeouts,
+  output size, cache hits, grants, visual reads, and mapping coverage.
+- [x] Deployment configuration, six-image build workflow, readiness, troubleshooting,
+  backup implications, malicious fixtures, accessibility controls, and release
+  verification are documented. A real pilot organization and external alert routing
+  remain operator release gates, not code defaults.
+
+The product contract is in `docs/product/visual-comparison.md`, isolation rationale
+is in `docs/adr/0008-isolated-libreoffice-renditions.md`, operational recovery is in
+`docs/runbooks/rendition-processing.md`, and local evidence is in
+`docs/verification/phase-16-25-command-results.md`.
+
 ## Phase 15: Pilot deployment baseline
 
 Status: implementation complete on `phase-15/pilot-deployment`; pending owner and
 operator review.
 
-- [x] Five pinned, multi-stage images run API, worker, document engine, web, and the
-  Office add-in as non-root users with health checks and read-only runtime support.
+- [x] Six pinned, multi-stage images run API, worker, document engine, rendition
+  engine, web, and the Office add-in as non-root users with health checks and
+  read-only runtime support.
 - [x] Pilot Compose uses immutable application image digests, a one-shot migration
   gate, no bundled stateful services, no public internal-service ports, dropped
   capabilities, no-new-privileges, bounded temporary filesystems, and readiness

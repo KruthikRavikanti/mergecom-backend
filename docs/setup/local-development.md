@@ -37,12 +37,18 @@ Readiness endpoints are dependency-aware:
 - API: `http://localhost:3001/health/ready` requires PostgreSQL and the private
   MinIO artifact bucket.
 - Worker: `http://localhost:3002/health/ready` requires PostgreSQL, Redis, the
-  private MinIO bucket, and the document engine.
+  private MinIO bucket, document engine, and rendition engine.
 - Document engine: `http://localhost:3003/health/ready` has no external dependency.
+- Rendition engine: `http://localhost:3004/health/ready` requires LibreOffice and
+  qpdf. Compose supplies the pinned toolchain and an isolated internal network.
 
 MinIO creates the `mergecom-artifacts` bucket through the one-shot `minio-init`
 container. Mailpit receives local SMTP traffic on port `1025` and exposes its UI on
 port `8025`.
+
+Visual comparison is enabled locally. The MinIO initializer applies exact-origin
+CORS for the web and Office development origins. Use
+`VISUAL_COMPARISON_ENABLED=false` to exercise typed fallback without requesting PDFs.
 
 ## 4. Local identity
 
