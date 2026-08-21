@@ -252,6 +252,22 @@ export interface BranchSummary {
   name: string;
 }
 
+export interface BaselineCandidate {
+  author: { id: string; name: string };
+  createdAt: Date;
+  displayNumber: number;
+  id: string;
+  parentVersionId: string | null;
+  processingState: ProcessingJobStatus;
+  sequence: number;
+  status: VersionStatus;
+}
+
+export interface BaselineRecommendation {
+  baseline: BaselineCandidate | null;
+  reason: 'approved_version' | 'verified_local_base' | 'previous_head' | 'none';
+}
+
 export interface DocumentVersionSummary {
   artifact: ArtifactSummary;
   author: { id: string; name: string };

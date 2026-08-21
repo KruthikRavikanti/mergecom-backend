@@ -10,11 +10,19 @@ export type DownloadGrant = components['schemas']['DownloadGrant'];
 export type FinalizeVersionResult =
   components['schemas']['FinalizeVersionResult'];
 export type Project = components['schemas']['Project'];
+export type VersionComparison = components['schemas']['VersionComparison'];
+export type BaselineRecommendation =
+  components['schemas']['BaselineRecommendation'];
 export type SignedBlobGrant = components['schemas']['SignedBlobGrant'];
 export type UploadIntent = components['schemas']['UploadIntent'];
 
 export interface DocumentChoice extends Document {
   folderPath: string;
+}
+
+export interface FolderChoice {
+  id: string;
+  path: string;
 }
 
 export interface BoundDocumentState {
@@ -86,6 +94,97 @@ export class OfficeApi implements OfficeVersionGateway {
       cursor = result.data.nextCursor ?? undefined;
     } while (cursor);
     return items;
+  }
+
+  public async createProject(
+    organizationId: string,
+    name: string,
+    csrfToken: string,
+  ): Promise<Project> {
+    const result = await this.client.POST(
+      '/v1/organizations/{organizationId}/projects',
+      {
+        body: { clientName: null, name },
+        params: {
+          header: {
+            'Idempotency-Key': crypto.randomUUID(),
+            'X-CSRF-Token': csrfToken,
+          },
+          path: { organizationId },
+        },
+      },
+    );
+    if (!result.response.ok || !result.data) {
+      throw failure(result.error, 'Project could not be created.');
+    }
+    return result.data;
+  }
+
+  public async createDocument(input: {
+    csrfToken: string;
+    documentKind: DocumentKind;
+    folderId: string | null;
+    name: string;
+    organizationId: string;
+    projectId: string;
+  }): Promise<Document> {
+    const result = await this.client.POST(
+      '/v1/organizations/{organizationId}/projects/{projectId}/documents',
+      {
+        body: {
+          folderId: input.folderId,
+          kind: input.documentKind,
+          name: input.name,
+        },
+        params: {
+          header: {
+            'Idempotency-Key': crypto.randomUUID(),
+            'X-CSRF-Token': input.csrfToken,
+          },
+          path: {
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+          },
+        },
+      },
+    );
+    if (!result.response.ok || !result.data) {
+      throw failure(result.error, 'Document could not be created.');
+    }
+    return result.data;
+  }
+
+  public async listFolders(
+    organizationId: string,
+    projectId: string,
+  ): Promise<FolderChoice[]> {
+    const choices: FolderChoice[] = [];
+    const pending: Array<{ id: string | null; path: string }> = [
+      { id: null, path: '' },
+    ];
+    const visited = new Set<string>();
+    while (pending.length) {
+      const parent = pending.shift();
+      if (!parent) break;
+      const children = await this.listChildFolders(
+        organizationId,
+        projectId,
+        parent.id,
+      );
+      for (const child of children) {
+        if (visited.has(child.id)) {
+          throw new Error('MergeCom returned a cyclic folder tree.');
+        }
+        visited.add(child.id);
+        const path = parent.path
+          ? `${parent.path} / ${child.name}`
+          : child.name;
+        choices.push({ id: child.id, path });
+        pending.push({ id: child.id, path });
+      }
+      assertListBound(choices.length + pending.length);
+    }
+    return choices;
   }
 
   public async listDocuments(
@@ -199,6 +298,73 @@ export class OfficeApi implements OfficeVersionGateway {
         result.error,
         'Version processing status could not be loaded.',
       );
+    }
+    return result.data;
+  }
+
+  public async recommendBaseline(
+    binding: DocumentBinding,
+    targetVersionId: string,
+    verifiedBaseVersionId: string | null,
+  ): Promise<BaselineRecommendation> {
+    const result = await this.client.GET(
+      '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/baseline-recommendation',
+      {
+        params: {
+          path: { ...binding, versionId: targetVersionId },
+          ...(verifiedBaseVersionId
+            ? { query: { verifiedBaseVersionId } }
+            : {}),
+        },
+      },
+    );
+    if (!result.response.ok || !result.data) {
+      throw failure(
+        result.error,
+        'A comparison baseline could not be selected.',
+      );
+    }
+    return result.data;
+  }
+
+  public async createComparison(input: {
+    baseVersionId: string;
+    binding: DocumentBinding;
+    csrfToken: string;
+    targetVersionId: string;
+  }): Promise<VersionComparison> {
+    const result = await this.client.POST(
+      '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons',
+      {
+        body: {
+          baseVersionId: input.baseVersionId,
+          targetVersionId: input.targetVersionId,
+        },
+        params: {
+          header: {
+            'Idempotency-Key': `office-${input.baseVersionId}-${input.targetVersionId}`,
+            'X-CSRF-Token': input.csrfToken,
+          },
+          path: input.binding,
+        },
+      },
+    );
+    if (!result.response.ok || !result.data) {
+      throw failure(result.error, 'Comparison could not be created.');
+    }
+    return result.data;
+  }
+
+  public async comparison(
+    binding: DocumentBinding,
+    comparisonId: string,
+  ): Promise<VersionComparison> {
+    const result = await this.client.GET(
+      '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}',
+      { params: { path: { ...binding, comparisonId } } },
+    );
+    if (!result.response.ok || !result.data) {
+      throw failure(result.error, 'Comparison status could not be loaded.');
     }
     return result.data;
   }

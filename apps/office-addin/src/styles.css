@@ -22,6 +22,7 @@ body {
 }
 
 button,
+input,
 progress,
 select,
 textarea {
@@ -407,6 +408,7 @@ label {
   font-weight: 700;
 }
 
+input,
 select,
 textarea {
   width: 100%;
@@ -424,6 +426,11 @@ select {
   text-overflow: ellipsis;
 }
 
+input {
+  min-height: 40px;
+  padding: 7px 9px;
+}
+
 textarea {
   min-height: 76px;
   resize: vertical;
@@ -431,10 +438,37 @@ textarea {
   line-height: 1.4;
 }
 
+input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: 3px solid #fca5a5;
   outline-offset: 1px;
+}
+
+.inline-action {
+  min-height: 30px;
+  justify-self: start;
+  border: 0;
+  padding: 4px 0;
+  color: #991b1b;
+  background: transparent;
+  font-size: 11px;
+}
+
+.inline-action:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.creation-fields {
+  display: grid;
+  gap: 7px;
+  border-left: 3px solid #cbd5e1;
+  padding-left: 11px;
+}
+
+.creation-fields[hidden] {
+  display: none;
 }
 
 .binding-form .primary,
@@ -521,6 +555,39 @@ textarea:focus-visible {
   padding: 12px;
   color: #166534;
   background: #f0fdf4;
+}
+
+.push-result.completion {
+  display: block;
+}
+
+.completion-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.completion-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.completion-details {
+  margin-block: 10px;
+}
+
+.completion-details > div {
+  grid-template-columns: 62px minmax(0, 1fr);
+}
+
+.completion-details dd {
+  font-family: inherit;
+}
+
+.completion-warning {
+  margin: 8px 0 0;
+  color: #9f1239;
+  font-size: 10px;
 }
 
 .push-result.conflict {

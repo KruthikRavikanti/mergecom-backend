@@ -238,6 +238,27 @@ const Comparison = Type.Object({
   updatedAt: DateTime,
   warnings: Type.Array(Type.String()),
 });
+const BaselineRecommendation = Type.Object({
+  baseline: Type.Union([
+    Type.Object({
+      author: Type.Object({ id: Id, name: Type.String() }),
+      createdAt: DateTime,
+      displayNumber: Type.Integer({ minimum: 1 }),
+      id: Id,
+      parentVersionId: Type.Union([Id, Type.Null()]),
+      processingState: Processing.properties.state,
+      sequence: Type.Integer({ minimum: 1 }),
+      status: VersionStatus,
+    }),
+    Type.Null(),
+  ]),
+  reason: Type.Union([
+    Type.Literal('approved_version'),
+    Type.Literal('verified_local_base'),
+    Type.Literal('previous_head'),
+    Type.Literal('none'),
+  ]),
+});
 const Rendition = Type.Object({
   attempts: Type.Integer({ minimum: 0 }),
   byteCount: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
@@ -1091,6 +1112,50 @@ export function registerVersionRoutes(
       } catch (error) {
         return sendVersionError(reply, error, runtime, {
           action: 'visual_data.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.versionId,
+          targetType: 'document_version',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/versions/:versionId/baseline-recommendation`,
+    {
+      preHandler: reads,
+      schema: {
+        params: VersionParams,
+        querystring: Type.Object({
+          verifiedBaseVersionId: Type.Optional(Id),
+        }),
+        response: { 200: BaselineRecommendation, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const recommendation = await runtime.versionService.recommendBaseline({
+          actor: currentActor,
+          documentId: request.params.documentId,
+          projectId: request.params.projectId,
+          targetVersionId: request.params.versionId,
+          verifiedLocalBaseVersionId:
+            request.query.verifiedBaseVersionId ?? null,
+        });
+        return {
+          ...recommendation,
+          baseline: recommendation.baseline
+            ? {
+                ...recommendation.baseline,
+                createdAt: recommendation.baseline.createdAt.toISOString(),
+              }
+            : null,
+        };
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.baseline_denied',
           actor: currentActor,
           requestId: request.id,
           targetId: request.params.versionId,

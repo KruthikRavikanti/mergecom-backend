@@ -19,7 +19,10 @@ import {
   type FinalizedArtifactInput,
   type VersionStore,
 } from './store';
+import { recommendComparisonBaseline } from './baseline-policy';
 import type {
+  BaselineCandidate,
+  BaselineRecommendation,
   BranchSummary,
   ComparisonChange,
   DocumentAccess,
@@ -40,6 +43,7 @@ import type {
 } from './types';
 
 interface AccessRow {
+  branch_approved_version_id: string | null;
   branch_head_version_id: string | null;
   branch_id: string;
   branch_name: string;
@@ -237,6 +241,19 @@ function mapBranch(row: AccessRow): BranchSummary {
     headVersionId: row.branch_head_version_id,
     id: row.branch_id,
     name: row.branch_name,
+  };
+}
+
+function mapBaselineCandidate(row: VersionRow): BaselineCandidate {
+  return {
+    author: { id: row.author_id, name: row.author_name },
+    createdAt: row.created_at,
+    displayNumber: row.display_number,
+    id: row.id,
+    parentVersionId: row.parent_version_id,
+    processingState: row.processing_status,
+    sequence: row.sequence,
+    status: row.status,
   };
 }
 
@@ -572,7 +589,8 @@ export class PostgresVersionStore implements VersionStore {
       `select d.kind as document_kind, d.archived_at as document_archived_at,
               p.archived_at as project_archived_at, pm.role as project_role,
               b.id as branch_id, b.name as branch_name,
-              b.head_version_id as branch_head_version_id
+              b.head_version_id as branch_head_version_id,
+              b.approved_version_id as branch_approved_version_id
          from documents d
          join projects p on p.id = d.project_id
           and p.organization_id = d.organization_id
@@ -1011,6 +1029,59 @@ export class PostgresVersionStore implements VersionStore {
       );
       if (!row) throw new VersionOperationError('not_found');
       return mapComparison(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async recommendBaseline(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    targetVersionId: string;
+    verifiedLocalBaseVersionId: string | null;
+  }): Promise<BaselineRecommendation> {
+    const client = await this.pool.connect();
+    try {
+      const access = await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const target = await this.versionRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        input.targetVersionId,
+      );
+      if (!target || target.branch_id !== access.branch_id) {
+        throw new VersionOperationError('not_found');
+      }
+      const candidateIds = [
+        access.branch_approved_version_id,
+        input.verifiedLocalBaseVersionId,
+        target.parent_version_id,
+      ].filter((value): value is string => Boolean(value));
+      const candidates = await Promise.all(
+        [...new Set(candidateIds)].map((versionId) =>
+          this.versionRow(
+            client,
+            input.actor.organizationId,
+            input.documentId,
+            versionId,
+          ),
+        ),
+      );
+      return recommendComparisonBaseline({
+        approvedVersionId: access.branch_approved_version_id,
+        candidates: candidates
+          .filter((row): row is VersionRow => row !== null)
+          .map(mapBaselineCandidate),
+        target: mapBaselineCandidate(target),
+        verifiedLocalBaseVersionId: input.verifiedLocalBaseVersionId,
+      });
     } finally {
       client.release();
     }

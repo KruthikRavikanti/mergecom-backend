@@ -524,6 +524,16 @@ export class VersionService {
     return (await this.store.getVersion(input)).version;
   }
 
+  public async recommendBaseline(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    targetVersionId: string;
+    verifiedLocalBaseVersionId: string | null;
+  }) {
+    return this.store.recommendBaseline(input);
+  }
+
   public async createComparison(input: {
     actor: VersionActor;
     baseVersionId: string;

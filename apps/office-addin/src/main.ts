@@ -15,6 +15,7 @@ import {
   History,
   Link2,
   LogIn,
+  Plus,
   RefreshCw,
   TriangleAlert,
   Unlink,
@@ -31,6 +32,7 @@ import {
   type DocumentVersion,
   type DownloadGrant,
   type Project,
+  type VersionComparison,
   webAppUrl,
 } from './api';
 import { createBaseContextStore, type KeyValueStorage } from './base-context';
@@ -43,6 +45,11 @@ import {
   type OfficeRuntime,
 } from './office-runtime';
 import { pushCapturedVersion, type PushStage } from './push-version';
+import {
+  comparisonReviewPath,
+  createSaveCompareWorkflowStore,
+  type SaveCompareWorkflow,
+} from './save-and-compare';
 
 const rootElement = document.querySelector<HTMLElement>('#app');
 if (rootElement === null)
@@ -50,6 +57,7 @@ if (rootElement === null)
 const root: HTMLElement = rootElement;
 const api = new OfficeApi();
 const baseContexts = createBaseContextStore(browserStorage());
+const saveCompareWorkflows = createSaveCompareWorkflowStore(browserStorage());
 
 const HOST_LABELS: Readonly<Record<OfficeHost, string>> = {
   excel: 'Excel',
@@ -134,6 +142,10 @@ async function start(): Promise<void> {
   try {
     const state = await api.boundDocumentState(binding);
     await renderBoundDocument(runtime, user, binding, state);
+    const workflow = saveCompareWorkflows.load(binding);
+    if (workflow) {
+      await continueSaveCompare(runtime, user, binding, workflow);
+    }
   } catch (error) {
     await renderBindingPicker(runtime, user, toErrorMessage(error));
   }
@@ -167,7 +179,7 @@ function renderBrowserPreview(): void {
         <div><span>Package access</span><strong>Unavailable</strong></div>
       </section>
       <button class="primary" type="button" disabled>
-        <i data-lucide="upload" aria-hidden="true"></i>Push exact version
+        <i data-lucide="upload" aria-hidden="true"></i>Save &amp; Compare
       </button>
       <p class="feedback" role="status">Waiting for an Office task pane.</p>
     </main>
@@ -188,7 +200,7 @@ function renderUnsupported(runtime: OfficeRuntime, reason: string): void {
         <div><span>Package access</span><strong>Unavailable</strong></div>
       </section>
       <button class="primary" type="button" disabled>
-        <i data-lucide="upload" aria-hidden="true"></i>Push exact version
+        <i data-lucide="upload" aria-hidden="true"></i>Save &amp; Compare
       </button>
       <p class="feedback warning" role="status">${escapeHtml(reason)}</p>
     </main>
@@ -293,6 +305,9 @@ async function renderBindingPicker(
     return;
   }
 
+  const canCreateProject = ['owner', 'admin', 'project_lead'].includes(
+    organization.role,
+  );
   root.innerHTML = `
     ${brandMarkup()}
     <main class="content">
@@ -305,10 +320,36 @@ async function renderBindingPicker(
         <select id="project" name="project" ${projects.length === 0 ? 'disabled' : ''}>
           ${projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('')}
         </select>
+        ${
+          canCreateProject
+            ? `
+          <button class="inline-action new-project-button" type="button">
+            <i data-lucide="plus" aria-hidden="true"></i>New project
+          </button>
+          <div class="creation-fields project-creation" hidden>
+            <label for="new-project-name">Project name</label>
+            <input id="new-project-name" maxlength="160" autocomplete="off" />
+            <button class="secondary create-project-button" type="button">Create project</button>
+          </div>
+        `
+            : ''
+        }
         <label for="document">Document</label>
         <select id="document" name="document" disabled>
           <option value="">Loading documents...</option>
         </select>
+        <button class="inline-action new-document-button" type="button" disabled>
+          <i data-lucide="plus" aria-hidden="true"></i>New ${DOCUMENT_LABELS[runtime.host]}
+        </button>
+        <div class="creation-fields document-creation" hidden>
+          <label for="new-document-name">Document name</label>
+          <input id="new-document-name" maxlength="255" value="${escapeHtml(defaultDocumentName(runtime.fileName))}" autocomplete="off" />
+          <label for="new-document-folder">Folder</label>
+          <select id="new-document-folder">
+            <option value="">Project root</option>
+          </select>
+          <button class="secondary create-document-button" type="button">Create and link</button>
+        </div>
         <button class="primary bind-button" type="submit" disabled>
           <i data-lucide="link-2" aria-hidden="true"></i>Link current file
         </button>
@@ -318,13 +359,20 @@ async function renderBindingPicker(
     </main>
   `;
   drawIcons();
-  if (projects.length === 0) return;
-
   const projectSelect = getElement<HTMLSelectElement>('#project');
   const documentSelect = getElement<HTMLSelectElement>('#document');
   const bindButton = getElement<HTMLButtonElement>('.bind-button');
   const form = getElement<HTMLFormElement>('.binding-form');
   const feedback = getElement<HTMLElement>('.feedback');
+  const newDocumentButton = getElement<HTMLButtonElement>(
+    '.new-document-button',
+  );
+  const documentCreation = getElement<HTMLElement>('.document-creation');
+  const documentName = getElement<HTMLInputElement>('#new-document-name');
+  const folderSelect = getElement<HTMLSelectElement>('#new-document-folder');
+  const createDocumentButton = getElement<HTMLButtonElement>(
+    '.create-document-button',
+  );
   let documents: DocumentChoice[] = [];
 
   const loadDocuments = async () => {
@@ -333,12 +381,29 @@ async function renderBindingPicker(
     documentSelect.innerHTML = '<option value="">Loading documents...</option>';
     feedback.classList.remove('warning');
     feedback.textContent = '';
+    if (!projectSelect.value) {
+      documentSelect.innerHTML =
+        '<option value="">Select a project first</option>';
+      newDocumentButton.disabled = true;
+      return;
+    }
     try {
-      documents = await api.listDocuments(
-        organization.id,
-        projectSelect.value,
-        documentKindForHost(runtime.host),
-      );
+      const [loadedDocuments, folders] = await Promise.all([
+        api.listDocuments(
+          organization.id,
+          projectSelect.value,
+          documentKindForHost(runtime.host),
+        ),
+        api.listFolders(organization.id, projectSelect.value),
+      ]);
+      documents = loadedDocuments;
+      folderSelect.innerHTML = [
+        '<option value="">Project root</option>',
+        ...folders.map(
+          (folder) =>
+            `<option value="${folder.id}">${escapeHtml(folder.path)}</option>`,
+        ),
+      ].join('');
       documentSelect.innerHTML = documents.length
         ? documents
             .map((document) => {
@@ -351,6 +416,12 @@ async function renderBindingPicker(
         : '<option value="">No matching documents</option>';
       documentSelect.disabled = documents.length === 0;
       bindButton.disabled = documents.length === 0;
+      const project = projects.find(
+        (candidate) => candidate.id === projectSelect.value,
+      );
+      newDocumentButton.disabled =
+        !project ||
+        !['contributor', 'project_lead'].includes(project.accessRole);
     } catch (error) {
       documentSelect.innerHTML =
         '<option value="">Documents unavailable</option>';
@@ -360,6 +431,86 @@ async function renderBindingPicker(
   };
 
   projectSelect.addEventListener('change', () => void loadDocuments());
+  newDocumentButton.addEventListener('click', () => {
+    documentCreation.hidden = !documentCreation.hidden;
+    if (!documentCreation.hidden) documentName.focus();
+  });
+  createDocumentButton.addEventListener('click', () => {
+    const name = documentName.value.trim();
+    if (!name || !projectSelect.value || runtime.fileName === null) return;
+    createDocumentButton.disabled = true;
+    feedback.classList.remove('warning');
+    feedback.textContent = 'Creating and linking the document...';
+    void api
+      .createDocument({
+        csrfToken: user.session.csrfToken,
+        documentKind: documentKindForHost(runtime.host),
+        folderId: folderSelect.value || null,
+        name,
+        organizationId: organization.id,
+        projectId: projectSelect.value,
+      })
+      .then((document) => {
+        const binding: DocumentBinding = {
+          documentId: document.id,
+          documentKind: document.kind,
+          organizationId: organization.id,
+          projectId: projectSelect.value,
+          schemaVersion: 1,
+        };
+        return bindCurrentFile(runtime, user, binding, form, feedback);
+      })
+      .catch((error: unknown) => {
+        createDocumentButton.disabled = false;
+        feedback.classList.add('warning');
+        feedback.textContent = toErrorMessage(error);
+      });
+  });
+  if (canCreateProject) {
+    const projectCreation = getElement<HTMLElement>('.project-creation');
+    const projectName = getElement<HTMLInputElement>('#new-project-name');
+    const createProjectButton = getElement<HTMLButtonElement>(
+      '.create-project-button',
+    );
+    getElement<HTMLButtonElement>('.new-project-button').addEventListener(
+      'click',
+      () => {
+        projectCreation.hidden = !projectCreation.hidden;
+        if (!projectCreation.hidden) projectName.focus();
+      },
+    );
+    createProjectButton.addEventListener('click', () => {
+      const name = projectName.value.trim();
+      if (!name) return;
+      createProjectButton.disabled = true;
+      feedback.classList.remove('warning');
+      feedback.textContent = 'Creating project...';
+      void api
+        .createProject(organization.id, name, user.session.csrfToken)
+        .then(async (project) => {
+          projects = [...projects, project];
+          projectSelect.disabled = false;
+          projectSelect.innerHTML = projects
+            .map(
+              (candidate) =>
+                `<option value="${candidate.id}">${escapeHtml(candidate.name)}</option>`,
+            )
+            .join('');
+          projectSelect.value = project.id;
+          projectCreation.hidden = true;
+          feedback.textContent =
+            'Project created. Select or create a document.';
+          await loadDocuments();
+        })
+        .catch((error: unknown) => {
+          feedback.classList.add('warning');
+          feedback.textContent = toErrorMessage(error);
+        })
+        .finally(() => {
+          createProjectButton.disabled = false;
+        });
+    });
+  }
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const document = documents.find(
@@ -502,10 +653,25 @@ async function renderBoundDocument(
       </section>
       <form class="push-form">
         <label for="version-note">Version note</label>
-        <textarea id="version-note" name="note" maxlength="500" rows="3" placeholder="Describe this revision" ${canPush ? '' : 'disabled'}></textarea>
-        <div class="character-count"><span>Required</span><span class="note-count">0 / 500</span></div>
-        <button class="primary push-button" type="submit" disabled>
-          <i data-lucide="upload" aria-hidden="true"></i>Push exact version
+        <textarea id="version-note" name="note" maxlength="500" rows="3" placeholder="Optional context for reviewers" ${canPush ? '' : 'disabled'}></textarea>
+        <div class="character-count"><span>Optional</span><span class="note-count">0 / 500</span></div>
+        <label for="comparison-baseline">Compare with</label>
+        <select id="comparison-baseline" ${canPush ? '' : 'disabled'}>
+          <option value="">Recommended baseline</option>
+          ${state.versions
+            .filter(
+              (version) =>
+                version.processing.state === 'completed' &&
+                (version.status === 'ready' || version.status === 'conflicted'),
+            )
+            .map(
+              (version) =>
+                `<option value="${version.id}">${escapeHtml(versionLabel(version))} - ${escapeHtml(version.author.name)}</option>`,
+            )
+            .join('')}
+        </select>
+        <button class="primary push-button" type="submit" ${canPush ? '' : 'disabled'}>
+          <i data-lucide="upload" aria-hidden="true"></i>Save &amp; Compare
         </button>
       </form>
       ${progressMarkup(true)}
@@ -527,6 +693,9 @@ async function renderBoundDocument(
   const note = getElement<HTMLTextAreaElement>('#version-note');
   const count = getElement<HTMLElement>('.note-count');
   const pushButton = getElement<HTMLButtonElement>('.push-button');
+  const comparisonBaseline = getElement<HTMLSelectElement>(
+    '#comparison-baseline',
+  );
   const versionSelect = getElement<HTMLSelectElement>('#pull-version');
   const openCopyButton = getElement<HTMLButtonElement>('.open-copy-button');
   const downloadVersionButton = getElement<HTMLButtonElement>(
@@ -571,12 +740,19 @@ async function renderBoundDocument(
   });
   note.addEventListener('input', () => {
     count.textContent = `${note.value.length} / 500`;
-    pushButton.disabled = !canPush || note.value.trim().length === 0;
+    pushButton.disabled = !canPush;
   });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    if (!canPush || !note.value.trim()) return;
-    void pushCurrentVersion(runtime, user, binding, state, note.value.trim());
+    if (!canPush) return;
+    void pushCurrentVersion(
+      runtime,
+      user,
+      binding,
+      state,
+      note.value.trim() || 'Saved from the Office add-in',
+      comparisonBaseline.value || null,
+    );
   });
   getElement<HTMLButtonElement>('.open-web-button').addEventListener(
     'click',
@@ -588,6 +764,7 @@ async function renderBoundDocument(
       void (async () => {
         await runtime.bindingStore.clear();
         await baseContexts.clear(binding, runtime.documentUrl);
+        saveCompareWorkflows.clear(binding);
         await renderBindingPicker(runtime, user);
       })().catch((error: unknown) =>
         renderStartupFailure(toErrorMessage(error)),
@@ -602,6 +779,7 @@ async function pushCurrentVersion(
   binding: DocumentBinding,
   state: BoundDocumentState,
   note: string,
+  explicitBaselineVersionId: string | null,
 ): Promise<void> {
   const controller = new AbortController();
   const form = getElement<HTMLFormElement>('.push-form');
@@ -636,6 +814,12 @@ async function pushCurrentVersion(
           ? `${versionLabel(duplicate)} already contains these exact bytes.`
           : `${versionLabel(duplicate)} contains these exact bytes and is behind latest.`,
       );
+      const versionSelect =
+        root.querySelector<HTMLSelectElement>('#pull-version');
+      if (versionSelect) {
+        versionSelect.value = duplicate.id;
+        versionSelect.dispatchEvent(new Event('change'));
+      }
       return;
     }
     const storedBase = await baseContexts.load(binding, runtime.documentUrl);
@@ -666,25 +850,16 @@ async function pushCurrentVersion(
       });
     }
     showPushResult(result.version, result.outcome);
-    try {
-      await pollProcessing(binding, result.version.id);
-      const refreshed = await api.boundDocumentState(binding);
-      await renderBoundDocument(
-        runtime,
-        user,
-        binding,
-        refreshed,
-        result.outcome === 'created'
-          ? `${versionLabel(result.version)} finalized successfully.`
-          : `${versionLabel(result.version)} was preserved as a conflict; latest was not replaced.`,
-      );
-    } catch (statusError) {
-      hideProgress();
-      form.removeAttribute('aria-busy');
-      restoreActions();
-      feedback.classList.add('warning');
-      feedback.textContent = `${versionLabel(result.version)} finalized, but processing status is unavailable: ${toErrorMessage(statusError)}`;
-    }
+    const workflow: SaveCompareWorkflow = {
+      baselineVersionId: explicitBaselineVersionId,
+      comparisonId: null,
+      schemaVersion: 1,
+      stage: 'processing_version',
+      targetVersionId: result.version.id,
+      verifiedBaseVersionId: validBase,
+    };
+    saveCompareWorkflows.save(binding, workflow);
+    await continueSaveCompare(runtime, user, binding, workflow);
   } catch (error) {
     hideProgress();
     form.removeAttribute('aria-busy');
@@ -692,6 +867,167 @@ async function pushCurrentVersion(
     feedback.classList.add('warning');
     feedback.textContent = toErrorMessage(error);
   }
+}
+
+async function continueSaveCompare(
+  runtime: OfficeRuntime,
+  user: CurrentUser,
+  binding: DocumentBinding,
+  workflow: SaveCompareWorkflow,
+): Promise<void> {
+  try {
+    let comparison = workflow.comparisonId
+      ? await api.comparison(binding, workflow.comparisonId)
+      : null;
+    const version = await pollProcessing(binding, workflow.targetVersionId);
+    if (ACTIVE_PROCESSING_STATES.has(version.processing.state)) {
+      saveCompareWorkflows.save(binding, {
+        ...workflow,
+        stage: 'retryable_failure',
+      });
+      await renderWorkflowStatus(
+        runtime,
+        user,
+        binding,
+        `${versionLabel(version)} is still processing. MergeCom will resume when the pane opens again.`,
+        true,
+      );
+      return;
+    }
+    if (
+      version.status === 'quarantined' ||
+      version.processing.state === 'quarantined'
+    ) {
+      saveCompareWorkflows.save(binding, { ...workflow, stage: 'quarantined' });
+      await renderWorkflowStatus(
+        runtime,
+        user,
+        binding,
+        `${versionLabel(version)} was quarantined and was not compared.`,
+        true,
+      );
+      return;
+    }
+    if (
+      version.status === 'failed' ||
+      version.processing.state === 'permanently_failed'
+    ) {
+      saveCompareWorkflows.save(binding, {
+        ...workflow,
+        stage: 'terminal_failure',
+      });
+      await renderWorkflowStatus(
+        runtime,
+        user,
+        binding,
+        `${versionLabel(version)} could not be processed and was not compared.`,
+        true,
+      );
+      return;
+    }
+
+    let baselineVersionId = workflow.baselineVersionId;
+    let baselineReason = baselineVersionId
+      ? 'Selected before saving'
+      : 'No eligible baseline';
+    if (!baselineVersionId && !comparison) {
+      showProgress('Selecting comparison baseline', 97);
+      const recommendation = await api.recommendBaseline(
+        binding,
+        version.id,
+        workflow.verifiedBaseVersionId,
+      );
+      baselineVersionId = recommendation.baseline?.id ?? null;
+      baselineReason = baselineReasonLabel(recommendation.reason);
+    }
+    if (baselineVersionId === version.id) baselineVersionId = null;
+    if (!baselineVersionId && !comparison) {
+      const refreshed = await api.boundDocumentState(binding);
+      await renderBoundDocument(
+        runtime,
+        user,
+        binding,
+        refreshed,
+        `${versionLabel(version)} was saved. There is no eligible earlier version to compare.`,
+      );
+      showComparisonCompletion(runtime, binding, version, null, baselineReason);
+      saveCompareWorkflows.save(binding, {
+        ...workflow,
+        baselineVersionId: null,
+        stage: 'ready_for_review',
+      });
+      return;
+    }
+
+    if (!comparison && baselineVersionId) {
+      showProgress('Creating comparison', 98);
+      comparison = await api.createComparison({
+        baseVersionId: baselineVersionId,
+        binding,
+        csrfToken: user.session.csrfToken,
+        targetVersionId: version.id,
+      });
+      workflow = {
+        ...workflow,
+        baselineVersionId,
+        comparisonId: comparison.id,
+        stage: 'processing_comparison',
+      };
+      saveCompareWorkflows.save(binding, workflow);
+    }
+    if (!comparison) return;
+    comparison = await pollComparison(binding, comparison.id);
+    const refreshed = await api.boundDocumentState(binding);
+    await renderBoundDocument(
+      runtime,
+      user,
+      binding,
+      refreshed,
+      comparison.state === 'completed'
+        ? `${versionLabel(version)} was saved and compared successfully.`
+        : `${versionLabel(version)} was saved, but comparison processing did not complete.`,
+    );
+    if (comparison.state === 'completed') {
+      saveCompareWorkflows.save(binding, {
+        ...workflow,
+        stage: 'ready_for_review',
+      });
+      showComparisonCompletion(
+        runtime,
+        binding,
+        version,
+        comparison,
+        baselineReason,
+      );
+    } else {
+      const feedback = getElement<HTMLElement>('.feedback');
+      feedback.classList.add('warning');
+    }
+  } catch (error) {
+    const state = await api.boundDocumentState(binding).catch(() => null);
+    if (state) await renderBoundDocument(runtime, user, binding, state);
+    const feedback = root.querySelector<HTMLElement>('.feedback');
+    if (feedback) {
+      feedback.classList.add('warning');
+      feedback.textContent = `Save completed, but comparison could not continue: ${toErrorMessage(error)}`;
+    }
+    saveCompareWorkflows.save(binding, {
+      ...workflow,
+      stage: 'retryable_failure',
+    });
+  }
+}
+
+async function renderWorkflowStatus(
+  runtime: OfficeRuntime,
+  user: CurrentUser,
+  binding: DocumentBinding,
+  message: string,
+  warning: boolean,
+): Promise<void> {
+  const state = await api.boundDocumentState(binding);
+  await renderBoundDocument(runtime, user, binding, state, message);
+  if (warning) getElement<HTMLElement>('.feedback').classList.add('warning');
 }
 
 async function openVersionCopy(
@@ -869,16 +1205,36 @@ async function capturePackage(
 async function pollProcessing(
   binding: DocumentBinding,
   versionId: string,
-): Promise<void> {
+): Promise<DocumentVersion> {
+  let latest: DocumentVersion | null = null;
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const version = await api.version(binding, versionId);
+    latest = version;
     showPushResult(
       version,
       version.status === 'conflicted' ? 'conflict' : 'created',
     );
-    if (!ACTIVE_PROCESSING_STATES.has(version.processing.state)) return;
+    if (!ACTIVE_PROCESSING_STATES.has(version.processing.state)) return version;
     await delay(2_000);
   }
+  if (!latest) throw new Error('Version processing status is unavailable.');
+  return latest;
+}
+
+async function pollComparison(
+  binding: DocumentBinding,
+  comparisonId: string,
+): Promise<VersionComparison> {
+  let latest: VersionComparison | null = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    latest = await api.comparison(binding, comparisonId);
+    const percent = Math.min(99, 98 + attempt / 30);
+    showProgress('Processing comparison', percent);
+    if (!ACTIVE_PROCESSING_STATES.has(latest.state)) return latest;
+    await delay(2_000);
+  }
+  if (!latest) throw new Error('Comparison processing status is unavailable.');
+  return latest;
 }
 
 function showPushStage(stage: PushStage, controller: AbortController): void {
@@ -928,6 +1284,7 @@ function showPushResult(
   const result = root.querySelector<HTMLElement>('.push-result');
   if (!result) return;
   result.hidden = false;
+  result.classList.remove('completion');
   result.classList.toggle('conflict', outcome === 'conflict');
   result.innerHTML = `
     <i data-lucide="${outcome === 'conflict' ? 'triangle-alert' : 'circle-check'}" aria-hidden="true"></i>
@@ -938,6 +1295,74 @@ function showPushResult(
     </div>
   `;
   drawIcons();
+}
+
+function showComparisonCompletion(
+  runtime: OfficeRuntime,
+  binding: DocumentBinding,
+  version: DocumentVersion,
+  comparison: VersionComparison | null,
+  baselineReason: string,
+): void {
+  hideProgress();
+  const result = root.querySelector<HTMLElement>('.push-result');
+  if (!result) return;
+  const warning =
+    comparison?.completeness === 'partial' ||
+    Boolean(comparison?.warnings.length);
+  result.hidden = false;
+  result.classList.remove('conflict');
+  result.classList.add('completion');
+  result.innerHTML = `
+    <div class="completion-heading">
+      <i data-lucide="circle-check" aria-hidden="true"></i>
+      <div>
+        <span>SAVE &amp; COMPARE COMPLETE</span>
+        <strong>${escapeHtml(versionLabel(version))}</strong>
+      </div>
+    </div>
+    <dl class="completion-details">
+      <div><dt>Processing</dt><dd>${escapeHtml(processingLabel(version))}</dd></div>
+      <div><dt>Baseline</dt><dd>${
+        comparison
+          ? `${escapeHtml(`V${comparison.baseVersion.displayNumber}`)} by ${escapeHtml(comparison.baseVersion.authorName)} · ${escapeHtml(formatDate(comparison.baseVersion.createdAt))}`
+          : 'Not available'
+      }</dd></div>
+      <div><dt>Reason</dt><dd>${escapeHtml(baselineReason)}</dd></div>
+      <div><dt>Changes</dt><dd>${comparison ? comparison.changes.length : 0}</dd></div>
+    </dl>
+    ${
+      warning
+        ? `<p class="completion-warning">${escapeHtml(comparison?.warnings[0] ?? 'Comparison coverage is partial.')}</p>`
+        : ''
+    }
+    ${
+      comparison
+        ? '<button class="primary review-changes-button" type="button"><i data-lucide="external-link" aria-hidden="true"></i>Review Changes</button>'
+        : '<p class="completion-warning">Save another version before starting a comparison.</p>'
+    }
+  `;
+  result
+    .querySelector<HTMLButtonElement>('.review-changes-button')
+    ?.addEventListener('click', () => {
+      if (!comparison) return;
+      runtime.openBrowserWindow(
+        webAppUrl(comparisonReviewPath(binding, comparison.id)),
+      );
+    });
+  drawIcons();
+}
+
+function baselineReasonLabel(
+  reason: 'approved_version' | 'verified_local_base' | 'previous_head' | 'none',
+): string {
+  const labels = {
+    approved_version: 'Current approved version',
+    none: 'No eligible baseline',
+    previous_head: 'Previous branch head',
+    verified_local_base: 'Verified local file base',
+  };
+  return labels[reason];
 }
 
 function renderRetryableFailure(runtime: OfficeRuntime, message: string): void {
@@ -1063,6 +1488,18 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function defaultDocumentName(fileName: string | null): string {
+  if (!fileName) return 'Untitled';
+  return fileName.replace(/\.(docx|xlsx|pptx)$/iu, '') || fileName;
+}
+
 function documentHistoryUrl(binding: DocumentBinding): string {
   return webAppUrl(
     `/app/projects/${binding.projectId}/documents/${binding.documentId}/history`,
@@ -1079,6 +1516,7 @@ function drawIcons(): void {
       History,
       Link2,
       LogIn,
+      Plus,
       RefreshCw,
       TriangleAlert,
       Unlink,

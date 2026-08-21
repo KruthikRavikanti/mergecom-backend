@@ -1,6 +1,7 @@
 import type { PageInput } from '../projects/store';
 import type {
   ArtifactSummary,
+  BaselineRecommendation,
   BranchSummary,
   DocumentMerge,
   VersionComparison,
@@ -198,6 +199,13 @@ export interface VersionStore {
     documentId: string;
     projectId: string;
   }): Promise<VersionComparison>;
+  recommendBaseline(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    targetVersionId: string;
+    verifiedLocalBaseVersionId: string | null;
+  }): Promise<BaselineRecommendation>;
   getMerge(input: {
     actor: VersionActor;
     documentId: string;

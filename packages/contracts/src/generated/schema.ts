@@ -748,6 +748,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/baseline-recommendation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["recommendComparisonBaseline"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}": {
         parameters: {
             query?: never;
@@ -1428,6 +1449,28 @@ export interface components {
             };
             items: components["schemas"]["DocumentVersion"][];
             nextCursor: string | null;
+        };
+        BaselineRecommendation: {
+            /** @enum {string} */
+            reason: "approved_version" | "verified_local_base" | "previous_head" | "none";
+            baseline: {
+                /** Format: uuid */
+                id: string;
+                displayNumber: number;
+                sequence: number;
+                parentVersionId: string | null;
+                /** @enum {string} */
+                status: "pending_processing" | "ready" | "conflicted" | "quarantined" | "failed";
+                /** @enum {string} */
+                processingState: "queued" | "running" | "retryable_failed" | "permanently_failed" | "quarantined" | "completed";
+                author: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                };
+                /** Format: date-time */
+                createdAt: string;
+            } | null;
         };
         ComparisonVersionReference: {
             /** Format: uuid */
@@ -3359,6 +3402,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    recommendComparisonBaseline: {
+        parameters: {
+            query?: {
+                verifiedBaseVersionId?: string;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deterministic baseline recommendation for a target version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineRecommendation"];
                 };
             };
             default: components["responses"]["ApiError"];
