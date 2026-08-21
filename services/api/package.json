@@ -18,24 +18,24 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.1111.0",
-    "@aws-sdk/s3-request-presigner": "3.1111.0",
-    "@fastify/cookie": "11.0.2",
-    "@fastify/cors": "11.1.0",
-    "@fastify/rate-limit": "11.1.0",
+    "@aws-sdk/client-s3": "3.1113.0",
+    "@aws-sdk/s3-request-presigner": "3.1113.0",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/cors": "11.3.0",
+    "@fastify/rate-limit": "11.2.0",
     "@fastify/swagger": "9.8.1",
     "@fastify/type-provider-typebox": "6.1.0",
-    "@sinclair/typebox": "0.34.48",
+    "@sinclair/typebox": "0.34.52",
     "drizzle-orm": "0.45.2",
     "fastify": "5.12.0",
     "nodemailer": "9.0.5",
-    "openid-client": "6.8.5",
-    "pg": "8.16.3"
+    "openid-client": "6.8.6",
+    "pg": "8.23.0"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "12.1.0",
     "@types/nodemailer": "7.0.11",
-    "@types/pg": "8.15.6",
+    "@types/pg": "8.23.1",
     "drizzle-kit": "0.31.10",
     "tsx": "4.21.0",
     "vitest": "4.1.0"
