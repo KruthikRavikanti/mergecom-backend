@@ -1,0 +1,21 @@
+{
+  "name": "mergecom-legacy-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Legacy filesystem prototype retained only as a migration reference.",
+  "scripts": {
+    "legacy:certs": "office-addin-dev-certs install",
+    "legacy:certs:verify": "office-addin-dev-certs verify",
+    "legacy:start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "office-addin-dev-certs": "^2.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
