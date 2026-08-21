@@ -1,0 +1,3 @@
+CREATE INDEX "documents_organization_normalized_name_idx" ON "documents" USING btree ("organization_id",lower("name"));--> statement-breakpoint
+CREATE INDEX "project_folders_organization_normalized_name_idx" ON "project_folders" USING btree ("organization_id",lower("name"));--> statement-breakpoint
+CREATE INDEX "projects_organization_normalized_name_idx" ON "projects" USING btree ("organization_id",lower("name"));

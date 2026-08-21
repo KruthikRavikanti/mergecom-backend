@@ -7,6 +7,7 @@ import { AppLayout } from '../components/layout/AppLayout';
 import { PublicLayout } from '../components/layout/PublicLayout';
 import { AdminPage } from '../features/admin/AdminPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
+import { MyWorkPage } from '../features/dashboard/MyWorkPage';
 import { DocumentHistoryPage } from '../features/history/DocumentHistoryPage';
 import { DocumentComparePage } from '../features/history/DocumentComparePage';
 import { DocumentMergePage } from '../features/history/DocumentMergePage';
@@ -43,7 +44,8 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
       { element: <InviteAcceptancePage />, path: 'invite/:token' },
       {
         children: [
-          { element: <DashboardPage />, index: true },
+          { element: <MyWorkPage />, index: true },
+          { element: <DashboardPage />, path: 'projects' },
           { element: <ProjectPage />, path: 'projects/:projectId' },
           {
             element: <ProjectPage />,

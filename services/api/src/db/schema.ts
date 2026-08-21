@@ -410,6 +410,10 @@ export const projects = pgTable(
     ...timestamps,
   },
   (table) => [
+    index('projects_organization_normalized_name_idx').on(
+      table.organizationId,
+      sql`lower(${table.name})`,
+    ),
     index('projects_organization_updated_idx').on(
       table.organizationId,
       table.updatedAt,
@@ -478,6 +482,10 @@ export const projectFolders = pgTable(
     ...timestamps,
   },
   (table) => [
+    index('project_folders_organization_normalized_name_idx').on(
+      table.organizationId,
+      sql`lower(${table.name})`,
+    ),
     index('project_folders_parent_order_idx').on(
       table.organizationId,
       table.projectId,
@@ -525,6 +533,10 @@ export const documents = pgTable(
     ...timestamps,
   },
   (table) => [
+    index('documents_organization_normalized_name_idx').on(
+      table.organizationId,
+      sql`lower(${table.name})`,
+    ),
     index('documents_folder_order_idx').on(
       table.organizationId,
       table.projectId,
@@ -540,6 +552,37 @@ export const documents = pgTable(
     uniqueIndex('documents_organization_id_uq').on(
       table.organizationId,
       table.id,
+    ),
+  ],
+);
+
+export const userDocumentRecents = pgTable(
+  'user_document_recents',
+  {
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    openedAt: timestamp('opened_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('user_document_recents_user_document_uq').on(
+      table.organizationId,
+      table.userId,
+      table.documentId,
+    ),
+    index('user_document_recents_user_opened_idx').on(
+      table.organizationId,
+      table.userId,
+      table.openedAt,
+      table.documentId,
     ),
   ],
 );

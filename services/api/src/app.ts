@@ -29,6 +29,9 @@ import { PostgresVersionStore } from './versions/postgres-store';
 import { registerVersionRoutes } from './versions/routes';
 import { VersionService } from './versions/service';
 import type { VersionStore } from './versions/store';
+import { PostgresWorkspaceStore } from './workspace/postgres-store';
+import { registerWorkspaceRoutes } from './workspace/routes';
+import type { WorkspaceStore } from './workspace/store';
 
 const DependencyState = Type.Union([
   Type.Literal('ready'),
@@ -56,6 +59,7 @@ interface CreateAppOptions {
   reviewStore?: ReviewStore;
   versionService?: VersionService;
   versionStore?: VersionStore;
+  workspaceStore?: WorkspaceStore;
   trustProxy?: FastifyServerOptions['trustProxy'];
 }
 
@@ -70,7 +74,8 @@ export async function createApp(options: CreateAppOptions = {}) {
       !options.projectStore ||
       !options.reviewStore ||
       !options.notificationStore ||
-      !options.versionStore) &&
+      !options.versionStore ||
+      !options.workspaceStore) &&
     options.databaseUrl
       ? createDatabase(options.databaseUrl)
       : null;
@@ -88,6 +93,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   const notificationStore =
     options.notificationStore ??
     (database ? new PostgresNotificationStore(database.pool) : null);
+  const workspaceStore =
+    options.workspaceStore ??
+    (database ? new PostgresWorkspaceStore(database.pool) : null);
   const blobStore =
     options.blobStore ??
     (config.blobStorage ? new S3BlobStore(config.blobStorage) : null);
@@ -204,6 +212,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     }
     if (reviewStore) {
       registerReviewRoutes(app, { ...runtime, reviewStore });
+    }
+    if (workspaceStore) {
+      registerWorkspaceRoutes(app, { ...runtime, workspaceStore });
     }
   }
 

@@ -469,6 +469,25 @@ test.beforeEach(async ({ page }) => {
       );
       return;
     }
+    if (path.endsWith('/workspace/my-work') && method === 'GET') {
+      await route.fulfill({
+        json: { items: [], nextCursor: null },
+        status: 200,
+      });
+      return;
+    }
+    if (path.endsWith('/workspace/search') && method === 'GET') {
+      await route.fulfill({ json: { items: [] }, status: 200 });
+      return;
+    }
+    if (path.endsWith('/workspace/recents')) {
+      await route.fulfill(
+        method === 'GET'
+          ? { json: { items: [] }, status: 200 }
+          : { body: '', status: 204 },
+      );
+      return;
+    }
     if (path.endsWith('/memberships')) {
       await route.fulfill({
         json: {
@@ -832,7 +851,8 @@ async function startIdentitySession(page: Page) {
 }
 
 const authenticatedRoutes = [
-  { heading: 'Projects', path: '/app' },
+  { heading: 'My Work', path: '/app' },
+  { heading: 'Projects', path: '/app/projects' },
   { heading: 'Project Meridian', path: `/app/projects/${projectId}` },
   {
     heading: 'Project Meridian',
@@ -972,6 +992,7 @@ test('creates a persisted project through the API boundary', async ({
   page,
 }) => {
   await startIdentitySession(page);
+  await page.goto('/app/projects');
   await page.getByRole('button', { name: 'New project' }).click();
   const createDialog = page.getByRole('dialog', { name: 'Create project' });
   await createDialog.getByLabel('Project name').fill('Project Polaris');
@@ -986,6 +1007,7 @@ test('updates project metadata from the current saved state', async ({
   page,
 }) => {
   await startIdentitySession(page);
+  await page.goto('/app/projects');
   const projectCard = page.getByRole('article').filter({
     has: page.getByRole('heading', { name: 'Project Meridian', exact: true }),
   });
@@ -1006,6 +1028,7 @@ test('updates project metadata from the current saved state', async ({
 
 test('navigates nested folders and project team', async ({ page }) => {
   await startIdentitySession(page);
+  await page.goto('/app/projects');
   await page.getByRole('link', { name: 'Open Project Meridian' }).click();
   await page.getByRole('link', { name: 'Evidence Room' }).click();
   await expect(page).toHaveURL(new RegExp(`/folders/${folderId}$`, 'u'));

@@ -92,6 +92,20 @@
       "when": 1787287878343,
       "tag": "0012_wooden_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787313503116,
+      "tag": "0013_round_sprite",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787313515287,
+      "tag": "0014_ancient_xavin",
+      "breakpoints": true
     }
   ]
 }

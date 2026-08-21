@@ -38,9 +38,21 @@ export type ReviewPage = components['schemas']['ReviewPage'];
 export type ReviewThreadAnchor = components['schemas']['ReviewThreadAnchor'];
 export type FinalizeVersionResult =
   components['schemas']['FinalizeVersionResult'];
+export type WorkItem = components['schemas']['WorkItem'];
+export type WorkPage = components['schemas']['WorkPage'];
+export type WorkSection = components['schemas']['WorkSection'];
+export type WorkspaceSearchResult =
+  components['schemas']['WorkspaceSearchResult'];
+export type RecentDocument = components['schemas']['RecentDocument'];
 
 export const queryKeys = {
   apiReadiness: ['api', 'readiness'] as const,
+  myWork: (organizationId: string, section: WorkSection) =>
+    ['workspace', organizationId, 'my-work', section] as const,
+  recents: (organizationId: string) =>
+    ['workspace', organizationId, 'recents'] as const,
+  workspaceSearch: (organizationId: string, query: string) =>
+    ['workspace', organizationId, 'search', query] as const,
   notificationPreferences: (organizationId: string) =>
     ['notifications', organizationId, 'preferences'] as const,
   notifications: (organizationId: string, unreadOnly: boolean) =>
@@ -197,6 +209,127 @@ export const queryKeys = {
   projectTeam: (organizationId: string, projectId: string) =>
     ['projects', organizationId, projectId, 'team'] as const,
 };
+
+export function useMyWorkQuery(
+  organizationId: string | undefined,
+  section: WorkSection,
+) {
+  return useInfiniteQuery<
+    WorkPage,
+    Error,
+    InfiniteData<WorkPage>,
+    ReturnType<typeof queryKeys.myWork>,
+    string | undefined
+  >({
+    enabled: Boolean(organizationId),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/workspace/my-work',
+        {
+          params: {
+            path: { organizationId: organizationId! },
+            query: {
+              limit: 12,
+              section,
+              ...(pageParam ? { cursor: pageParam } : {}),
+            },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Work items could not be loaded.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.myWork(organizationId ?? '', section),
+  });
+}
+
+export function useWorkspaceSearchQuery(
+  organizationId: string | undefined,
+  query: string,
+) {
+  const normalized = query.trim();
+  return useQuery({
+    enabled: Boolean(organizationId && normalized),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/workspace/search',
+        {
+          params: {
+            path: { organizationId: organizationId! },
+            query: { limit: 12, q: normalized },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Workspace search could not be loaded.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.workspaceSearch(organizationId ?? '', normalized),
+    staleTime: 30_000,
+  });
+}
+
+export function useRecentDocumentsQuery(organizationId: string | undefined) {
+  return useQuery({
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/workspace/recents',
+        {
+          params: {
+            path: { organizationId: organizationId! },
+            query: { limit: 10 },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Recent documents could not be loaded.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.recents(organizationId ?? ''),
+  });
+}
+
+export function useRecordRecentDocumentMutation(currentUser: CurrentUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { documentId: string; projectId: string }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { error, response } = await apiClient.PUT(
+        '/v1/organizations/{organizationId}/workspace/recents',
+        {
+          body: input,
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId },
+          },
+        },
+      );
+      if (!response.ok) {
+        throw failure(error, 'Recent document state could not be updated.');
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.recents(activeOrganizationId(currentUser)),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [
+          'workspace',
+          activeOrganizationId(currentUser),
+          'my-work',
+          'continue',
+        ],
+      });
+    },
+  });
+}
 
 export function useNotificationsQuery(
   organizationId: string | undefined,

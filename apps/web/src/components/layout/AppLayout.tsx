@@ -2,24 +2,28 @@ import {
   Bell,
   Building2,
   FolderKanban,
+  LayoutDashboard,
   LogOut,
   Settings,
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import { useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import {
   useNotificationsQuery,
+  useRecordRecentDocumentMutation,
   useSwitchOrganizationMutation,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
 import { canManageAccess, roleLabels } from '../../auth/roles';
 import { Brand } from './Brand';
+import { GlobalSearch } from './GlobalSearch';
 
 const navigation = [
-  { icon: FolderKanban, label: 'Projects', to: '/app' },
+  { icon: LayoutDashboard, label: 'My Work', to: '/app' },
+  { icon: FolderKanban, label: 'Projects', to: '/app/projects' },
   { icon: Users, label: 'Team', to: '/app/team' },
   { icon: Settings, label: 'Settings', to: '/app/settings' },
   {
@@ -62,7 +66,7 @@ export function AppLayout() {
         </div>
         <nav
           aria-label="Workspace"
-          className="grid grid-cols-4 gap-1 px-3 pb-3 sm:flex sm:overflow-x-auto lg:block lg:space-y-1 lg:pb-0"
+          className="grid grid-cols-5 gap-1 px-3 pb-3 sm:flex sm:overflow-x-auto lg:block lg:space-y-1 lg:pb-0"
         >
           {visibleNavigation.map(({ icon: Icon, label, to }) => (
             <NavLink
@@ -104,7 +108,7 @@ export function AppLayout() {
         </div>
       </aside>
       <div className="min-w-0">
-        <header className="flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
+        <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2 sm:flex-nowrap sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <Building2
               aria-hidden="true"
@@ -136,6 +140,9 @@ export function AppLayout() {
                 {active?.name ?? 'Workspace access pending'}
               </p>
             )}
+          </div>
+          <div className="order-3 w-full sm:order-none sm:max-w-xl">
+            <GlobalSearch organizationId={active?.id} />
           </div>
           <div className="flex items-center gap-1">
             <Link
@@ -180,10 +187,28 @@ export function AppLayout() {
               </p>
             </section>
           ) : (
-            <Outlet />
+            <>
+              <RecentRouteTracker />
+              <Outlet />
+            </>
           )}
         </main>
       </div>
     </div>
   );
+}
+
+function RecentRouteTracker() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  const { mutate: recordRecent } = useRecordRecentDocumentMutation(user!);
+  useEffect(() => {
+    const match = pathname.match(
+      /^\/app\/projects\/([0-9a-f-]+)\/documents\/([0-9a-f-]+)(?:\/|$)/iu,
+    );
+    if (match?.[1] && match[2]) {
+      recordRecent({ documentId: match[2], projectId: match[1] });
+    }
+  }, [pathname, recordRecent]);
+  return null;
 }

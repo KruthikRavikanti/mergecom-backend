@@ -369,6 +369,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/workspace/my-work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listMyWork"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/workspace/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["searchWorkspaceMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/workspace/recents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listRecentDocuments"];
+        put: operations["recordRecentDocument"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}": {
         parameters: {
             query?: never;
@@ -1309,6 +1363,58 @@ export interface components {
             updatedAt: string;
             folderCount: number;
             documentCount: number;
+        };
+        NamedResource: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        /** @enum {string} */
+        WorkSection: "attention" | "continue" | "activity";
+        /** @enum {string} */
+        WorkItemType: "assigned_review" | "changes_requested" | "awaiting_decisions" | "version_exception" | "comparison_exception" | "incoming_conflict" | "recent_comparison" | "approved_version" | "recent_version" | "recent_document";
+        WorkItem: {
+            itemType: components["schemas"]["WorkItemType"];
+            /** Format: uuid */
+            resourceId: string;
+            project: components["schemas"]["NamedResource"];
+            document: components["schemas"]["NamedResource"];
+            status: string;
+            actor: components["schemas"]["NamedResource"] | null;
+            /** Format: date-time */
+            updatedAt: string;
+            destination: string;
+            actionLabel: string;
+            section: components["schemas"]["WorkSection"];
+            priority: number;
+            acknowledged: boolean;
+        };
+        WorkPage: {
+            items: components["schemas"]["WorkItem"][];
+            nextCursor: string | null;
+        };
+        WorkspaceSearchResult: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            resourceType: "project" | "folder" | "document";
+            name: string;
+            breadcrumb: string;
+            destination: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        RecentDocument: {
+            project: components["schemas"]["NamedResource"];
+            document: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                kind: components["schemas"]["DocumentKind"];
+            };
+            /** Format: date-time */
+            openedAt: string;
+            destination: string;
         };
         ProjectPage: {
             items: components["schemas"]["Project"][];
@@ -2521,6 +2627,120 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Project"];
                 };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listMyWork: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                section?: components["schemas"]["WorkSection"];
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized current-state work items for the active user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkPage"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    searchWorkspaceMetadata: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accessible project, folder, and document name matches. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["WorkspaceSearchResult"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    listRecentDocuments: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recently opened documents owned by the active user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RecentDocument"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    recordRecentDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    projectId: string;
+                    /** Format: uuid */
+                    documentId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recent document state updated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["ApiError"];
         };

@@ -493,6 +493,101 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/workspace/my-work:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: listMyWork
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: section
+          in: query
+          schema: { $ref: '#/components/schemas/WorkSection' }
+      responses:
+        '200':
+          description: Authorized current-state work items for the active user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkPage' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/workspace/search:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: searchWorkspaceMetadata
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 160 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 25, default: 12 }
+      responses:
+        '200':
+          description: Accessible project, folder, and document name matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      { $ref: '#/components/schemas/WorkspaceSearchResult' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/workspace/recents:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: listRecentDocuments
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 25, default: 10 }
+      responses:
+        '200':
+          description: Recently opened documents owned by the active user.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/RecentDocument' }
+        default: { $ref: '#/components/responses/ApiError' }
+    put:
+      operationId: recordRecentDocument
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [projectId, documentId]
+              properties:
+                projectId: { type: string, format: uuid }
+                documentId: { type: string, format: uuid }
+      responses:
+        '204': { description: Recent document state updated. }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -1915,6 +2010,102 @@ components:
         updatedAt: { type: string, format: date-time }
         folderCount: { type: integer }
         documentCount: { type: integer }
+    NamedResource:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    WorkSection:
+      type: string
+      enum: [attention, continue, activity]
+    WorkItemType:
+      type: string
+      enum:
+        [
+          assigned_review,
+          changes_requested,
+          awaiting_decisions,
+          version_exception,
+          comparison_exception,
+          incoming_conflict,
+          recent_comparison,
+          approved_version,
+          recent_version,
+          recent_document,
+        ]
+    WorkItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          itemType,
+          resourceId,
+          project,
+          document,
+          status,
+          actor,
+          updatedAt,
+          destination,
+          actionLabel,
+          section,
+          priority,
+          acknowledged,
+        ]
+      properties:
+        itemType: { $ref: '#/components/schemas/WorkItemType' }
+        resourceId: { type: string, format: uuid }
+        project: { $ref: '#/components/schemas/NamedResource' }
+        document: { $ref: '#/components/schemas/NamedResource' }
+        status: { type: string }
+        actor:
+          oneOf:
+            - { $ref: '#/components/schemas/NamedResource' }
+            - { type: 'null' }
+        updatedAt: { type: string, format: date-time }
+        destination: { type: string }
+        actionLabel: { type: string }
+        section: { $ref: '#/components/schemas/WorkSection' }
+        priority: { type: integer, minimum: 0 }
+        acknowledged: { type: boolean }
+    WorkPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WorkItem' }
+        nextCursor:
+          oneOf: [{ type: string }, { type: 'null' }]
+    WorkspaceSearchResult:
+      type: object
+      additionalProperties: false
+      required: [id, resourceType, name, breadcrumb, destination, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        resourceType: { type: string, enum: [project, folder, document] }
+        name: { type: string }
+        breadcrumb: { type: string }
+        destination: { type: string }
+        updatedAt: { type: string, format: date-time }
+    RecentDocument:
+      type: object
+      additionalProperties: false
+      required: [project, document, openedAt, destination]
+      properties:
+        project: { $ref: '#/components/schemas/NamedResource' }
+        document:
+          type: object
+          additionalProperties: false
+          required: [id, name, kind]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            kind: { $ref: '#/components/schemas/DocumentKind' }
+        openedAt: { type: string, format: date-time }
+        destination: { type: string }
     ProjectPage:
       type: object
       additionalProperties: false
