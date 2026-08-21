@@ -1,22 +1,30 @@
 import { Link } from 'react-router-dom';
 
-export function Brand({ inverse = false }: { inverse?: boolean }) {
+interface BrandProps {
+  compact?: boolean;
+  inverse?: boolean;
+}
+
+export function Brand({ compact = false, inverse = false }: BrandProps) {
   return (
     <Link
       aria-label="MergeCom home"
-      className="inline-flex items-center gap-2"
+      className="mergecom-brand inline-flex items-center gap-2"
       to="/"
     >
       <span
-        className={`grid h-8 w-8 place-items-center border text-sm font-black ${inverse ? 'border-red-200 text-white' : 'border-red-800 text-red-800'}`}
+        aria-hidden="true"
+        className={`mergecom-brand-mark ${inverse ? 'is-inverse' : ''}`}
       >
-        M
+        <span>M</span>
       </span>
-      <span
-        className={`text-lg font-bold ${inverse ? 'text-white' : 'text-slate-950'}`}
-      >
-        MergeCom
-      </span>
+      {compact ? null : (
+        <span
+          className={`mergecom-brand-name ${inverse ? 'text-white' : 'text-slate-950'}`}
+        >
+          MergeCom
+        </span>
+      )}
     </Link>
   );
 }

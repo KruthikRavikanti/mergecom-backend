@@ -58,6 +58,61 @@
   }
 }
 
+.mergecom-brand-mark {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #991b1b;
+  color: #991b1b;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.mergecom-brand-mark::after {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid currentcolor;
+  background: #fff;
+  content: '';
+}
+
+.mergecom-brand-mark.is-inverse {
+  border-color: #fecaca;
+  color: #fff;
+}
+
+.mergecom-brand-mark.is-inverse::after {
+  background: #172033;
+}
+
+.mergecom-brand-name {
+  font-size: 18px;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+.marketing-skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 10px 14px;
+  transform: translateY(-160%);
+  border-radius: 4px;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.marketing-skip-link:focus {
+  transform: translateY(0);
+}
+
 .comparison-page {
   position: relative;
   left: 50%;

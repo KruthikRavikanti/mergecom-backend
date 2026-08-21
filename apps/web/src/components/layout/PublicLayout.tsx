@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 
 import { Brand } from './Brand';
+import { MarketingMetadata } from '../../features/marketing/components/MarketingMetadata';
+import '../../features/marketing/styles/marketing.css';
 
 const links = [
   { label: 'Security', to: '/security' },
@@ -12,7 +14,11 @@ const links = [
 export function PublicLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <div className="min-h-screen bg-white">
+    <div className="marketing-site min-h-screen bg-white">
+      <MarketingMetadata />
+      <a className="marketing-skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <Brand />
@@ -68,7 +74,9 @@ export function PublicLayout() {
           </nav>
         ) : null}
       </header>
-      <Outlet />
+      <div id="main-content">
+        <Outlet />
+      </div>
       <footer className="border-t border-slate-200 bg-slate-950 text-slate-300">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <Brand inverse />

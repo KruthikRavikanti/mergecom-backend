@@ -1,0 +1,170 @@
+@font-face {
+  font-display: swap;
+  font-family: 'MergeCom Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'MergeCom Newsreader';
+  font-style: normal;
+  font-weight: 200 800;
+  src: url('/fonts/newsreader-latin-variable.woff2') format('woff2');
+}
+
+.marketing-site {
+  --marketing-ink: #0f172a;
+  --marketing-night: #172033;
+  --marketing-crimson: #b91c1c;
+  --marketing-signal: #dc2626;
+  --marketing-canvas: #f8fafc;
+  --marketing-warm: #f3f1ed;
+  --marketing-paper: #ffffff;
+  --marketing-muted: #64748b;
+  --marketing-line: #dbe2ea;
+  --marketing-soft-red: #fee2e2;
+  --marketing-display-hero: clamp(3rem, 6vw, 5.5rem);
+  --marketing-display-section: clamp(2.25rem, 4vw, 4rem);
+  --marketing-display-card: clamp(1.5rem, 2.4vw, 2.25rem);
+  --marketing-body-large: clamp(1.05rem, 1.4vw, 1.25rem);
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: clip;
+  background: var(--marketing-canvas);
+  color: var(--marketing-ink);
+  font-family: 'MergeCom Inter', Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.marketing-site :focus-visible {
+  outline: 3px solid var(--marketing-signal);
+  outline-offset: 3px;
+}
+
+.marketing-container {
+  width: min(100% - 32px, 1280px);
+  margin-inline: auto;
+}
+
+.marketing-section {
+  position: relative;
+  padding-block: clamp(72px, 10vw, 144px);
+}
+
+.marketing-tone-canvas {
+  background: var(--marketing-canvas);
+  color: var(--marketing-ink);
+}
+
+.marketing-tone-paper {
+  background: var(--marketing-paper);
+  color: var(--marketing-ink);
+}
+
+.marketing-tone-warm {
+  background: var(--marketing-warm);
+  color: var(--marketing-ink);
+}
+
+.marketing-tone-night {
+  background: var(--marketing-night);
+  color: var(--marketing-paper);
+}
+
+.marketing-display {
+  max-width: 18ch;
+  margin: 0;
+  font-family: 'MergeCom Newsreader', Georgia, 'Times New Roman', serif;
+  font-size: var(--marketing-display-section);
+  font-weight: 480;
+  line-height: 0.98;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.marketing-eyebrow {
+  margin: 0 0 18px;
+  color: var(--marketing-crimson);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketing-tone-night .marketing-eyebrow {
+  color: #fca5a5;
+}
+
+.marketing-hairline {
+  width: 100%;
+  height: 1px;
+  background: var(--marketing-line);
+}
+
+.marketing-button {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 11px 18px;
+  font-size: 0.875rem;
+  font-weight: 750;
+  line-height: 1.1;
+  text-decoration: none;
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.marketing-button.is-primary {
+  background: var(--marketing-crimson);
+  color: white;
+}
+
+.marketing-button.is-primary:hover {
+  background: #991b1b;
+}
+
+.marketing-button.is-secondary {
+  border-color: #94a3b8;
+  background: var(--marketing-paper);
+  color: var(--marketing-ink);
+}
+
+.marketing-button.is-secondary:hover {
+  border-color: var(--marketing-ink);
+}
+
+.marketing-button.is-ghost {
+  border-color: rgb(255 255 255 / 45%);
+  background: rgb(255 255 255 / 8%);
+  color: white;
+}
+
+.marketing-media {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (min-width: 640px) {
+  .marketing-container {
+    width: min(100% - 48px, 1280px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-site *,
+  .marketing-site *::before,
+  .marketing-site *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
