@@ -24,6 +24,15 @@ export const createPublicRoutes = (): RouteObject[] => [
         },
       },
       {
+        handle: { marketingMeta: publicPageMetadata.product },
+        path: 'product',
+        lazy: async () => {
+          const { ProductPage } =
+            await import('../features/marketing/pages/ProductPage');
+          return { Component: ProductPage };
+        },
+      },
+      {
         handle: { marketingMeta: publicPageMetadata.support },
         path: 'support',
         lazy: async () => {

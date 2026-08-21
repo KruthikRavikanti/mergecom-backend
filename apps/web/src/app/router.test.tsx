@@ -47,6 +47,7 @@ function renderRoute(path: string) {
 describe('public routes', () => {
   it.each([
     ['/', 'Version control for the documents that run your firm.'],
+    ['/product', 'Document version control for Word, Excel, and PowerPoint.'],
     ['/security', 'Current security posture'],
     ['/support', 'Support'],
     ['/login', 'Sign in to MergeCom'],
