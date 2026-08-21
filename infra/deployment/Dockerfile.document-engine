@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0.400-bookworm-slim AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.400-noble AS build
 WORKDIR /source
 COPY services/document-engine/MergeCom.DocumentEngine.sln services/document-engine/
 COPY services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj services/document-engine/src/MergeCom.DocumentEngine/
@@ -13,7 +13,7 @@ RUN dotnet publish \
     --no-restore \
     --output /opt/mergecom
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-bookworm-slim AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-noble AS runtime
 LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/mergecom-backend"
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \
