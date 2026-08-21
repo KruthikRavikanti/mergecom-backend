@@ -93,6 +93,41 @@ export interface VersionComparison {
   warnings: string[];
 }
 
+export type ComparisonSummaryCategoryKey =
+  | 'text'
+  | 'numeric'
+  | 'date'
+  | 'formula'
+  | 'structure'
+  | 'position'
+  | 'formatting'
+  | 'unsupported';
+
+export interface ComparisonSummary {
+  added: number;
+  attentionItems: Array<{
+    changeIds: string[];
+    label: string;
+    reasonCode: string;
+    severity: 'low' | 'medium' | 'high';
+  }>;
+  categories: Array<{
+    changeIds: string[];
+    count: number;
+    key: ComparisonSummaryCategoryKey;
+    label: string;
+  }>;
+  comparisonId: string;
+  coverage: { semantic: number; visualMapping: number };
+  formattingOnly: number;
+  modified: number;
+  moved: number;
+  removed: number;
+  schemaVersion: string;
+  substantive: number;
+  totalChanges: number;
+}
+
 export interface VersionRendition {
   attempts: number;
   byteCount: number | null;
@@ -264,6 +299,8 @@ export interface BaselineCandidate {
 }
 
 export interface BaselineRecommendation {
+  approvedState: 'older' | 'equal' | 'newer' | 'unavailable';
+  approvedVersion: BaselineCandidate | null;
   baseline: BaselineCandidate | null;
   reason: 'approved_version' | 'verified_local_base' | 'previous_head' | 'none';
 }

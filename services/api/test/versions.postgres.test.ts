@@ -599,10 +599,123 @@ describe.runIf(runInfrastructureTests)(
       });
       expect(unavailable.statusCode).toBe(409);
       expect(unavailable.json().code).toBe('comparison_unavailable');
-      const rows = await database.pool.query<{ comparisons: number }>(
-        `select count(*)::int as comparisons from version_comparisons`,
+      const comparisonId = create.json().id as string;
+      const changeId = 'd'.repeat(64);
+      await database.pool.query(
+        `update version_comparisons
+            set status = 'completed', completed_at = now(),
+                result_object_key = $2, result_sha256 = $3, stable_hash = $4,
+                byte_equal = false, semantic_equal = false,
+                completeness = 'partial', summary = $5, changes = $6,
+                warnings = $7, updated_at = now()
+          where id = $1`,
+        [
+          comparisonId,
+          `organizations/${organizationA}/comparisons/${comparisonId}/result.json`,
+          'b'.repeat(64),
+          'c'.repeat(64),
+          JSON.stringify({ content: 1, modified: 1, total: 1 }),
+          JSON.stringify([
+            {
+              after: 'Annual operating review',
+              before: 'Private quarterly operating review',
+              category: 'content',
+              changeType: 'modified',
+              entityType: 'paragraph',
+              id: changeId,
+              impact: 'medium',
+              label: 'Paragraph',
+              path: '/body/p/1',
+            },
+          ]),
+          JSON.stringify(['Unsupported package feature']),
+        ],
       );
-      expect(rows.rows[0]?.comparisons).toBe(1);
+
+      const summaryUrl = `${base()}/comparisons/${comparisonId}/summary`;
+      const summary = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: summaryUrl,
+      });
+      expect(summary.statusCode, summary.payload).toBe(200);
+      expect(summary.json()).toMatchObject({
+        comparisonId,
+        schemaVersion: '1.0.0',
+        substantive: 1,
+        totalChanges: 1,
+      });
+      const replayedSummary = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: summaryUrl,
+      });
+      expect(replayedSummary.json()).toEqual(summary.json());
+      const deniedSummary = await app.inject({
+        headers: { cookie: viewer.cookie },
+        method: 'GET',
+        url: summaryUrl,
+      });
+      expect(deniedSummary.statusCode).toBe(404);
+
+      const aiDisabled = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: `${base()}/comparisons/${comparisonId}/ai-explanation`,
+      });
+      expect(aiDisabled.json()).toEqual({ paragraphs: [], status: 'disabled' });
+      await database.pool.query(
+        `insert into organization_feature_flags
+          (organization_id, key, enabled, updated_by_user_id)
+         values ($1, 'comparison_ai_explanation', true, $2)`,
+        [organizationA, ownerA],
+      );
+      const aiUnavailable = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: `${base()}/comparisons/${comparisonId}/ai-explanation`,
+      });
+      expect(aiUnavailable.json()).toEqual({
+        paragraphs: [],
+        status: 'unavailable',
+      });
+
+      const redactedReport = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: `${base()}/comparisons/${comparisonId}/report?includeValues=false`,
+      });
+      expect(redactedReport.statusCode, redactedReport.payload).toBe(200);
+      expect(redactedReport.headers['content-type']).toContain('text/html');
+      expect(redactedReport.payload).toContain(comparisonId);
+      expect(redactedReport.payload).not.toContain(
+        'Private quarterly operating review',
+      );
+      const includedReport = await app.inject({
+        headers: { cookie: owner.cookie },
+        method: 'GET',
+        url: `${base()}/comparisons/${comparisonId}/report?includeValues=true`,
+      });
+      expect(includedReport.payload).toContain(
+        'Private quarterly operating review',
+      );
+
+      const rows = await database.pool.query<{
+        audits: number;
+        comparisons: number;
+        summaries: number;
+      }>(
+        `select
+          (select count(*)::int from version_comparisons) as comparisons,
+          (select count(*)::int from comparison_summaries) as summaries,
+          (select count(*)::int from audit_events
+            where action = 'comparison.report_generated') as audits`,
+      );
+      expect(rows.rows[0]).toEqual({
+        audits: 2,
+        comparisons: 1,
+        summaries: 1,
+      });
     });
 
     it('gates, caches, authorizes, and reference-protects private renditions', async () => {

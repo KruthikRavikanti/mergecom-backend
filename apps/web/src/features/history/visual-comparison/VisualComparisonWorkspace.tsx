@@ -14,6 +14,8 @@ import {
   type ReviewRequest,
   type VersionComparison,
   useComparisonVisualizationQuery,
+  useComparisonBaselineQuery,
+  useComparisonSummaryQuery,
   useRecordComparisonViewerEventMutation,
   useRenditionGrantQuery,
   useRequestRenditionMutation,
@@ -21,7 +23,8 @@ import {
   useVersionVisualDataQuery,
 } from '../../../api/queries';
 import type { CurrentUser } from '../../../auth/session';
-import { ChangeNavigator } from './ChangeNavigator';
+import { ChangeNavigator, type ChangeCategoryFilter } from './ChangeNavigator';
+import { ComparisonOverview, type ComparisonScope } from './ComparisonOverview';
 import { ComparisonInspector } from './ComparisonInspector';
 import { ComparisonToolbar, type ComparisonMode } from './ComparisonToolbar';
 import type { GridViewport } from './SpreadsheetViewer';
@@ -96,10 +99,62 @@ export function VisualComparisonWorkspace({
     searchParamsRef.current = searchParams;
   }, [searchParams]);
 
-  const selectedId = searchParams.get('change') ?? comparison.changes[0]?.id;
+  const requestedScope = searchParams.get('scope');
+  const scope: ComparisonScope =
+    requestedScope === 'substantive' ||
+    requestedScope === 'formatting' ||
+    requestedScope === 'unsupported'
+      ? requestedScope
+      : 'all';
+  const requestedCategory = searchParams.get('category');
+  const categoryFilter: ChangeCategoryFilter =
+    requestedCategory === 'content' ||
+    requestedCategory === 'feature' ||
+    requestedCategory === 'structure' ||
+    requestedCategory === 'validation'
+      ? requestedCategory
+      : 'all';
+  const summary = useComparisonSummaryQuery(
+    organizationId,
+    projectId,
+    documentId,
+    comparison.id,
+    comparison.state === 'completed',
+  );
+  const baseline = useComparisonBaselineQuery(
+    organizationId,
+    projectId,
+    documentId,
+    comparison.targetVersion.id,
+    comparison.state === 'completed',
+  );
+  const scopedChanges = useMemo(() => {
+    if (!summary.data || scope === 'all') return comparison.changes;
+    const ids =
+      scope === 'formatting'
+        ? (summary.data.categories.find(
+            (category) => category.key === 'formatting',
+          )?.changeIds ?? [])
+        : scope === 'unsupported'
+          ? (summary.data.categories.find(
+              (category) => category.key === 'unsupported',
+            )?.changeIds ?? [])
+          : summary.data.categories
+              .filter(
+                (category) =>
+                  category.key !== 'formatting' &&
+                  category.key !== 'unsupported',
+              )
+              .flatMap((category) => category.changeIds);
+    const included = new Set(ids);
+    return comparison.changes.filter((change) => included.has(change.id));
+  }, [comparison.changes, scope, summary.data]);
+  const selectedId = searchParams.get('change') ?? scopedChanges[0]?.id;
   const selectedChange = useMemo(
-    () => comparison.changes.find((change) => change.id === selectedId),
-    [comparison.changes, selectedId],
+    () =>
+      scopedChanges.find((change) => change.id === selectedId) ??
+      scopedChanges[0],
+    [scopedChanges, selectedId],
   );
   const visualization = useComparisonVisualizationQuery(
     organizationId,
@@ -219,6 +274,19 @@ export function VisualComparisonWorkspace({
       ),
     [selectedChange?.id, visualization.data?.mappings],
   );
+  const selectedClassification = useMemo(() => {
+    if (!selectedChange || !summary.data) return undefined;
+    const category = summary.data.categories.find((candidate) =>
+      candidate.changeIds.includes(selectedChange.id),
+    );
+    if (!category) return undefined;
+    return {
+      category: category.label,
+      reasons: summary.data.attentionItems
+        .filter((item) => item.changeIds.includes(selectedChange.id))
+        .map((item) => item.label),
+    };
+  }, [selectedChange, summary.data]);
   const locators = useMemo(
     () => ({
       base: selectedMapping?.locators.find(
@@ -295,10 +363,16 @@ export function VisualComparisonWorkspace({
   );
 
   const updateSearch = useCallback(
-    (values: Record<string, string>) => {
+    (values: Record<string, string | null>) => {
       const next = new URLSearchParams(searchParamsRef.current);
       let changed = false;
       for (const [key, value] of Object.entries(values)) {
+        if (value === null) {
+          if (!next.has(key)) continue;
+          next.delete(key);
+          changed = true;
+          continue;
+        }
         if (next.get(key) === value) continue;
         next.set(key, value);
         changed = true;
@@ -313,6 +387,60 @@ export function VisualComparisonWorkspace({
   const setSelectedChange = useCallback(
     (change: ComparisonChange) => updateSearch({ change: change.id }),
     [updateSearch],
+  );
+
+  const setSelectedChangeId = useCallback(
+    (changeId: string) => {
+      const change = comparison.changes.find(
+        (candidate) => candidate.id === changeId,
+      );
+      if (change) {
+        updateSearch({ category: 'all', change: change.id, scope: 'all' });
+      }
+    },
+    [comparison.changes, updateSearch],
+  );
+
+  const setScope = useCallback(
+    (nextScope: ComparisonScope) => {
+      const formattingIds = new Set(
+        summary.data?.categories.find(
+          (category) => category.key === 'formatting',
+        )?.changeIds ?? [],
+      );
+      const unsupportedIds = new Set(
+        summary.data?.categories.find(
+          (category) => category.key === 'unsupported',
+        )?.changeIds ?? [],
+      );
+      const first = comparison.changes.find((change) =>
+        nextScope === 'all'
+          ? true
+          : nextScope === 'formatting'
+            ? formattingIds.has(change.id)
+            : nextScope === 'unsupported'
+              ? unsupportedIds.has(change.id)
+              : !formattingIds.has(change.id) && !unsupportedIds.has(change.id),
+      );
+      updateSearch({
+        change: first?.id ?? null,
+        scope: nextScope,
+      });
+    },
+    [comparison.changes, summary.data?.categories, updateSearch],
+  );
+
+  const setCategoryFilter = useCallback(
+    (nextFilter: ChangeCategoryFilter) => {
+      const first = scopedChanges.find(
+        (change) => nextFilter === 'all' || change.category === nextFilter,
+      );
+      updateSearch({
+        category: nextFilter,
+        change: first?.id ?? null,
+      });
+    },
+    [scopedChanges, updateSearch],
   );
 
   const setMode = useCallback(
@@ -461,6 +589,29 @@ export function VisualComparisonWorkspace({
 
   return (
     <div className="visual-comparison-shell" ref={workspaceRef}>
+      {summary.data ? (
+        <ComparisonOverview
+          baseline={baseline.data}
+          comparisonId={comparison.id}
+          documentId={documentId}
+          onScopeChange={setScope}
+          onSelectChange={setSelectedChangeId}
+          organizationId={organizationId}
+          projectId={projectId}
+          scope={scope}
+          summary={summary.data}
+        />
+      ) : summary.isError ? (
+        <div className="visual-coverage-warning">
+          <CircleAlert aria-hidden="true" size={16} />
+          Deterministic summary is temporarily unavailable. The complete change
+          set remains available below.
+        </div>
+      ) : (
+        <div className="comparison-overview-loading" aria-busy="true">
+          Loading deterministic summary...
+        </div>
+      )}
       <ComparisonToolbar
         activeSide={activeSide}
         fit={fit}
@@ -514,7 +665,9 @@ export function VisualComparisonWorkspace({
         className={`visual-comparison-grid ${inspectorOpen ? '' : 'inspector-closed'}`}
       >
         <ChangeNavigator
-          changes={comparison.changes}
+          changes={scopedChanges}
+          filter={categoryFilter}
+          onFilterChange={setCategoryFilter}
           onSelect={setSelectedChange}
           selectedId={selectedChange?.id}
           threadCounts={threadCounts}
@@ -576,6 +729,7 @@ export function VisualComparisonWorkspace({
         {inspectorOpen ? (
           <ComparisonInspector
             change={selectedChange}
+            classification={selectedClassification}
             comparisonId={comparison.id}
             documentId={documentId}
             onRequestReview={onRequestReview}

@@ -865,6 +865,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getComparisonSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/ai-explanation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getComparisonAiExplanation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        get: operations["exportComparisonReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/viewer-events": {
         parameters: {
             query?: never;
@@ -1558,6 +1621,26 @@ export interface components {
         };
         BaselineRecommendation: {
             /** @enum {string} */
+            approvedState: "older" | "equal" | "newer" | "unavailable";
+            approvedVersion: {
+                /** Format: uuid */
+                id: string;
+                displayNumber: number;
+                sequence: number;
+                parentVersionId: string | null;
+                /** @enum {string} */
+                status: "pending_processing" | "ready" | "conflicted" | "quarantined" | "failed";
+                /** @enum {string} */
+                processingState: "queued" | "running" | "retryable_failed" | "permanently_failed" | "quarantined" | "completed";
+                author: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                };
+                /** Format: date-time */
+                createdAt: string;
+            } | null;
+            /** @enum {string} */
             reason: "approved_version" | "verified_local_base" | "previous_head" | "none";
             baseline: {
                 /** Format: uuid */
@@ -1631,6 +1714,36 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        ComparisonSummary: {
+            schemaVersion: string;
+            /** Format: uuid */
+            comparisonId: string;
+            totalChanges: number;
+            added: number;
+            removed: number;
+            modified: number;
+            moved: number;
+            substantive: number;
+            formattingOnly: number;
+            categories: {
+                /** @enum {string} */
+                key: "text" | "numeric" | "date" | "formula" | "structure" | "position" | "formatting" | "unsupported";
+                label: string;
+                count: number;
+                changeIds: string[];
+            }[];
+            attentionItems: {
+                label: string;
+                reasonCode: string;
+                /** @enum {string} */
+                severity: "low" | "medium" | "high";
+                changeIds: string[];
+            }[];
+            coverage: {
+                semantic: number;
+                visualMapping: number;
+            };
         };
         VersionRendition: {
             /** Format: uuid */
@@ -3702,6 +3815,93 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComparisonVisualization"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getComparisonSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versioned deterministic summary derived from persisted changes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonSummary"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getComparisonAiExplanation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Optional non-authoritative explanation state and cited paragraphs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "disabled" | "unavailable" | "ready";
+                        paragraphs: {
+                            text: string;
+                            changeIds: string[];
+                        }[];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    exportComparisonReport: {
+        parameters: {
+            query?: {
+                includeValues?: boolean;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audited deterministic HTML comparison report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
                 };
             };
             default: components["responses"]["ApiError"];

@@ -239,6 +239,25 @@ const Comparison = Type.Object({
   warnings: Type.Array(Type.String()),
 });
 const BaselineRecommendation = Type.Object({
+  approvedState: Type.Union([
+    Type.Literal('older'),
+    Type.Literal('equal'),
+    Type.Literal('newer'),
+    Type.Literal('unavailable'),
+  ]),
+  approvedVersion: Type.Union([
+    Type.Object({
+      author: Type.Object({ id: Id, name: Type.String() }),
+      createdAt: DateTime,
+      displayNumber: Type.Integer({ minimum: 1 }),
+      id: Id,
+      parentVersionId: Type.Union([Id, Type.Null()]),
+      processingState: Processing.properties.state,
+      sequence: Type.Integer({ minimum: 1 }),
+      status: VersionStatus,
+    }),
+    Type.Null(),
+  ]),
   baseline: Type.Union([
     Type.Object({
       author: Type.Object({ id: Id, name: Type.String() }),
@@ -258,6 +277,50 @@ const BaselineRecommendation = Type.Object({
     Type.Literal('previous_head'),
     Type.Literal('none'),
   ]),
+});
+const ComparisonSummary = Type.Object({
+  added: Type.Integer({ minimum: 0 }),
+  attentionItems: Type.Array(
+    Type.Object({
+      changeIds: Type.Array(Type.String()),
+      label: Type.String(),
+      reasonCode: Type.String(),
+      severity: Type.Union([
+        Type.Literal('low'),
+        Type.Literal('medium'),
+        Type.Literal('high'),
+      ]),
+    }),
+  ),
+  categories: Type.Array(
+    Type.Object({
+      changeIds: Type.Array(Type.String()),
+      count: Type.Integer({ minimum: 0 }),
+      key: Type.Union([
+        Type.Literal('text'),
+        Type.Literal('numeric'),
+        Type.Literal('date'),
+        Type.Literal('formula'),
+        Type.Literal('structure'),
+        Type.Literal('position'),
+        Type.Literal('formatting'),
+        Type.Literal('unsupported'),
+      ]),
+      label: Type.String(),
+    }),
+  ),
+  comparisonId: Id,
+  coverage: Type.Object({
+    semantic: Type.Integer({ maximum: 100, minimum: 0 }),
+    visualMapping: Type.Integer({ maximum: 100, minimum: 0 }),
+  }),
+  formattingOnly: Type.Integer({ minimum: 0 }),
+  modified: Type.Integer({ minimum: 0 }),
+  moved: Type.Integer({ minimum: 0 }),
+  removed: Type.Integer({ minimum: 0 }),
+  schemaVersion: Type.String(),
+  substantive: Type.Integer({ minimum: 0 }),
+  totalChanges: Type.Integer({ minimum: 0 }),
 });
 const Rendition = Type.Object({
   attempts: Type.Integer({ minimum: 0 }),
@@ -1146,6 +1209,13 @@ export function registerVersionRoutes(
         });
         return {
           ...recommendation,
+          approvedVersion: recommendation.approvedVersion
+            ? {
+                ...recommendation.approvedVersion,
+                createdAt:
+                  recommendation.approvedVersion.createdAt.toISOString(),
+              }
+            : null,
           baseline: recommendation.baseline
             ? {
                 ...recommendation.baseline,
@@ -1229,6 +1299,123 @@ export function registerVersionRoutes(
       } catch (error) {
         return sendVersionError(reply, error, runtime, {
           action: 'comparison.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.comparisonId,
+          targetType: 'version_comparison',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/comparisons/:comparisonId/summary`,
+    {
+      preHandler: reads,
+      schema: {
+        params: ComparisonParams,
+        response: { 200: ComparisonSummary, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return await runtime.versionService.getComparisonSummary({
+          actor: currentActor,
+          comparisonId: request.params.comparisonId,
+          documentId: request.params.documentId,
+          projectId: request.params.projectId,
+        });
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.summary_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.comparisonId,
+          targetType: 'version_comparison',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/comparisons/:comparisonId/ai-explanation`,
+    {
+      preHandler: reads,
+      schema: {
+        params: ComparisonParams,
+        response: {
+          200: Type.Object({
+            paragraphs: Type.Array(
+              Type.Object({
+                changeIds: Type.Array(Type.String()),
+                text: Type.String(),
+              }),
+            ),
+            status: Type.Union([
+              Type.Literal('disabled'),
+              Type.Literal('unavailable'),
+              Type.Literal('ready'),
+            ]),
+          }),
+          ...Errors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return await runtime.versionService.getComparisonAiExplanation({
+          actor: currentActor,
+          comparisonId: request.params.comparisonId,
+          documentId: request.params.documentId,
+          projectId: request.params.projectId,
+        });
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.ai_explanation_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.comparisonId,
+          targetType: 'version_comparison',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/comparisons/:comparisonId/report`,
+    {
+      preHandler: reads,
+      schema: {
+        params: ComparisonParams,
+        querystring: Type.Object({
+          includeValues: Type.Optional(Type.Boolean()),
+        }),
+        response: { 200: Type.String(), ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const html = await runtime.versionService.createComparisonReport({
+          actor: currentActor,
+          comparisonId: request.params.comparisonId,
+          documentId: request.params.documentId,
+          includeValues: request.query.includeValues ?? false,
+          projectId: request.params.projectId,
+          requestId: request.id,
+        });
+        return reply
+          .header(
+            'content-disposition',
+            `attachment; filename="mergecom-comparison-${request.params.comparisonId}.html"`,
+          )
+          .type('text/html; charset=utf-8')
+          .send(html);
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.report_denied',
           actor: currentActor,
           requestId: request.id,
           targetId: request.params.comparisonId,

@@ -33,7 +33,7 @@ describe('recommendComparisonBaseline', () => {
         target,
         verifiedLocalBaseVersionId: 'v2',
       }),
-    ).toEqual({ baseline: v1, reason: 'approved_version' });
+    ).toMatchObject({ baseline: v1, reason: 'approved_version' });
   });
 
   it('falls back through verified local base and previous head', () => {
@@ -64,6 +64,41 @@ describe('recommendComparisonBaseline', () => {
         target,
         verifiedLocalBaseVersionId: queued.id,
       }),
-    ).toEqual({ baseline: null, reason: 'none' });
+    ).toMatchObject({ baseline: null, reason: 'none' });
+  });
+
+  it('explains the approved pointer relative to the target', () => {
+    expect(
+      recommendComparisonBaseline({
+        approvedVersionId: v1.id,
+        candidates: [v1],
+        target,
+        verifiedLocalBaseVersionId: null,
+      }).approvedState,
+    ).toBe('older');
+    expect(
+      recommendComparisonBaseline({
+        approvedVersionId: target.id,
+        candidates: [target],
+        target,
+        verifiedLocalBaseVersionId: null,
+      }).approvedState,
+    ).toBe('equal');
+    expect(
+      recommendComparisonBaseline({
+        approvedVersionId: target.id,
+        candidates: [target],
+        target: v1,
+        verifiedLocalBaseVersionId: null,
+      }).approvedState,
+    ).toBe('newer');
+    expect(
+      recommendComparisonBaseline({
+        approvedVersionId: null,
+        candidates: [],
+        target,
+        verifiedLocalBaseVersionId: null,
+      }).approvedState,
+    ).toBe('unavailable');
   });
 });

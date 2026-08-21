@@ -3,14 +3,17 @@ import {
   ArrowLeft,
   ClipboardCheck,
   FileDiff,
+  GitCompareArrows,
   LoaderCircle,
   MessageSquarePlus,
   ShieldAlert,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import {
+  useComparisonBaselineQuery,
+  useCreateComparisonMutation,
   useDocumentQuery,
   useProjectQuery,
   useReviewsQuery,
@@ -26,6 +29,7 @@ const activeStates = ['queued', 'retryable_failed', 'running'];
 export function DocumentComparePage() {
   const { comparisonId = '', documentId = '', projectId = '' } = useParams();
   const { user } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const organizationId = user?.activeOrganization?.id;
   const project = useProjectQuery(organizationId, projectId);
@@ -36,9 +40,20 @@ export function DocumentComparePage() {
     documentId,
     comparisonId,
   );
+  const baseline = useComparisonBaselineQuery(
+    organizationId,
+    projectId,
+    documentId,
+    comparison.data?.targetVersion.id ?? '',
+    comparison.data?.state === 'completed',
+  );
+  const createComparison = useCreateComparisonMutation(user!);
   const versions = useVersionsQuery(organizationId, projectId, documentId);
   const reviews = useReviewsQuery(organizationId, projectId, documentId);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [approvedComparisonError, setApprovedComparisonError] = useState<
+    string | null
+  >(null);
 
   if (
     !user ||
@@ -101,6 +116,32 @@ export function DocumentComparePage() {
     targetVersion.status === 'ready' &&
     targetVersion.sequence > approvedSequence &&
     ['project_lead', 'contributor'].includes(project.data.accessRole);
+  const canCompareWithApproved =
+    baseline.data?.approvedState === 'older' &&
+    baseline.data.approvedVersion?.id !== result.baseVersion.id;
+
+  async function compareWithApproved() {
+    const approvedVersion = baseline.data?.approvedVersion;
+    if (!approvedVersion) return;
+    setApprovedComparisonError(null);
+    try {
+      const approvedComparison = await createComparison.mutateAsync({
+        baseVersionId: approvedVersion.id,
+        documentId,
+        projectId,
+        targetVersionId: result.targetVersion.id,
+      });
+      await navigate(
+        `/app/projects/${projectId}/documents/${documentId}/history/comparisons/${approvedComparison.id}${location.search}`,
+      );
+    } catch (error) {
+      setApprovedComparisonError(
+        error instanceof Error
+          ? error.message
+          : 'Comparison with the approved version could not be started.',
+      );
+    }
+  }
 
   return (
     <section className="comparison-page">
@@ -120,23 +161,50 @@ export function DocumentComparePage() {
           </h1>
           <span>{project.data.name}</span>
         </div>
-        {openReview ? (
-          <Link
-            className="button-secondary"
-            to={`/app/projects/${projectId}/documents/${documentId}/history/reviews/${openReview.id}${result.changes[0] ? `?change=${result.changes[0].id}` : ''}`}
-          >
-            <ClipboardCheck aria-hidden="true" size={17} /> Open review
-          </Link>
-        ) : canRequestReview ? (
-          <button
-            className="button-primary"
-            type="button"
-            onClick={() => setReviewOpen(true)}
-          >
-            <MessageSquarePlus aria-hidden="true" size={17} /> Request review
-          </button>
-        ) : null}
+        <div className="comparison-header-actions">
+          {canCompareWithApproved ? (
+            <button
+              className="button-secondary"
+              disabled={createComparison.isPending}
+              type="button"
+              onClick={() => void compareWithApproved()}
+            >
+              {createComparison.isPending ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="animate-spin"
+                  size={17}
+                />
+              ) : (
+                <GitCompareArrows aria-hidden="true" size={17} />
+              )}
+              Compare with approved
+            </button>
+          ) : null}
+          {openReview ? (
+            <Link
+              className="button-secondary"
+              to={`/app/projects/${projectId}/documents/${documentId}/history/reviews/${openReview.id}${result.changes[0] ? `?change=${result.changes[0].id}` : ''}`}
+            >
+              <ClipboardCheck aria-hidden="true" size={17} /> Open review
+            </Link>
+          ) : canRequestReview ? (
+            <button
+              className="button-primary"
+              type="button"
+              onClick={() => setReviewOpen(true)}
+            >
+              <MessageSquarePlus aria-hidden="true" size={17} /> Request review
+            </button>
+          ) : null}
+        </div>
       </div>
+      {approvedComparisonError ? (
+        <div className="comparison-action-error" role="alert">
+          <ShieldAlert aria-hidden="true" size={16} />
+          {approvedComparisonError}
+        </div>
+      ) : null}
       <div className="comparison-version-strip">
         <VersionSummary label="Base" version={result.baseVersion} />
         <VersionSummary label="Target" version={result.targetVersion} />

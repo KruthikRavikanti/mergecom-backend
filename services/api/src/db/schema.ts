@@ -1225,6 +1225,66 @@ export const comparisonVisualizations = pgTable(
   ],
 );
 
+export const comparisonSummaries = pgTable(
+  'comparison_summaries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    comparisonId: uuid('comparison_id')
+      .references(() => versionComparisons.id, { onDelete: 'cascade' })
+      .notNull(),
+    schemaVersion: text('schema_version').notNull(),
+    engineVersion: text('engine_version').notNull(),
+    inputHash: text('input_hash').notNull(),
+    summary: jsonb('summary').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('comparison_summaries_input_uq').on(
+      table.comparisonId,
+      table.schemaVersion,
+      table.engineVersion,
+      table.inputHash,
+    ),
+    index('comparison_summaries_comparison_created_idx').on(
+      table.organizationId,
+      table.comparisonId,
+      table.createdAt,
+    ),
+    check(
+      'comparison_summaries_input_hash_ck',
+      sql`${table.inputHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
+export const organizationFeatureFlags = pgTable(
+  'organization_feature_flags',
+  {
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    key: text('key').notNull(),
+    enabled: boolean('enabled').default(false).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedByUserId: uuid('updated_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (table) => [
+    uniqueIndex('organization_feature_flags_key_uq').on(
+      table.organizationId,
+      table.key,
+    ),
+  ],
+);
+
 export const mergeOperations = pgTable(
   'merge_operations',
   {

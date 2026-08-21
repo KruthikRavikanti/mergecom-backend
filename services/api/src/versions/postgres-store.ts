@@ -25,6 +25,7 @@ import type {
   BaselineRecommendation,
   BranchSummary,
   ComparisonChange,
+  ComparisonSummary,
   DocumentAccess,
   DocumentMerge,
   DocumentVersionSummary,
@@ -1032,6 +1033,186 @@ export class PostgresVersionStore implements VersionStore {
     } finally {
       client.release();
     }
+  }
+
+  public async getComparisonDerivationContext(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<{
+    aiEnabled: boolean;
+    approvedVersionId: string | null;
+    decisionSummary: Record<string, number>;
+    documentName: string;
+    projectName: string;
+    reviewStatus: string | null;
+    visualCoverage: { mapped: number; total: number } | null;
+  }> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const result = await client.query<{
+        ai_enabled: boolean;
+        approved_version_id: string | null;
+        document_name: string;
+        mapped_changes: number | null;
+        project_name: string;
+        review_status: string | null;
+        total_changes: number | null;
+      }>(
+        `select d.name as document_name, p.name as project_name,
+                branch.approved_version_id,
+                visualization.mapped_changes, visualization.total_changes,
+                review.status::text as review_status,
+                coalesce(flag.enabled, false) as ai_enabled
+           from version_comparisons comparison
+           join documents d on d.id = comparison.document_id
+           join projects p on p.id = d.project_id
+           join document_versions target on target.id = comparison.target_version_id
+           join document_branches branch on branch.id = target.branch_id
+           left join lateral (
+             select mapped_changes, total_changes
+               from comparison_visualizations
+              where comparison_id = comparison.id
+              order by created_at desc limit 1
+           ) visualization on true
+           left join lateral (
+             select status
+               from review_requests
+              where comparison_id = comparison.id
+              order by created_at desc limit 1
+           ) review on true
+           left join organization_feature_flags flag
+             on flag.organization_id = comparison.organization_id
+            and flag.key = 'comparison_ai_explanation'
+          where comparison.organization_id = $1
+            and comparison.document_id = $2 and comparison.id = $3`,
+        [input.actor.organizationId, input.documentId, input.comparisonId],
+      );
+      const row = result.rows[0];
+      if (!row) throw new VersionOperationError('not_found');
+      const decisions = await client.query<{
+        count: number;
+        decision: string;
+      }>(
+        `select decision::text, count(*)::int as count
+           from review_decisions decision
+           join review_requests review on review.id = decision.review_request_id
+          where review.organization_id = $1
+            and review.comparison_id = $2
+          group by decision`,
+        [input.actor.organizationId, input.comparisonId],
+      );
+      return {
+        aiEnabled: row.ai_enabled,
+        approvedVersionId: row.approved_version_id,
+        decisionSummary: Object.fromEntries(
+          decisions.rows.map((decision) => [decision.decision, decision.count]),
+        ),
+        documentName: row.document_name,
+        projectName: row.project_name,
+        reviewStatus: row.review_status,
+        visualCoverage:
+          row.mapped_changes === null || row.total_changes === null
+            ? null
+            : {
+                mapped: row.mapped_changes,
+                total: row.total_changes,
+              },
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  public async getOrCreateComparisonSummary(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    engineVersion: string;
+    inputHash: string;
+    projectId: string;
+    schemaVersion: string;
+    summary: ComparisonSummary;
+  }): Promise<ComparisonSummary> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      await client.query(
+        `insert into comparison_summaries
+          (organization_id, comparison_id, schema_version, engine_version,
+           input_hash, summary)
+         select $1, comparison.id, $4, $5, $6, $7
+           from version_comparisons comparison
+          where comparison.organization_id = $1
+            and comparison.document_id = $2 and comparison.id = $3
+         on conflict (comparison_id, schema_version, engine_version, input_hash)
+         do nothing`,
+        [
+          input.actor.organizationId,
+          input.documentId,
+          input.comparisonId,
+          input.schemaVersion,
+          input.engineVersion,
+          input.inputHash,
+          JSON.stringify(input.summary),
+        ],
+      );
+      const result = await client.query<{ summary: ComparisonSummary }>(
+        `select summary
+           from comparison_summaries
+          where organization_id = $1 and comparison_id = $2
+            and schema_version = $3 and engine_version = $4
+            and input_hash = $5`,
+        [
+          input.actor.organizationId,
+          input.comparisonId,
+          input.schemaVersion,
+          input.engineVersion,
+          input.inputHash,
+        ],
+      );
+      const summary = result.rows[0]?.summary;
+      if (!summary) throw new VersionOperationError('not_found');
+      return summary;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async appendComparisonReportAudit(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    includeValues: boolean;
+    requestId: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `insert into audit_events
+        (organization_id, actor_user_id, action, target_type, target_id,
+         result, request_id, metadata)
+       values ($1, $2, 'comparison.report_generated', 'version_comparison',
+               $3, 'succeeded', $4, $5)`,
+      [
+        input.actor.organizationId,
+        input.actor.userId,
+        input.comparisonId,
+        input.requestId,
+        JSON.stringify({ includeValues: input.includeValues }),
+      ],
+    );
   }
 
   public async recommendBaseline(input: {

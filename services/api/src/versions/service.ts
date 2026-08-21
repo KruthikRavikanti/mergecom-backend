@@ -23,6 +23,11 @@ import {
   UploadValidationError,
   validateUploadMetadata,
 } from './validation';
+import {
+  buildComparisonSummary,
+  COMPARISON_SUMMARY_ENGINE_VERSION,
+} from './comparison-summary';
+import { renderComparisonReport } from './comparison-report';
 
 function requestHash(value: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -578,6 +583,70 @@ export class VersionService {
     projectId: string;
   }): Promise<VersionComparison> {
     return this.store.getComparison(input);
+  }
+
+  public async getComparisonSummary(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }) {
+    const [comparison, context] = await Promise.all([
+      this.store.getComparison(input),
+      this.store.getComparisonDerivationContext(input),
+    ]);
+    const artifact = buildComparisonSummary({
+      comparison,
+      usesApprovedBaseline:
+        context.approvedVersionId === comparison.baseVersion.id,
+      visualCoverage: context.visualCoverage,
+    });
+    return this.store.getOrCreateComparisonSummary({
+      ...input,
+      engineVersion: COMPARISON_SUMMARY_ENGINE_VERSION,
+      inputHash: artifact.inputHash,
+      schemaVersion: artifact.summary.schemaVersion,
+      summary: artifact.summary,
+    });
+  }
+
+  public async getComparisonAiExplanation(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }) {
+    const context = await this.store.getComparisonDerivationContext(input);
+    return {
+      paragraphs: [],
+      status: context.aiEnabled
+        ? ('unavailable' as const)
+        : ('disabled' as const),
+    };
+  }
+
+  public async createComparisonReport(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    includeValues: boolean;
+    projectId: string;
+    requestId: string;
+  }): Promise<string> {
+    const [comparison, context, summary] = await Promise.all([
+      this.store.getComparison(input),
+      this.store.getComparisonDerivationContext(input),
+      this.getComparisonSummary(input),
+    ]);
+    const html = renderComparisonReport({
+      comparison,
+      context,
+      generatedAt: new Date(),
+      includeValues: input.includeValues,
+      summary,
+    });
+    await this.store.appendComparisonReportAudit(input);
+    return html;
   }
 
   public async recordViewerLoad(input: {

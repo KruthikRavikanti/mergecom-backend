@@ -10,6 +10,17 @@ export interface BaselinePolicyInput {
 export function recommendComparisonBaseline(
   input: BaselinePolicyInput,
 ): BaselineRecommendation {
+  const approvedVersion =
+    input.candidates.find(
+      (candidate) => candidate.id === input.approvedVersionId,
+    ) ?? null;
+  const approvedState = !approvedVersion
+    ? ('unavailable' as const)
+    : approvedVersion.sequence < input.target.sequence
+      ? ('older' as const)
+      : approvedVersion.sequence === input.target.sequence
+        ? ('equal' as const)
+        : ('newer' as const);
   const eligible = new Map(
     input.candidates
       .filter(
@@ -29,7 +40,14 @@ export function recommendComparisonBaseline(
 
   for (const [reason, versionId] of choices) {
     const version = versionId ? eligible.get(versionId) : undefined;
-    if (version) return { baseline: version, reason };
+    if (version) {
+      return { approvedState, approvedVersion, baseline: version, reason };
+    }
   }
-  return { baseline: null, reason: 'none' };
+  return {
+    approvedState,
+    approvedVersion,
+    baseline: null,
+    reason: 'none',
+  };
 }

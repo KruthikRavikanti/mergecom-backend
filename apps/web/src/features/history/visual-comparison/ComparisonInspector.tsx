@@ -21,6 +21,7 @@ import type { CurrentUser } from '../../../auth/session';
 
 export function ComparisonInspector({
   change,
+  classification,
   comparisonId,
   documentId,
   onRequestReview,
@@ -30,6 +31,7 @@ export function ComparisonInspector({
   visualization,
 }: {
   change?: ComparisonChange | undefined;
+  classification?: { category: string; reasons: string[] } | undefined;
   comparisonId: string;
   documentId: string;
   onRequestReview: () => void;
@@ -146,6 +148,15 @@ export function ComparisonInspector({
             <h3>{change.label}</h3>
             <code>{change.path}</code>
             <p>{change.impact} impact</p>
+            {classification ? (
+              <div className="inspector-classification">
+                <span>Deterministic classification</span>
+                <strong>{classification.category}</strong>
+                {classification.reasons.map((reason) => (
+                  <p key={reason}>{reason}</p>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="inspector-values">
             <ChangeValue label="Before" value={change.before} />

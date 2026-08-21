@@ -1,14 +1,14 @@
 import { CircleAlert, LocateFixed, MessageCircle, SearchX } from 'lucide-react';
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 
 import type {
   ComparisonChange,
   ComparisonVisualization,
 } from '../../../api/queries';
 
-type Filter = 'all' | ComparisonChange['category'];
+export type ChangeCategoryFilter = 'all' | ComparisonChange['category'];
 
-const filters: Array<{ label: string; value: Filter }> = [
+const filters: Array<{ label: string; value: ChangeCategoryFilter }> = [
   { label: 'All', value: 'all' },
   { label: 'Content', value: 'content' },
   { label: 'Structure', value: 'structure' },
@@ -18,18 +18,21 @@ const filters: Array<{ label: string; value: Filter }> = [
 
 export const ChangeNavigator = memo(function ChangeNavigator({
   changes,
+  filter,
+  onFilterChange,
   onSelect,
   selectedId,
   threadCounts,
   visualization,
 }: {
   changes: ComparisonChange[];
+  filter: ChangeCategoryFilter;
+  onFilterChange: (filter: ChangeCategoryFilter) => void;
   onSelect: (change: ComparisonChange) => void;
   selectedId?: string | undefined;
   threadCounts: Map<string, number>;
   visualization?: ComparisonVisualization | undefined;
 }) {
-  const [filter, setFilter] = useState<Filter>('all');
   const visible = useMemo(
     () =>
       changes.filter(
@@ -45,7 +48,9 @@ export const ChangeNavigator = memo(function ChangeNavigator({
     [visualization],
   );
   const filterCounts = useMemo(() => {
-    const counts = new Map<Filter, number>([['all', changes.length]]);
+    const counts = new Map<ChangeCategoryFilter, number>([
+      ['all', changes.length],
+    ]);
     for (const change of changes) {
       counts.set(change.category, (counts.get(change.category) ?? 0) + 1);
     }
@@ -87,7 +92,7 @@ export const ChangeNavigator = memo(function ChangeNavigator({
               key={item.value}
               role="tab"
               type="button"
-              onClick={() => setFilter(item.value)}
+              onClick={() => onFilterChange(item.value)}
             >
               {item.label} <span>{count}</span>
             </button>
@@ -95,6 +100,8 @@ export const ChangeNavigator = memo(function ChangeNavigator({
         })}
       </div>
       <div
+        aria-label={`${visible.length} filtered changes`}
+        aria-live="polite"
         className="change-list"
         role="listbox"
         tabIndex={0}

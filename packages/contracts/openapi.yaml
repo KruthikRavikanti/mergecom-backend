@@ -1271,6 +1271,74 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ComparisonVisualization' }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/summary:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ComparisonId'
+    get:
+      operationId: getComparisonSummary
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Versioned deterministic summary derived from persisted changes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonSummary' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/ai-explanation:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ComparisonId'
+    get:
+      operationId: getComparisonAiExplanation
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Optional non-authoritative explanation state and cited paragraphs.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, paragraphs]
+                properties:
+                  status: { type: string, enum: [disabled, unavailable, ready] }
+                  paragraphs:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [text, changeIds]
+                      properties:
+                        text: { type: string }
+                        changeIds:
+                          type: array
+                          items: { type: string }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/report:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ComparisonId'
+    get:
+      operationId: exportComparisonReport
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: includeValues
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Audited deterministic HTML comparison report.
+          content:
+            text/html:
+              schema: { type: string }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/viewer-events:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -2386,8 +2454,64 @@ components:
     BaselineRecommendation:
       type: object
       additionalProperties: false
-      required: [baseline, reason]
+      required: [approvedState, approvedVersion, baseline, reason]
       properties:
+        approvedState:
+          type: string
+          enum: [older, equal, newer, unavailable]
+        approvedVersion:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required:
+                [
+                  id,
+                  displayNumber,
+                  sequence,
+                  parentVersionId,
+                  status,
+                  processingState,
+                  author,
+                  createdAt,
+                ]
+              properties:
+                id: { type: string, format: uuid }
+                displayNumber: { type: integer, minimum: 1 }
+                sequence: { type: integer, minimum: 1 }
+                parentVersionId:
+                  oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+                status:
+                  {
+                    type: string,
+                    enum:
+                      [
+                        pending_processing,
+                        ready,
+                        conflicted,
+                        quarantined,
+                        failed,
+                      ],
+                  }
+                processingState:
+                  type: string
+                  enum:
+                    [
+                      queued,
+                      running,
+                      retryable_failed,
+                      permanently_failed,
+                      quarantined,
+                      completed,
+                    ]
+                author:
+                  type: object
+                  additionalProperties: false
+                  required: [id, name]
+                  properties:
+                    id: { type: string, format: uuid }
+                    name: { type: string }
+                createdAt: { type: string, format: date-time }
+            - type: 'null'
         reason:
           type: string
           enum: [approved_version, verified_local_base, previous_head, none]
@@ -2559,6 +2683,79 @@ components:
           items: { $ref: '#/components/schemas/ComparisonChange' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ComparisonSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          comparisonId,
+          totalChanges,
+          added,
+          removed,
+          modified,
+          moved,
+          substantive,
+          formattingOnly,
+          categories,
+          attentionItems,
+          coverage,
+        ]
+      properties:
+        schemaVersion: { type: string }
+        comparisonId: { type: string, format: uuid }
+        totalChanges: { type: integer, minimum: 0 }
+        added: { type: integer, minimum: 0 }
+        removed: { type: integer, minimum: 0 }
+        modified: { type: integer, minimum: 0 }
+        moved: { type: integer, minimum: 0 }
+        substantive: { type: integer, minimum: 0 }
+        formattingOnly: { type: integer, minimum: 0 }
+        categories:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, label, count, changeIds]
+            properties:
+              key:
+                type: string
+                enum:
+                  [
+                    text,
+                    numeric,
+                    date,
+                    formula,
+                    structure,
+                    position,
+                    formatting,
+                    unsupported,
+                  ]
+              label: { type: string }
+              count: { type: integer, minimum: 0 }
+              changeIds:
+                type: array
+                items: { type: string }
+        attentionItems:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, reasonCode, severity, changeIds]
+            properties:
+              label: { type: string }
+              reasonCode: { type: string }
+              severity: { type: string, enum: [low, medium, high] }
+              changeIds:
+                type: array
+                items: { type: string }
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [semantic, visualMapping]
+          properties:
+            semantic: { type: integer, minimum: 0, maximum: 100 }
+            visualMapping: { type: integer, minimum: 0, maximum: 100 }
     VersionRendition:
       type: object
       additionalProperties: false

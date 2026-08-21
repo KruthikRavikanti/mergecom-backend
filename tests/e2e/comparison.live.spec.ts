@@ -92,6 +92,22 @@ test('compares two normalized versions and displays typed content changes', asyn
     },
   );
   await expect(page.getByRole('heading', { name: 'Changes' })).toBeVisible();
+  await expect(page.getByText('DETERMINISTIC SUMMARY')).toBeVisible();
+  await expect(
+    page.getByRole('group', { name: 'Comparison scope' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: /Substantive/u }).click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('scope'))
+    .toBe('substantive');
+  await page.getByRole('button', { name: /^All /u }).click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('scope'))
+    .toBe('all');
+  const report = page.getByRole('link', { name: 'Export report' });
+  await expect(report).toHaveAttribute('href', /includeValues=false/u);
+  await page.getByLabel('Include before/after values').check();
+  await expect(report).toHaveAttribute('href', /includeValues=true/u);
   const renderedPages = page.getByLabel('Rendered page 1');
   await expect(renderedPages).toHaveCount(2, { timeout: 30_000 });
   await expect(

@@ -44,6 +44,9 @@ export type WorkSection = components['schemas']['WorkSection'];
 export type WorkspaceSearchResult =
   components['schemas']['WorkspaceSearchResult'];
 export type RecentDocument = components['schemas']['RecentDocument'];
+export type ComparisonSummary = components['schemas']['ComparisonSummary'];
+export type BaselineRecommendation =
+  components['schemas']['BaselineRecommendation'];
 
 export const queryKeys = {
   apiReadiness: ['api', 'readiness'] as const,
@@ -132,6 +135,38 @@ export const queryKeys = {
       'comparisons',
       comparisonId,
       'visualization',
+    ] as const,
+  comparisonSummary: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    comparisonId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'comparisons',
+      comparisonId,
+      'summary',
+    ] as const,
+  comparisonBaseline: (
+    organizationId: string,
+    projectId: string,
+    documentId: string,
+    versionId: string,
+  ) =>
+    [
+      'projects',
+      organizationId,
+      projectId,
+      'documents',
+      documentId,
+      'versions',
+      versionId,
+      'baseline',
     ] as const,
   rendition: (
     organizationId: string,
@@ -778,6 +813,81 @@ export function useComparisonVisualizationQuery(
       comparisonId,
     ),
     retry: false,
+  });
+}
+
+export function useComparisonSummaryQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  comparisonId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId && comparisonId && enabled),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/summary',
+        {
+          params: {
+            path: {
+              comparisonId,
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Comparison summary could not be loaded.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.comparisonSummary(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      comparisonId,
+    ),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function useComparisonBaselineQuery(
+  organizationId: string | undefined,
+  projectId: string,
+  documentId: string,
+  versionId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId && versionId && enabled),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/baseline-recommendation',
+        {
+          params: {
+            path: {
+              documentId,
+              organizationId: organizationId!,
+              projectId,
+              versionId,
+            },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Approved baseline status could not be loaded.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.comparisonBaseline(
+      organizationId ?? 'unavailable',
+      projectId,
+      documentId,
+      versionId,
+    ),
   });
 }
 

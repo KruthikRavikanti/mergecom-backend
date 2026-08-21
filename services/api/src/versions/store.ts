@@ -17,6 +17,7 @@ import type {
   VersionRendition,
   VersionVisualData,
   ComparisonVisualization,
+  ComparisonSummary,
 } from './types';
 
 export type VersionOperationErrorCode =
@@ -85,6 +86,12 @@ export interface CreatedUploadRecord {
 }
 
 export interface VersionStore {
+  appendComparisonReportAudit(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    includeValues: boolean;
+    requestId: string;
+  }): Promise<void>;
   appendMergeCandidateDownloadAudit(input: {
     actor: VersionActor;
     mergeId: string;
@@ -199,6 +206,30 @@ export interface VersionStore {
     documentId: string;
     projectId: string;
   }): Promise<VersionComparison>;
+  getComparisonDerivationContext(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<{
+    aiEnabled: boolean;
+    approvedVersionId: string | null;
+    decisionSummary: Record<string, number>;
+    documentName: string;
+    projectName: string;
+    reviewStatus: string | null;
+    visualCoverage: { mapped: number; total: number } | null;
+  }>;
+  getOrCreateComparisonSummary(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    engineVersion: string;
+    inputHash: string;
+    projectId: string;
+    schemaVersion: string;
+    summary: ComparisonSummary;
+  }): Promise<ComparisonSummary>;
   recommendBaseline(input: {
     actor: VersionActor;
     documentId: string;

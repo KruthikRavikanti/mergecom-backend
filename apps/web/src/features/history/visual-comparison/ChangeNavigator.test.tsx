@@ -33,10 +33,13 @@ afterEach(cleanup);
 
 describe('ChangeNavigator', () => {
   it('filters changes and supports keyboard navigation', () => {
+    const onFilterChange = vi.fn();
     const onSelect = vi.fn();
-    render(
+    const { rerender } = render(
       <ChangeNavigator
         changes={changes}
+        filter="all"
+        onFilterChange={onFilterChange}
         onSelect={onSelect}
         selectedId={changes[0]!.id}
         threadCounts={new Map([[changes[1]!.id, 2]])}
@@ -47,6 +50,17 @@ describe('ChangeNavigator', () => {
     expect(onSelect).toHaveBeenLastCalledWith(changes[1]);
 
     fireEvent.click(screen.getByRole('tab', { name: /Structure/u }));
+    expect(onFilterChange).toHaveBeenCalledWith('structure');
+    rerender(
+      <ChangeNavigator
+        changes={changes}
+        filter="structure"
+        onFilterChange={onFilterChange}
+        onSelect={onSelect}
+        selectedId={changes[1]!.id}
+        threadCounts={new Map([[changes[1]!.id, 2]])}
+      />,
+    );
     expect(screen.queryByText('Reporting period')).not.toBeInTheDocument();
     expect(screen.getByText('Forecast total')).toBeInTheDocument();
     expect(screen.getByTitle('2 unresolved discussions')).toBeInTheDocument();
