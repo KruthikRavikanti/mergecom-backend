@@ -9,6 +9,7 @@ export default defineConfig(({ command }) => {
     : './src/auth/DevelopmentLoginAction.production.tsx';
 
   return {
+    build: { manifest: true },
     plugins: [react()],
     resolve: {
       alias: {

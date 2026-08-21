@@ -22,7 +22,7 @@
   --marketing-canvas: #f8fafc;
   --marketing-warm: #f3f1ed;
   --marketing-paper: #ffffff;
-  --marketing-muted: #64748b;
+  --marketing-muted: #526078;
   --marketing-line: #dbe2ea;
   --marketing-soft-red: #fee2e2;
   --marketing-display-hero: clamp(3rem, 6vw, 5.5rem);
@@ -70,6 +70,12 @@
 .marketing-tone-night {
   background: var(--marketing-night);
   color: var(--marketing-paper);
+}
+
+.marketing-tone-night .marketing-eyebrow,
+.marketing-page-hero .marketing-eyebrow,
+.product-page-hero .marketing-eyebrow {
+  color: #fca5a5;
 }
 
 .marketing-display {
@@ -1118,7 +1124,7 @@
   margin-top: 52px;
   padding-top: 20px;
   border-top: 1px solid #334155;
-  color: #64748b;
+  color: #94a3b8;
   font-size: 0.7rem;
 }
 
