@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const livePhase27 = process.env.LIVE_PHASE27_E2E === 'true';
+
 async function signIn(page: Page, identity: string) {
   await page.goto('/login');
   await page.getByLabel('Local identity').selectOption(identity);
@@ -7,6 +9,11 @@ async function signIn(page: Page, identity: string) {
     .getByRole('button', { name: 'Continue with local identity' })
     .click();
 }
+
+test.skip(
+  !livePhase27,
+  'Requires the local stack and seeded Phase 27 workspace activity.',
+);
 
 test('My Work sections and metadata search reach current resources', async ({
   page,
