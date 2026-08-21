@@ -1,0 +1,196 @@
+name: mergecom-pilot
+
+x-runtime-defaults: &runtime-defaults
+  init: true
+  read_only: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  migration:
+    <<: *runtime-defaults
+    image: ${MERGECOM_API_IMAGE:?MERGECOM_API_IMAGE must be digest-pinned}
+    command: [node, dist/db/migrate.js]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      NODE_ENV: production
+    healthcheck:
+      disable: true
+    networks:
+      - backend
+    restart: 'no'
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+
+  api:
+    <<: *runtime-defaults
+    image: ${MERGECOM_API_IMAGE:?MERGECOM_API_IMAGE must be digest-pinned}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 3001
+      API_PUBLIC_ORIGIN: ${API_PUBLIC_ORIGIN:?API_PUBLIC_ORIGIN is required}
+      AUTH_MODE: entra
+      COOKIE_SECURE: 'true'
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      EXPOSE_INVITATION_LINKS: 'false'
+      INVITATION_FROM: ${INVITATION_FROM:?INVITATION_FROM is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      OFFICE_ADDIN_ORIGIN: ${OFFICE_ADDIN_ORIGIN:?OFFICE_ADDIN_ORIGIN is required}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?OIDC_CLIENT_ID is required}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?OIDC_CLIENT_SECRET is required}
+      OIDC_ISSUER: ${OIDC_ISSUER:?OIDC_ISSUER is required}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
+      S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT is required}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      S3_REGION: ${S3_REGION:?S3_REGION is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      SMTP_URL: ${SMTP_URL:?SMTP_URL is required}
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-2}
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN is required}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 4
+    networks:
+      - backend
+    stop_grace_period: 30s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+
+  document-engine:
+    <<: *runtime-defaults
+    image: ${MERGECOM_DOCUMENT_ENGINE_IMAGE:?MERGECOM_DOCUMENT_ENGINE_IMAGE must be digest-pinned}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 3003
+      Inspection__InternalToken: ${DOCUMENT_ENGINE_INTERNAL_TOKEN:?DOCUMENT_ENGINE_INTERNAL_TOKEN is required}
+      Inspection__TempRoot: /tmp/mergecom-document-engine
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - http://127.0.0.1:3003/health/ready
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 4
+    networks:
+      - backend
+    stop_grace_period: 30s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1536m
+
+  worker:
+    <<: *runtime-defaults
+    image: ${MERGECOM_WORKER_IMAGE:?MERGECOM_WORKER_IMAGE must be digest-pinned}
+    depends_on:
+      document-engine:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DOCUMENT_ENGINE_INTERNAL_TOKEN: ${DOCUMENT_ENGINE_INTERNAL_TOKEN:?DOCUMENT_ENGINE_INTERNAL_TOKEN is required}
+      DOCUMENT_ENGINE_URL: http://document-engine:3003
+      EXCEL_AUTOMATIC_MERGE_ENABLED: ${EXCEL_AUTOMATIC_MERGE_ENABLED:-false}
+      EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS: ${EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      NOTIFICATION_FROM: ${NOTIFICATION_FROM:?NOTIFICATION_FROM is required}
+      POWERPOINT_AUTOMATIC_MERGE_ENABLED: ${POWERPOINT_AUTOMATIC_MERGE_ENABLED:-false}
+      POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS: ${POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS:-}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
+      S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT is required}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      S3_REGION: ${S3_REGION:?S3_REGION is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      SMTP_URL: ${SMTP_URL:?SMTP_URL is required}
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN is required}
+      WORKER_HOST: 0.0.0.0
+      WORKER_PORT: 3002
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3002/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 4
+    networks:
+      - backend
+    stop_grace_period: 45s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+
+  web:
+    <<: *runtime-defaults
+    image: ${MERGECOM_WEB_IMAGE:?MERGECOM_WEB_IMAGE must be digest-pinned}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --output-document=-
+        - http://127.0.0.1:8080/health/live
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 4
+    networks:
+      - backend
+    ports:
+      - ${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8080}:8080
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+
+  office-addin:
+    <<: *runtime-defaults
+    image: ${MERGECOM_OFFICE_ADDIN_IMAGE:?MERGECOM_OFFICE_ADDIN_IMAGE must be digest-pinned}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --output-document=-
+        - http://127.0.0.1:8080/health/live
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 4
+    networks:
+      - backend
+    ports:
+      - ${OFFICE_BIND_ADDRESS:-127.0.0.1}:${OFFICE_PORT:-8081}:8080
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+
+networks:
+  backend:
+    driver: bridge

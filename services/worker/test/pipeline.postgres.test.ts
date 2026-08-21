@@ -473,6 +473,7 @@ function workerConfig(
     heartbeatMilliseconds: 5_000,
     host: '127.0.0.1',
     leaseMilliseconds: 30_000,
+    logLevel: 'silent',
     maxArtifactBytes: 100 * 1024 * 1024,
     notificationConcurrency: 1,
     notificationFrom: 'MergeCom <no-reply@mergecom.local>',

@@ -41,11 +41,13 @@ describe.runIf(runInfrastructureTests)('project resource API', () => {
     databaseUrl,
     exposeInvitationLinks: true,
     invitationMail: null,
+    logLevel: 'silent',
     nodeEnv: 'test',
     officeAddinOrigin: 'https://localhost:5176',
     oidc: null,
     sessionAbsoluteMilliseconds: 24 * 60 * 60 * 1000,
     sessionIdleMilliseconds: 60 * 60 * 1000,
+    trustedProxyHops: 0,
     webOrigin: 'http://localhost:5173',
   });
 

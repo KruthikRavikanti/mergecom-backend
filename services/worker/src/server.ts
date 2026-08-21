@@ -61,7 +61,21 @@ readiness.close = async () => {
 };
 
 await Promise.all([pipeline.start(), notificationPipeline.start()]);
-const app = createApp({ logger: true, readinessProbe: readiness });
+const app = createApp({
+  logger: {
+    level: config.logLevel,
+    redact: {
+      censor: '[REDACTED]',
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers.x-mergecom-internal-token',
+        'res.headers.set-cookie',
+      ],
+    },
+  },
+  readinessProbe: readiness,
+});
 
 const shutdown = async () => {
   await app.close();

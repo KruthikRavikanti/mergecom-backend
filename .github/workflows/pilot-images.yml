@@ -1,0 +1,87 @@
+name: Pilot images
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_origin:
+        description: Hosted HTTPS web origin baked into the Office image
+        required: true
+        type: string
+      office_addin_origin:
+        description: Hosted HTTPS Office origin used in rendered manifests
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            dockerfile: infra/deployment/Dockerfile.api
+          - image: worker
+            dockerfile: infra/deployment/Dockerfile.worker
+          - image: document-engine
+            dockerfile: infra/deployment/Dockerfile.document-engine
+          - image: web
+            dockerfile: infra/deployment/Dockerfile.web
+          - image: office-addin
+            dockerfile: infra/deployment/Dockerfile.office-addin
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate hosted origins
+        env:
+          OFFICE_ORIGIN: ${{ inputs.office_addin_origin }}
+          WEB_ORIGIN: ${{ inputs.web_origin }}
+        run: |
+          node -e "for (const [name,value] of Object.entries({OFFICE_ORIGIN:process.env.OFFICE_ORIGIN,WEB_ORIGIN:process.env.WEB_ORIGIN})) { const url = new URL(value); if (url.protocol !== 'https:' || url.origin !== value || ['localhost','127.0.0.1'].includes(url.hostname)) throw new Error(name + ' must be a hosted HTTPS origin.'); }"
+          test "$OFFICE_ORIGIN" != "$WEB_ORIGIN"
+
+      - name: Set image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/mergecom-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          build-args: |
+            VITE_API_BASE_URL=/api
+            VITE_WEB_APP_BASE_URL=${{ inputs.web_origin }}
+            OFFICE_ADDIN_ORIGIN=${{ inputs.office_addin_origin }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          push: true
+          sbom: true
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: echo '${{ matrix.image }} = '"$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"

@@ -21,6 +21,7 @@ Phase 1 created the canonical repository structure and moved evidence without ca
 | Browser mock projects/teams/documents | PostgreSQL through `services/api` | Removed; tenant-linked projects, explicit project memberships, nested folders, document records, archives, and audits are authoritative | 3 complete |
 | Browser review labels and local comments | PostgreSQL through `services/api` | Removed; immutable-version requests, fixed assignments, append-only decisions/comments, exact comparison anchors, audit/outbox evidence, and the approved pointer are authoritative | 7 complete |
 | Mock notification settings and console behavior | PostgreSQL, worker SMTP delivery, and `apps/web` | Removed; recipient inbox state, channel preferences, suppression, retries, leases, provider evidence, and dead letters are authoritative | 9 complete |
+| No hosted runtime definition | `infra/deployment/` | Added digest-pinned stateless pilot images, migration-gated Compose, fail-closed preflight, hosted Office manifests, release checks, and backup/restore drills; managed stateful services and production approval remain operator-owned | 15 pilot baseline complete |
 
 ## Migration sequence
 

@@ -43,6 +43,18 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/compose.yaml config --quiet
 
+      - name: Validate pilot deployment contract
+        run: |
+          node infra/deployment/validate-config.mjs infra/deployment/.env.validation.example --allow-synthetic
+          docker compose --env-file infra/deployment/.env.validation.example -f infra/deployment/compose.pilot.yaml config --quiet
+          pnpm test:deployment
+
+      - name: Check deployment Dockerfiles
+        run: |
+          for dockerfile in infra/deployment/Dockerfile.*; do
+            docker buildx build --check --file "$dockerfile" .
+          done
+
       - name: Check formatting
         run: pnpm format:check
 

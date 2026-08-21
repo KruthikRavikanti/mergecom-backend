@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import { Type, type TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
-import Fastify from 'fastify';
+import Fastify, { type FastifyServerOptions } from 'fastify';
 
 import { loadConfig, type ApiConfig } from './config';
 import { createDatabase } from './db/database';
@@ -49,19 +49,21 @@ interface CreateAppOptions {
   config?: ApiConfig;
   databaseUrl?: string | undefined;
   identityStore?: IdentityStore;
-  logger?: boolean;
+  logger?: FastifyServerOptions['logger'];
   notificationStore?: NotificationStore;
   projectStore?: ProjectStore;
   readinessProbe?: ReadinessProbe;
   reviewStore?: ReviewStore;
   versionService?: VersionService;
   versionStore?: VersionStore;
+  trustProxy?: FastifyServerOptions['trustProxy'];
 }
 
 export async function createApp(options: CreateAppOptions = {}) {
   const config = options.config ?? loadConfig();
   const app = Fastify({
     logger: options.logger ?? false,
+    trustProxy: options.trustProxy ?? false,
   }).withTypeProvider<TypeBoxTypeProvider>();
   const database =
     (!options.identityStore ||

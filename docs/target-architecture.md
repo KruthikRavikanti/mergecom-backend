@@ -92,7 +92,14 @@ Normalized snapshots, previews, and diffs are versioned derived artifacts. They 
 
 ## Local and hosted environments
 
-Local development will use Docker Compose for PostgreSQL, MinIO, Redis, and a mail catcher. Bootstrap must require one documented command and no committed secret. Hosted environments use managed PostgreSQL, Redis, and object storage behind the same interfaces. A later Microsoft 365 storage connector may allow SharePoint/OneDrive to remain the file system of record without changing version semantics.
+Local development uses Docker Compose for PostgreSQL, MinIO, Redis, and a mail
+catcher. Bootstrap requires one documented command and no committed secret. The Phase
+15 pilot bundle runs only stateless application images and requires managed
+PostgreSQL, Redis, object storage, SMTP, Entra ID, TLS ingress, secret management,
+monitoring, and backups. Images are selected by digest and database migration is a
+successful one-shot prerequisite for API and worker startup. A later Microsoft 365
+storage connector may allow SharePoint/OneDrive to remain the file system of record
+without changing version semantics.
 
 ## Security posture
 
@@ -103,4 +110,3 @@ Local development will use Docker Compose for PostgreSQL, MinIO, Redis, and a ma
 - Defenses for path traversal, malformed relationships/content types, DTD/external entities, encrypted packages, and unsupported features.
 - Restricted worker/document-engine network and filesystem permissions with guaranteed temporary-file cleanup.
 - Document content is excluded from application logs, errors, traces, analytics, and audit payloads.
-

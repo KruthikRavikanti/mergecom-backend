@@ -9,6 +9,7 @@ export interface WorkerConfig {
   heartbeatMilliseconds: number;
   host: string;
   leaseMilliseconds: number;
+  logLevel: LogLevel;
   maxArtifactBytes: number;
   notificationConcurrency: number;
   notificationFrom: string;
@@ -29,6 +30,35 @@ export interface WorkerConfig {
   webOrigin: string;
 }
 
+type LogLevel =
+  'debug' | 'error' | 'fatal' | 'info' | 'silent' | 'trace' | 'warn';
+
+const LOG_LEVELS = new Set<LogLevel>([
+  'debug',
+  'error',
+  'fatal',
+  'info',
+  'silent',
+  'trace',
+  'warn',
+]);
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required for this configuration.`);
+  return value;
+}
+
+function configured(
+  name: string,
+  nodeEnv: 'development' | 'production' | 'test',
+  fallback: string,
+): string {
+  return (
+    process.env[name] ?? (nodeEnv === 'production' ? required(name) : fallback)
+  );
+}
+
 function positiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -43,6 +73,36 @@ function booleanFlag(name: string, fallback = false): boolean {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error(`${name} must be true or false.`);
+}
+
+function logLevel(): LogLevel {
+  const value = process.env.LOG_LEVEL ?? 'info';
+  if (!LOG_LEVELS.has(value as LogLevel)) {
+    throw new Error('LOG_LEVEL is invalid.');
+  }
+  return value as LogLevel;
+}
+
+function assertProductionUrl(
+  name: string,
+  value: string,
+  options: { allowSearch?: boolean; protocols: readonly string[] },
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute URL.`);
+  }
+  if (
+    !options.protocols.includes(parsed.protocol) ||
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    (!options.allowSearch && parsed.search !== '') ||
+    parsed.hash !== ''
+  ) {
+    throw new Error(`${name} is invalid for production.`);
+  }
 }
 
 function organizationAllowlist(name: string): string[] {
@@ -64,15 +124,57 @@ function organizationAllowlist(name: string): string[] {
 }
 
 export function loadWorkerConfig(): WorkerConfig {
-  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const nodeEnv = (process.env.NODE_ENV ?? 'development') as
+    'development' | 'production' | 'test';
+  if (!['development', 'production', 'test'].includes(nodeEnv)) {
+    throw new Error('NODE_ENV must be development, production, or test.');
+  }
   if (nodeEnv === 'production' && !process.env.SMTP_URL) {
     throw new Error(
       'SMTP_URL is required for production notification delivery.',
     );
   }
   const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
-  if (nodeEnv === 'production' && !webOrigin.startsWith('https://')) {
-    throw new Error('WEB_ORIGIN must use HTTPS in production.');
+  const databaseUrl = configured(
+    'DATABASE_URL',
+    nodeEnv,
+    'postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom',
+  );
+  const redisUrl = configured('REDIS_URL', nodeEnv, 'redis://localhost:6379');
+  const smtpUrl = configured('SMTP_URL', nodeEnv, 'smtp://localhost:1025');
+  const documentEngineUrl = configured(
+    'DOCUMENT_ENGINE_URL',
+    nodeEnv,
+    'http://127.0.0.1:3003',
+  );
+  const s3Endpoint = configured(
+    'S3_ENDPOINT',
+    nodeEnv,
+    'http://localhost:9000',
+  );
+  if (nodeEnv === 'production') {
+    assertProductionUrl('WEB_ORIGIN', webOrigin, { protocols: ['https:'] });
+    assertProductionUrl('DATABASE_URL', databaseUrl, {
+      allowSearch: true,
+      protocols: ['postgres:', 'postgresql:'],
+    });
+    const sslMode = new URL(databaseUrl).searchParams.get('sslmode');
+    if (!['require', 'verify-ca', 'verify-full'].includes(sslMode ?? '')) {
+      throw new Error('DATABASE_URL must require TLS with sslmode.');
+    }
+    assertProductionUrl('REDIS_URL', redisUrl, {
+      protocols: ['rediss:'],
+    });
+    assertProductionUrl('SMTP_URL', smtpUrl, {
+      protocols: ['smtps:'],
+    });
+    assertProductionUrl('DOCUMENT_ENGINE_URL', documentEngineUrl, {
+      protocols: ['http:', 'https:'],
+    });
+    assertProductionUrl('S3_ENDPOINT', s3Endpoint, {
+      protocols: ['https:'],
+    });
+    required('NOTIFICATION_FROM');
   }
   const heartbeatMilliseconds = positiveInteger(
     'PROCESSING_HEARTBEAT_MILLISECONDS',
@@ -87,9 +189,11 @@ export function loadWorkerConfig(): WorkerConfig {
       'PROCESSING_LEASE_MILLISECONDS must exceed twice the heartbeat interval.',
     );
   }
-  const documentEngineToken =
-    process.env.DOCUMENT_ENGINE_INTERNAL_TOKEN ??
-    'mergecom-local-document-engine-token';
+  const documentEngineToken = configured(
+    'DOCUMENT_ENGINE_INTERNAL_TOKEN',
+    nodeEnv,
+    'mergecom-local-document-engine-token',
+  );
   if (documentEngineToken.length < 32) {
     throw new Error(
       'DOCUMENT_ENGINE_INTERNAL_TOKEN must be at least 32 characters.',
@@ -97,16 +201,13 @@ export function loadWorkerConfig(): WorkerConfig {
   }
   return {
     concurrency: positiveInteger('PROCESSING_CONCURRENCY', 2),
-    databaseUrl:
-      process.env.DATABASE_URL ??
-      'postgresql://mergecom:mergecom-local-only@localhost:5432/mergecom',
+    databaseUrl,
     dispatchIntervalMilliseconds: positiveInteger(
       'PROCESSING_DISPATCH_INTERVAL_MILLISECONDS',
       2_000,
     ),
     documentEngineToken,
-    documentEngineUrl:
-      process.env.DOCUMENT_ENGINE_URL ?? 'http://127.0.0.1:3003',
+    documentEngineUrl,
     excelAutomaticMergeEnabled: booleanFlag('EXCEL_AUTOMATIC_MERGE_ENABLED'),
     excelAutomaticMergePilotOrganizationIds: organizationAllowlist(
       'EXCEL_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS',
@@ -114,6 +215,7 @@ export function loadWorkerConfig(): WorkerConfig {
     heartbeatMilliseconds,
     host: process.env.WORKER_HOST ?? '0.0.0.0',
     leaseMilliseconds,
+    logLevel: logLevel(),
     maxArtifactBytes: positiveInteger(
       'PROCESSING_MAX_ARTIFACT_BYTES',
       100 * 1024 * 1024,
@@ -132,15 +234,15 @@ export function loadWorkerConfig(): WorkerConfig {
     powerPointAutomaticMergePilotOrganizationIds: organizationAllowlist(
       'POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS',
     ),
-    redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-    smtpUrl: process.env.SMTP_URL ?? 'smtp://localhost:1025',
+    redisUrl,
+    smtpUrl,
     s3: {
-      accessKey: process.env.S3_ACCESS_KEY ?? 'mergecom-local',
+      accessKey: configured('S3_ACCESS_KEY', nodeEnv, 'mergecom-local'),
       bucket: process.env.S3_BUCKET ?? 'mergecom-artifacts',
-      endpoint: process.env.S3_ENDPOINT ?? 'http://localhost:9000',
+      endpoint: s3Endpoint,
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
       region: process.env.S3_REGION ?? 'us-east-1',
-      secretKey: process.env.S3_SECRET_KEY ?? 'mergecom-local-only',
+      secretKey: configured('S3_SECRET_KEY', nodeEnv, 'mergecom-local-only'),
     },
     webOrigin,
   };

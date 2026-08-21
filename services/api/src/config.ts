@@ -9,6 +9,7 @@ export interface ApiConfig {
     from: string;
     smtpUrl: string;
   } | null;
+  logLevel: LogLevel;
   nodeEnv: 'development' | 'production' | 'test';
   officeAddinOrigin: string;
   oidc: {
@@ -18,8 +19,22 @@ export interface ApiConfig {
   } | null;
   sessionAbsoluteMilliseconds: number;
   sessionIdleMilliseconds: number;
+  trustedProxyHops: number;
   webOrigin: string;
 }
+
+type LogLevel =
+  'debug' | 'error' | 'fatal' | 'info' | 'silent' | 'trace' | 'warn';
+
+const LOG_LEVELS = new Set<LogLevel>([
+  'debug',
+  'error',
+  'fatal',
+  'info',
+  'silent',
+  'trace',
+  'warn',
+]);
 
 export interface BlobStorageConfig {
   accessKey: string;
@@ -48,6 +63,54 @@ function parsePositiveInteger(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return value;
+}
+
+function parseNonNegativeInteger(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer.`);
+  }
+  return value;
+}
+
+function parseLogLevel(): LogLevel {
+  const value = process.env.LOG_LEVEL ?? 'info';
+  if (!LOG_LEVELS.has(value as LogLevel)) {
+    throw new Error('LOG_LEVEL is invalid.');
+  }
+  return value as LogLevel;
+}
+
+function assertProductionUrl(
+  name: string,
+  value: string,
+  options: {
+    allowCredentials?: boolean;
+    allowPath?: boolean;
+    allowSearch?: boolean;
+    protocols: readonly string[];
+  },
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute URL.`);
+  }
+  if (
+    !options.protocols.includes(parsed.protocol) ||
+    (!options.allowCredentials &&
+      (parsed.username !== '' || parsed.password !== '')) ||
+    (!options.allowSearch && parsed.search !== '') ||
+    parsed.hash !== '' ||
+    (!options.allowPath && parsed.pathname !== '/') ||
+    value.endsWith('/') ||
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '::1'
+  ) {
+    throw new Error(`${name} is invalid for production.`);
+  }
 }
 
 function loadBlobStorageConfig(
@@ -123,15 +186,18 @@ export function loadConfig(): ApiConfig {
     process.env.OFFICE_ADDIN_ORIGIN ?? 'https://localhost:5176';
   const apiPublicOrigin =
     process.env.API_PUBLIC_ORIGIN ?? 'http://localhost:3001';
-  if (
-    nodeEnv === 'production' &&
-    (!webOrigin.startsWith('https://') ||
-      !officeAddinOrigin.startsWith('https://') ||
-      !apiPublicOrigin.startsWith('https://'))
-  ) {
-    throw new Error(
-      'Production web, Office add-in, and API origins must use HTTPS.',
-    );
+  if (nodeEnv === 'production') {
+    assertProductionUrl('WEB_ORIGIN', webOrigin, { protocols: ['https:'] });
+    assertProductionUrl('OFFICE_ADDIN_ORIGIN', officeAddinOrigin, {
+      protocols: ['https:'],
+    });
+    assertProductionUrl('API_PUBLIC_ORIGIN', apiPublicOrigin, {
+      allowPath: true,
+      protocols: ['https:'],
+    });
+    if (webOrigin === officeAddinOrigin) {
+      throw new Error('WEB_ORIGIN and OFFICE_ADDIN_ORIGIN must be distinct.');
+    }
   }
 
   const exposeInvitationLinks = process.env.EXPOSE_INVITATION_LINKS
@@ -144,6 +210,33 @@ export function loadConfig(): ApiConfig {
   }
   if (nodeEnv === 'production' && !process.env.SMTP_URL) {
     throw new Error('SMTP_URL is required for production invitation delivery.');
+  }
+  if (nodeEnv === 'production') {
+    const databaseUrl = required('DATABASE_URL');
+    assertProductionUrl('DATABASE_URL', databaseUrl, {
+      allowCredentials: true,
+      allowPath: true,
+      allowSearch: true,
+      protocols: ['postgres:', 'postgresql:'],
+    });
+    const sslMode = new URL(databaseUrl).searchParams.get('sslmode');
+    if (!['require', 'verify-ca', 'verify-full'].includes(sslMode ?? '')) {
+      throw new Error('DATABASE_URL must require TLS with sslmode.');
+    }
+    assertProductionUrl('OIDC_ISSUER', required('OIDC_ISSUER'), {
+      allowPath: true,
+      protocols: ['https:'],
+    });
+    assertProductionUrl('S3_ENDPOINT', required('S3_ENDPOINT'), {
+      allowPath: true,
+      protocols: ['https:'],
+    });
+    assertProductionUrl('SMTP_URL', required('SMTP_URL'), {
+      allowCredentials: true,
+      allowPath: true,
+      protocols: ['smtps:'],
+    });
+    required('INVITATION_FROM');
   }
   if (
     nodeEnv === 'production' &&
@@ -172,6 +265,7 @@ export function loadConfig(): ApiConfig {
           smtpUrl: process.env.SMTP_URL,
         }
       : null,
+    logLevel: parseLogLevel(),
     nodeEnv,
     officeAddinOrigin,
     oidc:
@@ -186,6 +280,10 @@ export function loadConfig(): ApiConfig {
       parsePositiveInteger('SESSION_ABSOLUTE_HOURS', 168) * 60 * 60 * 1000,
     sessionIdleMilliseconds:
       parsePositiveInteger('SESSION_IDLE_MINUTES', 480) * 60 * 1000,
+    trustedProxyHops: parseNonNegativeInteger(
+      'TRUSTED_PROXY_HOPS',
+      nodeEnv === 'production' ? 1 : 0,
+    ),
     webOrigin,
   };
 }

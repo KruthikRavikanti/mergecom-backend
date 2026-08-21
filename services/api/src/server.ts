@@ -7,7 +7,19 @@ const config = loadConfig();
 const app = await createApp({
   config,
   databaseUrl: config.databaseUrl,
-  logger: true,
+  logger: {
+    level: config.logLevel,
+    redact: {
+      censor: '[REDACTED]',
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers.x-csrf-token',
+        'res.headers.set-cookie',
+      ],
+    },
+  },
+  trustProxy: config.trustedProxyHops || false,
 });
 
 const shutdown = async () => {

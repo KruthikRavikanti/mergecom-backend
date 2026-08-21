@@ -1,5 +1,35 @@
 # Phase status
 
+## Phase 15: Pilot deployment baseline
+
+Status: implementation complete on `phase-15/pilot-deployment`; pending owner and
+operator review.
+
+- [x] Five pinned, multi-stage images run API, worker, document engine, web, and the
+  Office add-in as non-root users with health checks and read-only runtime support.
+- [x] Pilot Compose uses immutable application image digests, a one-shot migration
+  gate, no bundled stateful services, no public internal-service ports, dropped
+  capabilities, no-new-privileges, bounded temporary filesystems, and readiness
+  ordering.
+- [x] API, worker, and document engine fail closed on incomplete or local production
+  dependencies; TLS database configuration, exact origins, proxy trust, log levels,
+  SMTP, storage, OIDC, and internal tokens are validated.
+- [x] Hosted Office images bake the web origin and serve separately rendered,
+  no-cache Word, Excel, and PowerPoint manifests without changing local manifests.
+- [x] Preflight rejects placeholders, mutable image tags, synthetic CI settings,
+  insecure dependency URLs, invalid proxy/port values, and an enabled automatic-merge
+  pilot without an organization UUID allowlist.
+- [x] CI validates Compose expansion, Dockerfile policy, deployment tests, and build
+  checks; a manual workflow publishes multi-architecture images with SBOM,
+  provenance, and reported digests.
+- [x] Deployment, release verification, PostgreSQL logical backup and isolated
+  restore drill, object protection checks, rollback, network, Entra, CORS, logging,
+  metrics, and alerting procedures are documented.
+
+The operator contract is in `docs/runbooks/pilot-deployment.md`; command evidence is
+in `docs/verification/phase-15-command-results.md`. This phase creates a pilot path,
+not a production approval.
+
 ## Phase 14: Office exact version retrieval
 
 Status: implementation complete on `phase-14/office-version-pull`; pending owner

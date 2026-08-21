@@ -22,11 +22,12 @@
     "install:check": "pnpm install --frozen-lockfile",
     "lint": "turbo run lint",
     "test:dotnet": "dotnet test services/document-engine/MergeCom.DocumentEngine.sln --configuration Release --nologo",
+    "test:deployment": "node --test infra/deployment/deployment.test.mjs",
     "test:e2e": "playwright test",
     "test:integration": "turbo run test:integration",
     "test:unit": "turbo run test:unit && pnpm test:dotnet",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm build && pnpm test:e2e"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:deployment && pnpm test:unit && pnpm test:integration && pnpm build && pnpm test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",

@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0.400-bookworm-slim AS build
+WORKDIR /source
+COPY services/document-engine/MergeCom.DocumentEngine.sln services/document-engine/
+COPY services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj services/document-engine/src/MergeCom.DocumentEngine/
+COPY services/document-engine/test/MergeCom.DocumentEngine.Tests/MergeCom.DocumentEngine.Tests.csproj services/document-engine/test/MergeCom.DocumentEngine.Tests/
+RUN dotnet restore services/document-engine/MergeCom.DocumentEngine.sln
+COPY services/document-engine services/document-engine
+RUN dotnet publish \
+    services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /opt/mergecom
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-bookworm-slim AS runtime
+LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/Mergecom"
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    ASPNETCORE_HTTP_PORTS=3003 \
+    Inspection__TempRoot=/tmp/mergecom-document-engine
+WORKDIR /app
+COPY --from=build --chown=app:app /opt/mergecom ./
+USER app
+EXPOSE 3003
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=4 \
+  CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3003/health/live"]
+ENTRYPOINT ["dotnet", "MergeCom.DocumentEngine.dll"]

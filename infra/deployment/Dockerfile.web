@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:24.18.1-bookworm-slim AS build
+WORKDIR /workspace
+RUN npm install --global pnpm@11.22.0
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json turbo.json ./
+COPY apps/office-addin/package.json apps/office-addin/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/office-core/package.json packages/office-core/package.json
+COPY packages/test-fixtures/package.json packages/test-fixtures/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY services/api/package.json services/api/package.json
+COPY services/worker/package.json services/worker/package.json
+RUN pnpm install --frozen-lockfile
+COPY apps/web apps/web
+COPY packages packages
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+RUN pnpm --filter @mergecom/web... build
+
+FROM nginx:1.28.3-alpine3.23 AS runtime
+LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/Mergecom"
+COPY infra/deployment/nginx.web.conf /etc/nginx/nginx.conf
+COPY --from=build --chown=nginx:nginx /workspace/apps/web/dist /usr/share/nginx/html
+USER nginx
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=4 \
+  CMD ["wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/health/live"]
+CMD ["nginx", "-g", "daemon off;"]

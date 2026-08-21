@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyServerOptions } from 'fastify';
 
 import {
   createRedisReadinessProbe,
@@ -6,7 +6,7 @@ import {
 } from './readiness';
 
 interface CreateAppOptions {
-  logger?: boolean;
+  logger?: FastifyServerOptions['logger'];
   readinessProbe?: WorkerReadinessProbe;
   redisUrl?: string | undefined;
 }

@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:24.18.1-bookworm-slim AS build
+WORKDIR /workspace
+RUN npm install --global pnpm@11.22.0
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json turbo.json ./
+COPY apps/office-addin/package.json apps/office-addin/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/office-core/package.json packages/office-core/package.json
+COPY packages/test-fixtures/package.json packages/test-fixtures/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY services/api/package.json services/api/package.json
+COPY services/worker/package.json services/worker/package.json
+RUN pnpm install --frozen-lockfile
+COPY services/worker services/worker
+RUN pnpm --filter @mergecom/worker build \
+    && pnpm --filter @mergecom/worker deploy --prod --legacy /opt/mergecom
+
+FROM node:24.18.1-bookworm-slim AS runtime
+LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/Mergecom"
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build --chown=node:node /opt/mergecom/node_modules ./node_modules
+COPY --from=build --chown=node:node /opt/mergecom/package.json ./package.json
+COPY --from=build --chown=node:node /workspace/services/worker/dist ./dist
+USER node
+EXPOSE 3002
+HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=4 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3002/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+CMD ["node", "dist/server.js"]

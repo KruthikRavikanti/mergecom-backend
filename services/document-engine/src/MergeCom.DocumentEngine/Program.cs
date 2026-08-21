@@ -11,6 +11,10 @@ builder.Services
     .AddOptions<InspectionOptions>()
     .Bind(builder.Configuration.GetSection(InspectionOptions.SectionName))
     .Validate(options => options.InternalToken.Length >= 32, "Inspection internal token must be at least 32 characters.")
+    .Validate(
+        options => !builder.Environment.IsProduction()
+            || options.InternalToken != "mergecom-local-document-engine-token",
+        "The local document-engine token cannot be used in production.")
     .Validate(options => options.MaxInputBytes > 0, "Inspection input limit must be positive.")
     .Validate(options => options.MaxEntries > 0, "Inspection entry limit must be positive.")
     .Validate(options => options.MaxPartBytes > 0, "Inspection part limit must be positive.")

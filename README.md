@@ -1,11 +1,10 @@
 # MergeCom
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 14
-adds authorized exact-version retrieval to the shared Word, Excel, and PowerPoint
-task pane. Users can choose any accessible version, download its immutable original,
-or open a verified clean plain OOXML package as a separate Office file. Exact capture,
-base-aware push, stale conflict preservation, and processing status remain available;
-unsupported host, format, size, and scan states fail closed.
+MergeCom is a document version review workspace for Microsoft Office files. Phase 15
+adds a provider-neutral pilot deployment baseline: hardened non-root images, immutable
+digest deployment, migration gating, production configuration preflight, hosted Office
+manifests, release health checks, and backup/restore drills. Phase 14 exact-version
+retrieval remains available across the shared Word, Excel, and PowerPoint task pane.
 
 ## Repository map
 
@@ -20,6 +19,7 @@ packages/ui/                 shared accessible UI primitives
 packages/office-core/        shared Office artifact invariants
 packages/test-fixtures/      synthetic test data only
 infra/compose/               PostgreSQL, Redis, MinIO, and Mailpit
+infra/deployment/            hosted pilot images, topology, and operator checks
 legacy/                      archived prototypes outside the workspace
 ```
 
@@ -69,6 +69,7 @@ pnpm typecheck           # strict TypeScript checks
 pnpm test:unit           # Vitest and xUnit
 pnpm test:integration    # service startup and gated Testcontainers checks
 pnpm test:e2e            # Playwright desktop/mobile route suite
+pnpm test:deployment     # pilot topology and configuration contract
 pnpm verify              # complete local quality gate
 ```
 
@@ -94,12 +95,15 @@ See [local setup](docs/setup/local-development.md),
 [Office version push](docs/product/office-version-push.md),
 [Office version retrieval](docs/product/office-version-pull.md),
 [notifications](docs/product/notifications.md),
+[pilot deployment](docs/runbooks/pilot-deployment.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.
 
 ## Safety
 
-The codebase is not production-ready and must not be used with confidential files.
+The codebase has a controlled pilot deployment path but is not production-approved
+and must not be used with confidential files without an explicit security and
+operations review.
 Legacy prototypes remain historical evidence only and are excluded from pnpm, Turbo,
 CI builds, and deployment paths. Historical credential exposure and the deferred
 history-cleaning decision remain documented in
