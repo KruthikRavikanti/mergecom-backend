@@ -3,7 +3,6 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthProvider } from '../auth/AuthContext';
 import { createAppRoutes } from './router';
 
 beforeEach(() => {
@@ -40,16 +39,14 @@ function renderRoute(path: string) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RouterProvider router={router} />
-      </AuthProvider>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }
 
 describe('public routes', () => {
   it.each([
-    ['/', 'MergeCom'],
+    ['/', 'Version control for the documents that run your firm.'],
     ['/security', 'Current security posture'],
     ['/support', 'Support'],
     ['/login', 'Sign in to MergeCom'],

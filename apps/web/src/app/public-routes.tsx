@@ -1,5 +1,6 @@
 import type { RouteObject } from 'react-router-dom';
 
+import { AuthProviderRoute } from '../auth/AuthProviderRoute';
 import { publicPageMetadata } from '../features/marketing/content/metadata';
 
 export const createPublicRoutes = (): RouteObject[] => [
@@ -9,8 +10,9 @@ export const createPublicRoutes = (): RouteObject[] => [
         handle: { marketingMeta: publicPageMetadata.home },
         index: true,
         lazy: async () => {
-          const { HomePage } = await import('../pages/HomePage');
-          return { Component: HomePage };
+          const { MarketingHomePage } =
+            await import('../features/marketing/pages/MarketingHomePage');
+          return { Component: MarketingHomePage };
         },
       },
       {
@@ -30,20 +32,25 @@ export const createPublicRoutes = (): RouteObject[] => [
         },
       },
       {
-        handle: { marketingMeta: publicPageMetadata.login },
-        path: 'login',
-        lazy: async () => {
-          const { LoginPage } = await import('../pages/LoginPage');
-          return { Component: LoginPage };
-        },
-      },
-      {
-        handle: { marketingMeta: publicPageMetadata.signup },
-        path: 'signup',
-        lazy: async () => {
-          const { LoginPage } = await import('../pages/LoginPage');
-          return { Component: () => <LoginPage signup /> };
-        },
+        children: [
+          {
+            handle: { marketingMeta: publicPageMetadata.login },
+            path: 'login',
+            lazy: async () => {
+              const { LoginPage } = await import('../pages/LoginPage');
+              return { Component: LoginPage };
+            },
+          },
+          {
+            handle: { marketingMeta: publicPageMetadata.signup },
+            path: 'signup',
+            lazy: async () => {
+              const { LoginPage } = await import('../pages/LoginPage');
+              return { Component: () => <LoginPage signup /> };
+            },
+          },
+        ],
+        element: <AuthProviderRoute />,
       },
     ],
     lazy: async () => {

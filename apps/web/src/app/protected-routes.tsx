@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { RouteObject } from 'react-router-dom';
 
+import { AuthProvider } from '../auth/AuthContext';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { protectedRouteLoader } from '../auth/session';
 import { LoadingPage } from '../pages/LoadingPage';
@@ -138,7 +139,11 @@ export const createProtectedRoute = (
       },
     },
   ],
-  element: <ProtectedRoute />,
+  element: (
+    <AuthProvider>
+      <ProtectedRoute />
+    </AuthProvider>
+  ),
   lazy: async () => {
     const { RouteErrorPage } = await import('../pages/RouteErrorPage');
     return { ErrorBoundary: RouteErrorPage };
