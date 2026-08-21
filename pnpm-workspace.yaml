@@ -1,7 +1,6 @@
 packages:
   - apps/*
-  - services/api
-  - services/worker
+  - services/*
   - packages/*
 
 allowBuilds:

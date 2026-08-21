@@ -13,6 +13,7 @@ import type {
   DocumentMerge,
   DocumentVersionSummary,
   VersionComparison,
+  VersionRendition,
 } from './types';
 import { UploadValidationError } from './validation';
 
@@ -45,6 +46,10 @@ const VersionParams = Type.Intersect([
 const ComparisonParams = Type.Intersect([
   DocumentParams,
   Type.Object({ comparisonId: Id }),
+]);
+const RenditionParams = Type.Intersect([
+  VersionParams,
+  Type.Object({ renditionId: Id }),
 ]);
 const MergeParams = Type.Intersect([
   DocumentParams,
@@ -233,6 +238,98 @@ const Comparison = Type.Object({
   updatedAt: DateTime,
   warnings: Type.Array(Type.String()),
 });
+const Rendition = Type.Object({
+  attempts: Type.Integer({ minimum: 0 }),
+  byteCount: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  completedAt: Type.Union([DateTime, Type.Null()]),
+  createdAt: DateTime,
+  dimensions: Type.Array(
+    Type.Object({
+      height: Type.Number({ exclusiveMinimum: 0 }),
+      width: Type.Number({ exclusiveMinimum: 0 }),
+    }),
+  ),
+  failureCode: Type.Union([Type.String(), Type.Null()]),
+  fontPackVersion: Type.String(),
+  id: Id,
+  maxAttempts: Type.Integer({ minimum: 1 }),
+  nextAttemptAt: Type.Union([DateTime, Type.Null()]),
+  pageCount: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  rendererProfile: Type.String(),
+  rendererVersion: Type.String(),
+  renditionSha256: Type.Union([
+    Type.String({ pattern: '^[0-9a-f]{64}$' }),
+    Type.Null(),
+  ]),
+  sourceSha256: Type.String({ pattern: '^[0-9a-f]{64}$' }),
+  state: Processing.properties.state,
+  supportTraceId: Id,
+  updatedAt: DateTime,
+  versionId: Id,
+  warnings: Type.Array(Type.String()),
+});
+const VisualLocator = Type.Object({
+  boundingBox: Type.Optional(
+    Type.Object({
+      height: Type.Number({ minimum: 0, maximum: 1 }),
+      width: Type.Number({ minimum: 0, maximum: 1 }),
+      x: Type.Number({ minimum: 0, maximum: 1 }),
+      y: Type.Number({ minimum: 0, maximum: 1 }),
+    }),
+  ),
+  cell: Type.Optional(Type.String()),
+  confidence: Type.Union([
+    Type.Literal('approximate'),
+    Type.Literal('exact'),
+    Type.Literal('unavailable'),
+  ]),
+  kind: Type.Union([
+    Type.Literal('page'),
+    Type.Literal('paragraph'),
+    Type.Literal('sheet_cell'),
+    Type.Literal('slide'),
+    Type.Literal('table_cell'),
+  ]),
+  page: Type.Optional(Type.Integer({ minimum: 1 })),
+  semanticPath: Type.Optional(Type.String()),
+  sheetId: Type.Optional(Type.String()),
+  side: Type.Union([Type.Literal('base'), Type.Literal('target')]),
+  slideId: Type.Optional(Type.String()),
+});
+const Visualization = Type.Object({
+  comparisonId: Id,
+  coverage: Type.Object({
+    approximate: Type.Integer({ minimum: 0 }),
+    exact: Type.Integer({ minimum: 0 }),
+    mapped: Type.Integer({ minimum: 0 }),
+    total: Type.Integer({ minimum: 0 }),
+    unavailable: Type.Integer({ minimum: 0 }),
+  }),
+  engineVersion: Type.String(),
+  mappings: Type.Array(
+    Type.Object({
+      changeId: Type.String(),
+      confidence: VisualLocator.properties.confidence,
+      locators: Type.Array(VisualLocator),
+      reason: Type.Union([Type.String(), Type.Null()]),
+    }),
+  ),
+  rendererProfile: Type.String(),
+  schemaVersion: Type.String(),
+});
+const VisualData = Type.Object({
+  fileType: Type.Union([
+    Type.Literal('presentation'),
+    Type.Literal('spreadsheet'),
+    Type.Literal('word_document'),
+  ]),
+  parserVersion: Type.String(),
+  payload: Type.Unknown(),
+  schemaVersion: Type.String(),
+  unsupportedFeatures: Type.Array(Type.String()),
+  versionId: Id,
+  warnings: Type.Array(ProcessingWarning),
+});
 const MergeVersionReference = Type.Intersect([
   ComparisonVersionReference,
   Type.Object({ status: VersionStatus }),
@@ -371,6 +468,16 @@ function serializeComparison(comparison: VersionComparison) {
   };
 }
 
+function serializeRendition(rendition: VersionRendition) {
+  return {
+    ...rendition,
+    completedAt: rendition.completedAt?.toISOString() ?? null,
+    createdAt: rendition.createdAt.toISOString(),
+    nextAttemptAt: rendition.nextAttemptAt?.toISOString() ?? null,
+    updatedAt: rendition.updatedAt.toISOString(),
+  };
+}
+
 function serializeMerge(merge: DocumentMerge) {
   return {
     ...merge,
@@ -502,6 +609,13 @@ async function sendVersionError(
         409,
         'comparison_unavailable',
         'Both versions must be fully processed, clean, and belong to this document.',
+      );
+    case 'rendition_unavailable':
+      return sendApiError(
+        reply,
+        409,
+        'rendition_unavailable',
+        'The visual rendition is not available for this version.',
       );
     case 'merge_unavailable':
       return sendApiError(
@@ -836,6 +950,157 @@ export function registerVersionRoutes(
   );
 
   typed.post(
+    `${basePath}/versions/:versionId/renditions`,
+    {
+      preHandler: mutations,
+      schema: {
+        headers: IdempotentHeaders,
+        params: VersionParams,
+        response: { 200: Rendition, 201: Rendition, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const result = await runtime.versionService.createRendition({
+          actor: currentActor,
+          documentId: request.params.documentId,
+          idempotencyKey: request.headers['idempotency-key'],
+          projectId: request.params.projectId,
+          requestId: request.id,
+          versionId: request.params.versionId,
+        });
+        return reply
+          .code(result.replayed ? 200 : 201)
+          .send(serializeRendition(result.rendition));
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'rendition.request_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.versionId,
+          targetType: 'document_version',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/versions/:versionId/rendition`,
+    {
+      preHandler: reads,
+      schema: {
+        params: VersionParams,
+        response: { 200: Rendition, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return serializeRendition(
+          await runtime.versionService.getRendition({
+            actor: currentActor,
+            documentId: request.params.documentId,
+            projectId: request.params.projectId,
+            versionId: request.params.versionId,
+          }),
+        );
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'rendition.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.versionId,
+          targetType: 'document_version',
+        });
+      }
+    },
+  );
+
+  typed.post(
+    `${basePath}/versions/:versionId/renditions/:renditionId/grant`,
+    {
+      preHandler: mutations,
+      schema: {
+        headers: MutationHeaders,
+        params: RenditionParams,
+        response: {
+          200: Type.Intersect([
+            Grant,
+            Type.Object({
+              byteCount: Type.Union([
+                Type.Integer({ minimum: 1 }),
+                Type.Null(),
+              ]),
+              pageCount: Type.Union([
+                Type.Integer({ minimum: 1 }),
+                Type.Null(),
+              ]),
+              sha256: Type.Union([
+                Type.String({ pattern: '^[0-9a-f]{64}$' }),
+                Type.Null(),
+              ]),
+            }),
+          ]),
+          ...Errors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        const grant = await runtime.versionService.createRenditionViewGrant({
+          actor: currentActor,
+          documentId: request.params.documentId,
+          projectId: request.params.projectId,
+          renditionId: request.params.renditionId,
+          requestId: request.id,
+          versionId: request.params.versionId,
+        });
+        return { ...grant, expiresAt: grant.expiresAt.toISOString() };
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'rendition.view_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.renditionId,
+          targetType: 'version_rendition',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/versions/:versionId/visual-data`,
+    {
+      preHandler: reads,
+      schema: {
+        params: VersionParams,
+        response: { 200: VisualData, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return await runtime.versionService.getVisualData({
+          actor: currentActor,
+          documentId: request.params.documentId,
+          projectId: request.params.projectId,
+          versionId: request.params.versionId,
+        });
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'visual_data.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.versionId,
+          targetType: 'document_version',
+        });
+      }
+    },
+  );
+
+  typed.post(
     `${basePath}/comparisons`,
     {
       preHandler: mutations,
@@ -899,6 +1164,80 @@ export function registerVersionRoutes(
       } catch (error) {
         return sendVersionError(reply, error, runtime, {
           action: 'comparison.read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.comparisonId,
+          targetType: 'version_comparison',
+        });
+      }
+    },
+  );
+
+  typed.get(
+    `${basePath}/comparisons/:comparisonId/visualization`,
+    {
+      preHandler: reads,
+      schema: {
+        params: ComparisonParams,
+        response: { 200: Visualization, ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        return await runtime.versionService.getVisualization({
+          actor: currentActor,
+          comparisonId: request.params.comparisonId,
+          documentId: request.params.documentId,
+          projectId: request.params.projectId,
+        });
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'comparison.visualization_read_denied',
+          actor: currentActor,
+          requestId: request.id,
+          targetId: request.params.comparisonId,
+          targetType: 'version_comparison',
+        });
+      }
+    },
+  );
+
+  typed.post(
+    `${basePath}/comparisons/:comparisonId/viewer-events`,
+    {
+      preHandler: mutations,
+      schema: {
+        body: Type.Object(
+          {
+            durationMilliseconds: Type.Number({ maximum: 300_000, minimum: 0 }),
+            outcome: Type.Union([
+              Type.Literal('failed'),
+              Type.Literal('loaded'),
+            ]),
+          },
+          { additionalProperties: false },
+        ),
+        headers: MutationHeaders,
+        params: ComparisonParams,
+        response: { 204: Type.Null(), ...Errors },
+      },
+    },
+    async (request, reply) => {
+      const currentActor = actor(request);
+      try {
+        await runtime.versionService.recordViewerLoad({
+          actor: currentActor,
+          comparisonId: request.params.comparisonId,
+          documentId: request.params.documentId,
+          durationMilliseconds: request.body.durationMilliseconds,
+          outcome: request.body.outcome,
+          projectId: request.params.projectId,
+        });
+        return reply.code(204).send(null);
+      } catch (error) {
+        return sendVersionError(reply, error, runtime, {
+          action: 'visual_viewer_event_denied',
           actor: currentActor,
           requestId: request.id,
           targetId: request.params.comparisonId,

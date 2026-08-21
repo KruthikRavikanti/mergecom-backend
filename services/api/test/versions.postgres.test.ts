@@ -4,6 +4,7 @@ import {
   CreateBucketCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -549,7 +550,7 @@ describe.runIf(runInfrastructureTests)(
         baseVersion: { id: baseVersionId },
         changes: [],
         comparisonSchemaVersion: '1.0.0',
-        parserVersion: '1.1.0',
+        parserVersion: '1.2.0',
         state: 'queued',
         targetVersion: { id: targetVersionId },
       });
@@ -569,6 +570,17 @@ describe.runIf(runInfrastructureTests)(
         url: `${base()}/comparisons/${create.json().id as string}`,
       });
       expect(read.statusCode, read.payload).toBe(200);
+      const viewerEvent = await app.inject({
+        body: { durationMilliseconds: 1250, outcome: 'loaded' },
+        headers: headers(owner),
+        method: 'POST',
+        url: `${base()}/comparisons/${create.json().id as string}/viewer-events`,
+      });
+      expect(viewerEvent.statusCode, viewerEvent.payload).toBe(204);
+      const metrics = await app.inject({ method: 'GET', url: '/metrics' });
+      expect(metrics.payload).toContain(
+        'mergecom_visual_viewer_load_seconds_count 1',
+      );
       const denied = await app.inject({
         headers: { cookie: viewer.cookie },
         method: 'GET',
@@ -591,6 +603,148 @@ describe.runIf(runInfrastructureTests)(
         `select count(*)::int as comparisons from version_comparisons`,
       );
       expect(rows.rows[0]?.comparisons).toBe(1);
+    });
+
+    it('gates, caches, authorizes, and reference-protects private renditions', async () => {
+      const owner = await login('alpha-owner');
+      const viewer = await login('alpha-viewer');
+      const sourceBytes = officeBytes('shared-rendition-source');
+      const first = await push(owner, sourceBytes, null, 'First source');
+      const firstVersionId = first.response.json().version.id as string;
+
+      const premature = await app.inject({
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/versions/${firstVersionId}/renditions`,
+      });
+      expect(premature.statusCode).toBe(409);
+      expect(premature.json().code).toBe('rendition_unavailable');
+
+      await markVersionsProcessed([firstVersionId]);
+      const key = randomUUID();
+      const requested = await app.inject({
+        headers: headers(owner, key),
+        method: 'POST',
+        url: `${base()}/versions/${firstVersionId}/renditions`,
+      });
+      expect(requested.statusCode, requested.payload).toBe(201);
+      expect(requested.json()).toMatchObject({
+        rendererProfile: 'office-pdf-v1',
+        state: 'queued',
+        versionId: firstVersionId,
+      });
+      const replay = await app.inject({
+        headers: headers(owner, key),
+        method: 'POST',
+        url: `${base()}/versions/${firstVersionId}/renditions`,
+      });
+      expect(replay.statusCode, replay.payload).toBe(200);
+      expect(replay.json().id).toBe(requested.json().id);
+
+      const pdf = new TextEncoder().encode(
+        '%PDF-1.7\n1 0 obj <</Type /Catalog>> endobj\n%%EOF',
+      );
+      const outputSha256 = sha256(pdf);
+      const objectKey = `organizations/${organizationA}/renditions/cache/office-pdf-v1/${sha256(sourceBytes)}-libreoffice-local-mergecom-liberation-noto-v1.pdf`;
+      await s3Client.send(
+        new PutObjectCommand({
+          Body: pdf,
+          Bucket: bucket,
+          ContentType: 'application/pdf',
+          Key: objectKey,
+        }),
+      );
+      await database.pool.query(
+        `update version_renditions
+            set status = 'completed', object_key = $2,
+                rendition_sha256 = $3, byte_count = $4, page_count = 1,
+                dimensions = '[{"width":612,"height":792}]'::jsonb,
+                completed_at = now(), updated_at = now()
+          where id = $1`,
+        [requested.json().id, objectKey, outputSha256, pdf.byteLength],
+      );
+      await database.pool.query(
+        `update version_rendition_jobs
+            set status = 'completed', completed_at = now(), updated_at = now()
+          where rendition_id = $1`,
+        [requested.json().id],
+      );
+
+      const second = await push(
+        owner,
+        sourceBytes,
+        firstVersionId,
+        'Same immutable source',
+      );
+      const secondVersionId = second.response.json().version.id as string;
+      await markVersionsProcessed([secondVersionId]);
+      const cached = await app.inject({
+        headers: headers(owner, randomUUID()),
+        method: 'POST',
+        url: `${base()}/versions/${secondVersionId}/renditions`,
+      });
+      expect(cached.statusCode, cached.payload).toBe(201);
+      expect(cached.json()).toMatchObject({
+        renditionSha256: outputSha256,
+        state: 'completed',
+        versionId: secondVersionId,
+      });
+      const persisted = await database.pool.query<{
+        object_key: string;
+        status: string;
+      }>(
+        `select object_key, status from version_renditions
+          where source_sha256 = $1 order by created_at`,
+        [sha256(sourceBytes)],
+      );
+      expect(persisted.rows).toEqual([
+        { object_key: objectKey, status: 'completed' },
+        { object_key: objectKey, status: 'completed' },
+      ]);
+      const events = await database.pool.query<{ count: number }>(
+        `select count(*)::int as count from outbox_events
+          where event_type = 'version.rendition_requested'`,
+      );
+      expect(events.rows[0]?.count).toBe(1);
+
+      const grant = await app.inject({
+        headers: headers(owner),
+        method: 'POST',
+        url: `${base()}/versions/${secondVersionId}/renditions/${cached.json().id as string}/grant`,
+      });
+      expect(grant.statusCode, grant.payload).toBe(200);
+      expect(grant.json()).toMatchObject({
+        byteCount: pdf.byteLength,
+        pageCount: 1,
+        sha256: outputSha256,
+      });
+      const preview = await fetch(grant.json().url as string);
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get('content-type')).toContain('application/pdf');
+      expect(new Uint8Array(await preview.arrayBuffer())).toEqual(pdf);
+
+      const denied = await app.inject({
+        headers: { cookie: viewer.cookie },
+        method: 'GET',
+        url: `${base()}/versions/${secondVersionId}/rendition`,
+      });
+      expect(denied.statusCode).toBe(404);
+
+      await database.pool.query(
+        'delete from version_renditions where id = $1',
+        [requested.json().id],
+      );
+      const blobs = new S3BlobStore(storageConfig);
+      const service = new VersionService(
+        new PostgresVersionStore(
+          database.pool,
+          storageConfig.organizationQuotaBytes,
+        ),
+        blobs,
+        storageConfig,
+      );
+      await service.cleanup(new Date(Date.now() + 60_000));
+      expect(await blobs.headObject(objectKey)).not.toBeNull();
     });
 
     it('queues one graph-valid three-way merge and protects its retained candidate', async () => {

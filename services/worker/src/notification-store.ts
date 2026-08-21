@@ -709,7 +709,27 @@ export class NotificationStore {
       row.requested_by_user_id,
       ...row.reviewer_user_ids,
     ]);
-    const href = `/app/projects/${row.project_id}/documents/${row.document_id}/history/reviews/${reviewRequestId}`;
+    let href = `/app/projects/${row.project_id}/documents/${row.document_id}/history/reviews/${reviewRequestId}`;
+    if (
+      event.event_type === 'review.thread_created' ||
+      event.event_type === 'review.comment_added' ||
+      event.event_type === 'review.thread_resolved'
+    ) {
+      const threadId = payloadString(event.payload, 'threadId');
+      const thread = await client.query<{
+        anchor_change_id: string | null;
+        comparison_id: string | null;
+      }>(
+        `select comparison_id, anchor_change_id
+           from review_threads
+          where organization_id = $1 and review_request_id = $2 and id = $3`,
+        [event.organization_id, reviewRequestId, threadId],
+      );
+      const anchor = thread.rows[0];
+      if (anchor?.comparison_id && anchor.anchor_change_id) {
+        href = `/app/projects/${row.project_id}/documents/${row.document_id}/history/comparisons/${anchor.comparison_id}?change=${anchor.anchor_change_id}&mode=structured`;
+      }
+    }
     switch (event.event_type) {
       case 'review.requested':
         return {

@@ -106,11 +106,19 @@ test('pilot topology keeps stateful dependencies external and hardens images', a
   assert.doesNotMatch(compose, /^\s+build:/mu);
   assert.equal((compose.match(/read_only: true/gu) || []).length, 1);
   assert.match(compose, /no-new-privileges:true/u);
+  assert.match(compose, /rendition:\n\s+driver: bridge\n\s+internal: true/u);
+
+  const nginx = await readFile(
+    resolve(repositoryRoot, 'infra/deployment/nginx.web.conf'),
+    'utf8',
+  );
+  assert.match(nginx, /connect-src 'self' https:/u);
 
   const expectedUsers = new Map([
     ['Dockerfile.api', 'node'],
     ['Dockerfile.worker', 'node'],
     ['Dockerfile.document-engine', 'app'],
+    ['Dockerfile.rendition-engine', 'node'],
     ['Dockerfile.web', 'nginx'],
     ['Dockerfile.office-addin', 'nginx'],
   ]);

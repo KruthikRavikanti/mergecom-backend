@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import type { BlobStore, CompletedMultipartPart } from '../storage/blob-store';
-import type { BlobStorageConfig } from '../config';
+import type { BlobStorageConfig, RenditionRequestConfig } from '../config';
 import type { PageInput } from '../projects/store';
 import { VersionMetrics } from './metrics';
 import { VersionOperationError, type VersionStore } from './store';
@@ -13,7 +13,10 @@ import type {
   VersionActor,
   VersionComparison,
   VersionPage,
+  VersionRendition,
   VersionSource,
+  VersionVisualData,
+  ComparisonVisualization,
 } from './types';
 import {
   detectOfficeMediaType,
@@ -34,9 +37,19 @@ function secondsUntil(date: Date, maximum: number): number {
 
 export const COMPARISON_SCHEMA_VERSION = '1.0.0';
 export const COMPARISON_ENGINE_VERSION = '1.0.0';
-export const DOCUMENT_PARSER_VERSION = '1.1.0';
+export const DOCUMENT_PARSER_VERSION = '1.2.0';
 export const MERGE_ENGINE_VERSION = '1.2.0';
 export const MERGE_SCHEMA_VERSION = '1.2.0';
+export const DEFAULT_RENDITION_CONFIG: RenditionRequestConfig = {
+  enabled: true,
+  enabledFileTypes: ['presentation', 'spreadsheet', 'word_document'],
+  fontPackVersion: 'mergecom-liberation-noto-v1',
+  pilotOrganizationIds: [],
+  rendererProfile: 'office-pdf-v1',
+  rendererVersion: 'libreoffice-local',
+};
+
+const MAX_VISUAL_JSON_BYTES = 25 * 1024 * 1024;
 
 export class VersionService {
   public constructor(
@@ -44,6 +57,7 @@ export class VersionService {
     private readonly blobs: BlobStore,
     private readonly config: BlobStorageConfig,
     public readonly metrics = new VersionMetrics(),
+    private readonly renditionConfig: RenditionRequestConfig = DEFAULT_RENDITION_CONFIG,
   ) {}
 
   private async blobOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -100,6 +114,35 @@ export class VersionService {
       ),
       sha256,
     };
+  }
+
+  private async readVerifiedJson(
+    objectKey: string,
+    expectedSha256: string,
+    unavailableCode: 'comparison_unavailable' | 'rendition_unavailable',
+  ): Promise<unknown> {
+    const chunks: Buffer[] = [];
+    const digest = createHash('sha256');
+    let byteCount = 0;
+    const body = await this.blobOperation(() =>
+      this.blobs.getObject(objectKey),
+    );
+    for await (const chunk of body) {
+      byteCount += chunk.byteLength;
+      if (byteCount > MAX_VISUAL_JSON_BYTES) {
+        throw new VersionOperationError(unavailableCode);
+      }
+      digest.update(chunk);
+      chunks.push(Buffer.from(chunk));
+    }
+    if (digest.digest('hex') !== expectedSha256) {
+      throw new VersionOperationError(unavailableCode);
+    }
+    try {
+      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    } catch {
+      throw new VersionOperationError(unavailableCode);
+    }
   }
 
   public async createUploadIntent(input: {
@@ -490,7 +533,7 @@ export class VersionService {
     requestId: string;
     targetVersionId: string;
   }): Promise<{ comparison: VersionComparison; replayed: boolean }> {
-    return this.store.createComparison({
+    const result = await this.store.createComparison({
       ...input,
       comparisonSchemaVersion: COMPARISON_SCHEMA_VERSION,
       engineVersion: COMPARISON_ENGINE_VERSION,
@@ -500,6 +543,22 @@ export class VersionService {
         targetVersionId: input.targetVersionId,
       }),
     });
+    await Promise.allSettled(
+      [input.baseVersionId, input.targetVersionId].map((versionId) =>
+        this.createRendition({
+          actor: input.actor,
+          documentId: input.documentId,
+          idempotencyKey: `comparison-${requestHash({
+            comparisonId: result.comparison.id,
+            versionId,
+          })}`,
+          projectId: input.projectId,
+          requestId: input.requestId,
+          versionId,
+        }),
+      ),
+    );
+    return result;
   }
 
   public async getComparison(input: {
@@ -509,6 +568,151 @@ export class VersionService {
     projectId: string;
   }): Promise<VersionComparison> {
     return this.store.getComparison(input);
+  }
+
+  public async recordViewerLoad(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    durationMilliseconds: number;
+    outcome: 'failed' | 'loaded';
+    projectId: string;
+  }): Promise<void> {
+    await this.store.getComparison(input);
+    this.metrics.recordViewerLoad(
+      input.durationMilliseconds / 1_000,
+      input.outcome === 'failed',
+    );
+  }
+
+  public async createRendition(input: {
+    actor: VersionActor;
+    documentId: string;
+    idempotencyKey: string;
+    projectId: string;
+    requestId: string;
+    versionId: string;
+  }): Promise<{ rendition: VersionRendition; replayed: boolean }> {
+    const access = await this.store.getDocumentAccess({
+      actor: input.actor,
+      documentId: input.documentId,
+      projectId: input.projectId,
+      write: false,
+    });
+    if (
+      !this.renditionConfig.enabled ||
+      !this.renditionConfig.enabledFileTypes.includes(access.documentKind) ||
+      (this.renditionConfig.pilotOrganizationIds.length > 0 &&
+        !this.renditionConfig.pilotOrganizationIds.includes(
+          input.actor.organizationId.toLowerCase(),
+        ))
+    ) {
+      throw new VersionOperationError('rendition_unavailable');
+    }
+    const result = await this.store.createRendition({
+      ...input,
+      ...this.renditionConfig,
+      requestHash: requestHash({
+        ...this.renditionConfig,
+        versionId: input.versionId,
+      }),
+    });
+    this.metrics.recordRenditionRequest(result.cacheHit ?? result.replayed);
+    return result;
+  }
+
+  public async getRendition(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    versionId: string;
+  }): Promise<VersionRendition> {
+    return this.store.getRenditionForVersion({
+      ...input,
+      rendererProfile: this.renditionConfig.rendererProfile,
+    });
+  }
+
+  public async createRenditionViewGrant(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    renditionId: string;
+    requestId: string;
+    versionId: string;
+  }) {
+    const authorized = await this.store.getRendition(input);
+    const grant = await this.blobOperation(() =>
+      this.blobs.signView(
+        authorized.objectKey,
+        'application/pdf',
+        this.config.signedUrlSeconds,
+      ),
+    );
+    await this.store.appendRenditionViewAudit({
+      actor: input.actor,
+      renditionId: input.renditionId,
+      requestId: input.requestId,
+    });
+    this.metrics.recordRenditionViewGrant();
+    return {
+      ...grant,
+      byteCount: authorized.rendition.byteCount,
+      pageCount: authorized.rendition.pageCount,
+      sha256: authorized.rendition.renditionSha256,
+    };
+  }
+
+  public async getVisualData(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    versionId: string;
+  }): Promise<VersionVisualData> {
+    const authorized = await this.store.getVisualData(input);
+    const snapshot = await this.readVerifiedJson(
+      authorized.objectKey,
+      authorized.snapshotSha256,
+      'rendition_unavailable',
+    );
+    this.metrics.recordVisualArtifactRead();
+    if (
+      typeof snapshot !== 'object' ||
+      snapshot === null ||
+      !('format_payload' in snapshot)
+    ) {
+      throw new VersionOperationError('rendition_unavailable');
+    }
+    return {
+      ...authorized.visualData,
+      payload: (snapshot as { format_payload: unknown }).format_payload,
+    };
+  }
+
+  public async getVisualization(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<ComparisonVisualization> {
+    const authorized = await this.store.getVisualization(input);
+    const artifact = await this.readVerifiedJson(
+      authorized.objectKey,
+      authorized.artifactSha256,
+      'comparison_unavailable',
+    );
+    this.metrics.recordVisualArtifactRead();
+    if (
+      typeof artifact !== 'object' ||
+      artifact === null ||
+      !('comparisonId' in artifact) ||
+      (artifact as { comparisonId: unknown }).comparisonId !==
+        input.comparisonId ||
+      !Array.isArray((artifact as { mappings?: unknown }).mappings)
+    ) {
+      throw new VersionOperationError('comparison_unavailable');
+    }
+    return artifact as ComparisonVisualization;
   }
 
   public async createMerge(input: {

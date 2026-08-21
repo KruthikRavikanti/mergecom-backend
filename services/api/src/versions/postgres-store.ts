@@ -12,6 +12,9 @@ import {
   VersionOperationError,
   type AuthorizedArtifact,
   type AuthorizedMergeCandidate,
+  type AuthorizedRendition,
+  type AuthorizedVisualData,
+  type AuthorizedVisualization,
   type CreatedUploadRecord,
   type FinalizedArtifactInput,
   type VersionStore,
@@ -29,6 +32,7 @@ import type {
   VersionActor,
   VersionComparison,
   VersionPage,
+  VersionRendition,
   ProcessingJobStatus,
   ProcessingWarning,
   VersionSource,
@@ -189,6 +193,41 @@ interface MergeRow {
   warnings: string[];
 }
 
+interface RenditionRow {
+  attempts: number;
+  available_at: Date;
+  byte_count: string | number | null;
+  completed_at: Date | null;
+  created_at: Date;
+  dimensions: Array<{ height: number; width: number }>;
+  failure_code: string | null;
+  font_pack_version: string;
+  id: string;
+  max_attempts: number;
+  object_key: string | null;
+  page_count: number | null;
+  renderer_profile: string;
+  renderer_version: string;
+  rendition_sha256: string | null;
+  source_sha256: string;
+  status: ProcessingJobStatus;
+  trace_id: string;
+  updated_at: Date;
+  version_id: string;
+  warnings: string[];
+}
+
+interface VisualDataRow {
+  file_type: DocumentKind;
+  object_key: string;
+  parser_version: string;
+  schema_version: string;
+  snapshot_sha256: string;
+  unsupported_features: string[];
+  version_id: string;
+  warnings: ProcessingWarning[];
+}
+
 function hash(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -321,6 +360,34 @@ function mapComparison(row: ComparisonRow): VersionComparison {
       note: row.target_note,
     },
     updatedAt: row.updated_at,
+    warnings: row.warnings,
+  };
+}
+
+function mapRendition(row: RenditionRow): VersionRendition {
+  return {
+    attempts: row.attempts,
+    byteCount: row.byte_count === null ? null : Number(row.byte_count),
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    dimensions: row.dimensions,
+    failureCode: row.failure_code,
+    fontPackVersion: row.font_pack_version,
+    id: row.id,
+    maxAttempts: row.max_attempts,
+    nextAttemptAt:
+      row.status === 'queued' || row.status === 'retryable_failed'
+        ? row.available_at
+        : null,
+    pageCount: row.page_count,
+    rendererProfile: row.renderer_profile,
+    rendererVersion: row.renderer_version,
+    renditionSha256: row.rendition_sha256,
+    sourceSha256: row.source_sha256,
+    state: row.status,
+    supportTraceId: row.trace_id,
+    updatedAt: row.updated_at,
+    versionId: row.version_id,
     warnings: row.warnings,
   };
 }
@@ -464,6 +531,13 @@ const comparisonColumns = `
   ta.sha256 as target_artifact_sha256,
   tu.display_name as target_author_name`;
 
+const renditionColumns = `
+  r.id, r.version_id, r.source_sha256, r.renderer_profile,
+  r.renderer_version, r.font_pack_version, r.status, r.object_key,
+  r.rendition_sha256, r.byte_count, r.page_count, r.dimensions,
+  r.warnings, r.failure_code, r.completed_at, r.created_at, r.updated_at,
+  j.attempts, j.max_attempts, j.available_at, j.trace_id`;
+
 const mergeColumns = `
   m.id, m.branch_id, m.base_version_id, m.ours_version_id,
   m.theirs_version_id, m.note, m.merge_schema_version, m.parser_version,
@@ -567,6 +641,31 @@ export class PostgresVersionStore implements VersionStore {
          join users tu on tu.id = tv.author_user_id
         where c.organization_id = $1 and c.document_id = $2 and c.id = $3`,
       [organizationId, documentId, comparisonId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async renditionRow(
+    client: PoolClient,
+    organizationId: string,
+    versionId: string,
+    options: { renditionId?: string; rendererProfile?: string },
+  ): Promise<RenditionRow | null> {
+    const result = await client.query<RenditionRow>(
+      `select ${renditionColumns}
+         from version_renditions r
+         join version_rendition_jobs j on j.rendition_id = r.id
+        where r.organization_id = $1 and r.version_id = $2
+          and ($3::uuid is null or r.id = $3)
+          and ($4::text is null or r.renderer_profile = $4)
+        order by r.created_at desc
+        limit 1`,
+      [
+        organizationId,
+        versionId,
+        options.renditionId ?? null,
+        options.rendererProfile ?? null,
+      ],
     );
     return result.rows[0] ?? null;
   }
@@ -912,6 +1011,386 @@ export class PostgresVersionStore implements VersionStore {
       );
       if (!row) throw new VersionOperationError('not_found');
       return mapComparison(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async createRendition(input: {
+    actor: VersionActor;
+    documentId: string;
+    fontPackVersion: string;
+    idempotencyKey: string;
+    projectId: string;
+    rendererProfile: string;
+    rendererVersion: string;
+    requestHash: string;
+    requestId: string;
+    versionId: string;
+  }): Promise<{
+    cacheHit?: boolean;
+    rendition: VersionRendition;
+    replayed: boolean;
+  }> {
+    return inTransaction(this.pool, async (client) => {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const operation = `rendition.create:${input.versionId}`;
+      const idempotency = await this.lockIdempotency(
+        client,
+        input.actor,
+        operation,
+        input.idempotencyKey,
+      );
+      if (idempotency.record) {
+        if (idempotency.record.request_hash !== input.requestHash) {
+          throw new VersionOperationError('idempotency_conflict');
+        }
+        const replay = await this.renditionRow(
+          client,
+          input.actor.organizationId,
+          input.versionId,
+          { renditionId: idempotency.record.resource_id },
+        );
+        if (!replay) throw new VersionOperationError('not_found');
+        return { rendition: mapRendition(replay), replayed: true };
+      }
+
+      const source = await client.query<{ sha256: string }>(
+        `select a.sha256
+           from document_versions v
+           join artifacts a on a.id = v.artifact_id
+           join version_processing_jobs j on j.version_id = v.id
+            and j.job_type = 'semantic_ingestion'
+          where v.organization_id = $1 and v.document_id = $2 and v.id = $3
+            and v.status in ('ready', 'conflicted')
+            and a.scan_status = 'clean' and j.status = 'completed'`,
+        [input.actor.organizationId, input.documentId, input.versionId],
+      );
+      const sourceSha256 = source.rows[0]?.sha256;
+      if (!sourceSha256) {
+        throw new VersionOperationError('rendition_unavailable');
+      }
+
+      const cached = await client.query<{
+        byte_count: string | number;
+        completed_at: Date;
+        dimensions: Array<{ height: number; width: number }>;
+        object_key: string;
+        page_count: number;
+        rendition_sha256: string;
+        warnings: string[];
+      }>(
+        `select object_key, rendition_sha256, byte_count, page_count,
+                dimensions, warnings, completed_at
+           from version_renditions
+          where organization_id = $1 and source_sha256 = $2
+            and renderer_profile = $3 and renderer_version = $4
+            and font_pack_version = $5 and status = 'completed'
+          order by completed_at desc
+          limit 1`,
+        [
+          input.actor.organizationId,
+          sourceSha256,
+          input.rendererProfile,
+          input.rendererVersion,
+          input.fontPackVersion,
+        ],
+      );
+      const cacheEntry = cached.rows[0];
+      const inserted = cacheEntry
+        ? await client.query<{ id: string }>(
+            `insert into version_renditions
+              (organization_id, version_id, requested_by_user_id,
+               source_sha256, renderer_profile, renderer_version,
+               font_pack_version, status, object_key, rendition_sha256,
+               byte_count, page_count, dimensions, warnings, completed_at)
+             values ($1, $2, $3, $4, $5, $6, $7, 'completed', $8, $9,
+                     $10, $11, $12, $13, $14)
+             on conflict (version_id, source_sha256, renderer_profile,
+                          renderer_version, font_pack_version)
+             do nothing
+             returning id`,
+            [
+              input.actor.organizationId,
+              input.versionId,
+              input.actor.userId,
+              sourceSha256,
+              input.rendererProfile,
+              input.rendererVersion,
+              input.fontPackVersion,
+              cacheEntry.object_key,
+              cacheEntry.rendition_sha256,
+              cacheEntry.byte_count,
+              cacheEntry.page_count,
+              JSON.stringify(cacheEntry.dimensions),
+              JSON.stringify(cacheEntry.warnings),
+              cacheEntry.completed_at,
+            ],
+          )
+        : await client.query<{ id: string }>(
+            `insert into version_renditions
+              (organization_id, version_id, requested_by_user_id,
+               source_sha256, renderer_profile, renderer_version,
+               font_pack_version)
+             values ($1, $2, $3, $4, $5, $6, $7)
+             on conflict (version_id, source_sha256, renderer_profile,
+                          renderer_version, font_pack_version)
+             do nothing
+             returning id`,
+            [
+              input.actor.organizationId,
+              input.versionId,
+              input.actor.userId,
+              sourceSha256,
+              input.rendererProfile,
+              input.rendererVersion,
+              input.fontPackVersion,
+            ],
+          );
+      const renditionId =
+        inserted.rows[0]?.id ??
+        (
+          await client.query<{ id: string }>(
+            `select id from version_renditions
+              where version_id = $1 and source_sha256 = $2
+                and renderer_profile = $3 and renderer_version = $4
+                and font_pack_version = $5`,
+            [
+              input.versionId,
+              sourceSha256,
+              input.rendererProfile,
+              input.rendererVersion,
+              input.fontPackVersion,
+            ],
+          )
+        ).rows[0]?.id;
+      if (!renditionId) {
+        throw new Error('Rendition could not be created or loaded.');
+      }
+
+      if (inserted.rows[0]) {
+        await client.query(
+          `insert into version_rendition_jobs
+            (organization_id, rendition_id, status, completed_at)
+           values ($1, $2, $3::processing_job_status, $4)`,
+          [
+            input.actor.organizationId,
+            renditionId,
+            cacheEntry ? 'completed' : 'queued',
+            cacheEntry?.completed_at ?? null,
+          ],
+        );
+        if (!cacheEntry) {
+          await client.query(
+            `insert into outbox_events
+              (organization_id, aggregate_type, aggregate_id, event_type,
+               payload)
+             values ($1, 'version_rendition', $2,
+                     'version.rendition_requested', $3)`,
+            [
+              input.actor.organizationId,
+              renditionId,
+              JSON.stringify({ renditionId }),
+            ],
+          );
+        }
+      }
+      await this.saveIdempotency(client, {
+        actor: input.actor,
+        keyHash: idempotency.keyHash,
+        operation,
+        requestHash: input.requestHash,
+        resourceId: renditionId,
+        response: { renditionId },
+        statusCode: inserted.rows[0] ? 201 : 200,
+      });
+      await this.insertAudit(client, {
+        action: 'rendition.requested',
+        actor: input.actor,
+        metadata: {
+          rendererProfile: input.rendererProfile,
+          cacheHit: Boolean(cacheEntry),
+          replayed: !inserted.rows[0],
+          versionId: input.versionId,
+        },
+        requestId: input.requestId,
+        targetId: renditionId,
+        targetType: 'version_rendition',
+      });
+      const row = await this.renditionRow(
+        client,
+        input.actor.organizationId,
+        input.versionId,
+        { renditionId },
+      );
+      if (!row) throw new Error('Created rendition could not be loaded.');
+      return {
+        cacheHit: Boolean(cacheEntry),
+        rendition: mapRendition(row),
+        replayed: !inserted.rows[0],
+      };
+    });
+  }
+
+  public async getRendition(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    renditionId: string;
+    versionId: string;
+  }): Promise<AuthorizedRendition> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const version = await this.versionRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        input.versionId,
+      );
+      if (!version) throw new VersionOperationError('not_found');
+      const row = await this.renditionRow(
+        client,
+        input.actor.organizationId,
+        input.versionId,
+        { renditionId: input.renditionId },
+      );
+      if (!row) throw new VersionOperationError('not_found');
+      if (row.status !== 'completed' || !row.object_key) {
+        throw new VersionOperationError('rendition_unavailable');
+      }
+      return { objectKey: row.object_key, rendition: mapRendition(row) };
+    } finally {
+      client.release();
+    }
+  }
+
+  public async getRenditionForVersion(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    rendererProfile: string;
+    versionId: string;
+  }): Promise<VersionRendition> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const version = await this.versionRow(
+        client,
+        input.actor.organizationId,
+        input.documentId,
+        input.versionId,
+      );
+      if (!version) throw new VersionOperationError('not_found');
+      const row = await this.renditionRow(
+        client,
+        input.actor.organizationId,
+        input.versionId,
+        { rendererProfile: input.rendererProfile },
+      );
+      if (!row) throw new VersionOperationError('not_found');
+      return mapRendition(row);
+    } finally {
+      client.release();
+    }
+  }
+
+  public async getVisualData(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    versionId: string;
+  }): Promise<AuthorizedVisualData> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const result = await client.query<VisualDataRow>(
+        `select s.version_id, s.object_key, s.snapshot_sha256,
+                s.schema_version, s.parser_version, s.file_type,
+                s.warnings, s.unsupported_features
+           from normalized_snapshots s
+           join document_versions v on v.id = s.version_id
+          where s.organization_id = $1 and v.document_id = $2
+            and s.version_id = $3`,
+        [input.actor.organizationId, input.documentId, input.versionId],
+      );
+      const row = result.rows[0];
+      if (!row) throw new VersionOperationError('not_found');
+      return {
+        objectKey: row.object_key,
+        snapshotSha256: row.snapshot_sha256,
+        visualData: {
+          fileType: row.file_type,
+          parserVersion: row.parser_version,
+          schemaVersion: row.schema_version,
+          unsupportedFeatures: row.unsupported_features,
+          versionId: row.version_id,
+          warnings: row.warnings,
+        },
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  public async getVisualization(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<AuthorizedVisualization> {
+    const client = await this.pool.connect();
+    try {
+      await this.requireAccess(
+        client,
+        input.actor,
+        input.projectId,
+        input.documentId,
+        false,
+      );
+      const result = await client.query<{
+        artifact_sha256: string;
+        object_key: string;
+      }>(
+        `select cv.artifact_sha256, cv.object_key
+           from comparison_visualizations cv
+           join version_comparisons c on c.id = cv.comparison_id
+          where cv.organization_id = $1 and c.document_id = $2
+            and cv.comparison_id = $3
+          order by cv.created_at desc
+          limit 1`,
+        [input.actor.organizationId, input.documentId, input.comparisonId],
+      );
+      const row = result.rows[0];
+      if (!row) throw new VersionOperationError('comparison_unavailable');
+      return {
+        artifactSha256: row.artifact_sha256,
+        objectKey: row.object_key,
+      };
     } finally {
       client.release();
     }
@@ -1913,6 +2392,31 @@ export class PostgresVersionStore implements VersionStore {
     }
   }
 
+  public async appendRenditionViewAudit(input: {
+    actor: VersionActor;
+    renditionId: string;
+    requestId: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      const rendition = await client.query<{ id: string }>(
+        `select id from version_renditions
+          where organization_id = $1 and id = $2`,
+        [input.actor.organizationId, input.renditionId],
+      );
+      if (!rendition.rows[0]) throw new VersionOperationError('not_found');
+      await this.insertAudit(client, {
+        action: 'rendition.view_granted',
+        actor: input.actor,
+        requestId: input.requestId,
+        targetId: input.renditionId,
+        targetType: 'version_rendition',
+      });
+    } finally {
+      client.release();
+    }
+  }
+
   public async expireUploads(now: Date): Promise<ExpiredUpload[]> {
     const result = await this.pool.query<{
       id: string;
@@ -1944,6 +2448,11 @@ export class PostgresVersionStore implements VersionStore {
        union
        select result_object_key as object_key from version_comparisons
         where result_object_key is not null
+       union
+       select object_key from version_renditions
+        where object_key is not null
+       union
+       select object_key from comparison_visualizations
        union
        select candidate_object_key as object_key from merge_operations
         where candidate_object_key is not null`,

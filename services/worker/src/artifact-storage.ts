@@ -14,10 +14,12 @@ export class ArtifactStorage {
   private readonly bucket: string;
   private readonly client: S3Client;
   private readonly maxArtifactBytes: number;
+  private readonly maxRenditionBytes: number;
 
   public constructor(config: WorkerConfig) {
     this.bucket = config.s3.bucket;
     this.maxArtifactBytes = config.maxArtifactBytes;
+    this.maxRenditionBytes = config.renditionMaxOutputBytes;
     this.client = new S3Client({
       credentials: {
         accessKeyId: config.s3.accessKey,
@@ -144,6 +146,55 @@ export class ArtifactStorage {
     }
   }
 
+  public async putRendition(input: {
+    body: Uint8Array;
+    key: string;
+    renditionSha256: string;
+    rendererProfile: string;
+    rendererVersion: string;
+  }): Promise<void> {
+    if (input.body.byteLength > this.maxRenditionBytes) {
+      throw new PermanentProcessingError(
+        'rendition_output_too_large',
+        'The rendition exceeds the configured output limit.',
+      );
+    }
+    await this.putImmutableBinary({
+      body: input.body,
+      conflictCode: 'rendition_object_conflict',
+      conflictMessage: 'The immutable rendition key contains different bytes.',
+      contentType: 'application/pdf',
+      key: input.key,
+      limit: this.maxRenditionBytes,
+      metadata: {
+        'rendition-sha256': input.renditionSha256,
+        'renderer-profile': input.rendererProfile,
+        'renderer-version': input.rendererVersion,
+        'schema-kind': 'office-pdf-rendition',
+      },
+      sha256: input.renditionSha256,
+    });
+  }
+
+  public async putVisualization(input: {
+    body: Uint8Array;
+    key: string;
+    sha256: string;
+  }): Promise<void> {
+    return this.putImmutableJson({
+      body: input.body,
+      conflictCode: 'visualization_object_conflict',
+      conflictMessage:
+        'The immutable comparison visualization key contains different bytes.',
+      key: input.key,
+      metadata: {
+        'artifact-sha256': input.sha256,
+        'schema-kind': 'comparison-visualization',
+      },
+      sha256: input.sha256,
+    });
+  }
+
   private async putImmutableJson(input: {
     body: Uint8Array;
     conflictCode: string;
@@ -168,6 +219,42 @@ export class ArtifactStorage {
         .$metadata?.httpStatusCode;
       if (status !== 412) throw error;
       const existing = await this.readObject(input.key, 20 * 1024 * 1024);
+      const existingHash = createHash('sha256').update(existing).digest('hex');
+      if (existingHash !== input.sha256) {
+        throw new PermanentProcessingError(
+          input.conflictCode,
+          input.conflictMessage,
+        );
+      }
+    }
+  }
+
+  private async putImmutableBinary(input: {
+    body: Uint8Array;
+    conflictCode: string;
+    conflictMessage: string;
+    contentType: string;
+    key: string;
+    limit: number;
+    metadata: Record<string, string>;
+    sha256: string;
+  }): Promise<void> {
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Body: input.body,
+          Bucket: this.bucket,
+          ContentType: input.contentType,
+          IfNoneMatch: '*',
+          Key: input.key,
+          Metadata: input.metadata,
+        }),
+      );
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } })
+        .$metadata?.httpStatusCode;
+      if (status !== 412) throw error;
+      const existing = await this.readObject(input.key, input.limit);
       const existingHash = createHash('sha256').update(existing).digest('hex');
       if (existingHash !== input.sha256) {
         throw new PermanentProcessingError(

@@ -30,6 +30,8 @@ jobs:
             dockerfile: infra/deployment/Dockerfile.worker
           - image: document-engine
             dockerfile: infra/deployment/Dockerfile.document-engine
+          - image: rendition-engine
+            dockerfile: infra/deployment/Dockerfile.rendition-engine
           - image: web
             dockerfile: infra/deployment/Dockerfile.web
           - image: office-addin

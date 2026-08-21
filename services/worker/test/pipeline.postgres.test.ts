@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import {
   DeleteObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -17,13 +18,18 @@ import {
   ComparisonProcessor,
   DocumentProcessor,
   MergeProcessor,
+  RenditionProcessor,
 } from '../src/pipeline';
 import { ProcessingStore } from '../src/processing-store';
+import { RenditionEngineClient } from '../src/rendition-engine-client';
 
 const databaseUrl = process.env.TEST_WORKER_DATABASE_URL;
 const s3Endpoint = process.env.TEST_S3_ENDPOINT;
 const engineUrl = process.env.TEST_DOCUMENT_ENGINE_URL;
-const runInfrastructureTests = Boolean(databaseUrl && s3Endpoint && engineUrl);
+const renditionEngineUrl = process.env.TEST_RENDITION_ENGINE_URL;
+const runInfrastructureTests = Boolean(
+  databaseUrl && s3Endpoint && engineUrl && renditionEngineUrl,
+);
 const bucket = process.env.TEST_S3_BUCKET ?? 'mergecom-artifacts';
 
 describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
@@ -191,8 +197,192 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
       [versionId],
     );
     expect(duplicate.rows[0]?.count).toBe(1);
-    const snapshotKey = `organizations/${organizationId}/snapshots/${versionId}/schema-1.1.0-parser-1.1.0.json`;
+    const snapshotKey = `organizations/${organizationId}/snapshots/${versionId}/schema-1.2.0-parser-1.2.0.json`;
     keys.push(snapshotKey);
+
+    const renditionId = randomUUID();
+    const renditionJobId = randomUUID();
+    await pool.query(
+      `insert into version_renditions
+        (id, organization_id, version_id, requested_by_user_id, source_sha256,
+         renderer_profile, renderer_version, font_pack_version)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        renditionId,
+        organizationId,
+        versionId,
+        userId,
+        sha256,
+        config.renditionRendererProfile,
+        config.renditionRendererVersion,
+        config.renditionFontPackVersion,
+      ],
+    );
+    await pool.query(
+      `insert into version_rendition_jobs
+        (id, organization_id, rendition_id)
+       values ($1, $2, $3)`,
+      [renditionJobId, organizationId, renditionId],
+    );
+    const renditionProcessor = new RenditionProcessor(
+      store,
+      new ArtifactStorage(config),
+      new RenditionEngineClient(
+        renditionEngineUrl!,
+        config.renditionEngineToken,
+      ),
+      config.leaseMilliseconds,
+      config.heartbeatMilliseconds,
+    );
+    await renditionProcessor.process(renditionJobId);
+    const rendition = await pool.query<{
+      attempts: number;
+      byte_count: string;
+      object_key: string;
+      page_count: number;
+      rendition_sha256: string;
+      status: string;
+    }>(
+      `select j.status, j.attempts, r.object_key, r.rendition_sha256,
+              r.byte_count, r.page_count
+         from version_rendition_jobs j
+         join version_renditions r on r.id = j.rendition_id
+        where j.id = $1`,
+      [renditionJobId],
+    );
+    expect(rendition.rows[0]).toMatchObject({
+      attempts: 1,
+      status: 'completed',
+    });
+    expect(rendition.rows[0]?.page_count).toBeGreaterThan(0);
+    expect(rendition.rows[0]?.rendition_sha256).toMatch(/^[0-9a-f]{64}$/u);
+    expect(
+      await s3.send(
+        new HeadObjectCommand({
+          Bucket: bucket,
+          Key: rendition.rows[0]!.object_key,
+        }),
+      ),
+    ).toMatchObject({
+      ContentLength: Number(rendition.rows[0]!.byte_count),
+      ContentType: 'application/pdf',
+    });
+    keys.push(rendition.rows[0]!.object_key);
+    await renditionProcessor.process(renditionJobId);
+    const duplicateRendition = await pool.query<{ attempts: number }>(
+      'select attempts from version_rendition_jobs where id = $1',
+      [renditionJobId],
+    );
+    expect(duplicateRendition.rows[0]?.attempts).toBe(1);
+
+    const expiredRenditionId = randomUUID();
+    const expiredJobId = randomUUID();
+    await pool.query(
+      `insert into version_renditions
+        (id, organization_id, version_id, requested_by_user_id, source_sha256,
+         renderer_profile, renderer_version, font_pack_version, status)
+       values ($1, $2, $3, $4, $5, 'expired-lease-profile', $6, $7,
+               'running')`,
+      [
+        expiredRenditionId,
+        organizationId,
+        versionId,
+        userId,
+        sha256,
+        config.renditionRendererVersion,
+        config.renditionFontPackVersion,
+      ],
+    );
+    await pool.query(
+      `insert into version_rendition_jobs
+        (id, organization_id, rendition_id, status, attempts, started_at,
+         heartbeat_at, lease_expires_at, lease_owner)
+       values ($1, $2, $3, 'running', 1, now(), now() - interval '2 minutes',
+               now() - interval '1 minute', 'expired-worker')`,
+      [expiredJobId, organizationId, expiredRenditionId],
+    );
+    expect(await store.listDispatchableRenditions()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: expiredJobId })]),
+    );
+    const recovered = await pool.query<{ status: string }>(
+      'select status from version_rendition_jobs where id = $1',
+      [expiredJobId],
+    );
+    expect(recovered.rows[0]?.status).toBe('retryable_failed');
+
+    const quotaRenditionId = randomUUID();
+    const quotaRenditionJobId = randomUUID();
+    await pool.query(
+      `insert into version_renditions
+        (id, organization_id, version_id, requested_by_user_id, source_sha256,
+         renderer_profile, renderer_version, font_pack_version)
+       values ($1, $2, $3, $4, $5, 'quota-profile', $6, $7)`,
+      [
+        quotaRenditionId,
+        organizationId,
+        versionId,
+        userId,
+        sha256,
+        config.renditionRendererVersion,
+        config.renditionFontPackVersion,
+      ],
+    );
+    await pool.query(
+      `insert into version_rendition_jobs
+        (id, organization_id, rendition_id)
+       values ($1, $2, $3)`,
+      [quotaRenditionJobId, organizationId, quotaRenditionId],
+    );
+    const renditionQuotaStore = new ProcessingStore(databaseUrl!, 1);
+    try {
+      const claimed = await renditionQuotaStore.claimRendition(
+        quotaRenditionJobId,
+        'quota-worker',
+        config.leaseMilliseconds,
+      );
+      if (!claimed) throw new Error('The quota rendition was not claimed.');
+      const quotaPdf = new TextEncoder().encode('%PDF-1.7\n%%EOF');
+      const quotaResult = {
+        byteCount: quotaPdf.byteLength,
+        dimensions: [{ height: 792, width: 612 }],
+        fontPackVersion: claimed.fontPackVersion,
+        outputSha256: createHash('sha256').update(quotaPdf).digest('hex'),
+        pageCount: 1,
+        pdf: quotaPdf,
+        rendererProfile: claimed.rendererProfile,
+        rendererVersion: claimed.rendererVersion,
+        warnings: [],
+      };
+      await expect(
+        renditionQuotaStore.completeRendition({
+          job: claimed,
+          leaseOwner: 'quota-worker',
+          objectKey: `organizations/${organizationId}/renditions/quota.pdf`,
+          result: quotaResult,
+        }),
+      ).rejects.toMatchObject({ code: 'rendition_quota_exceeded' });
+      await renditionQuotaStore.recordRenditionFailure({
+        error: 'Workspace quota exceeded.',
+        failureCode: 'rendition_quota_exceeded',
+        job: claimed,
+        leaseOwner: 'quota-worker',
+        retryable: false,
+        retryAt: new Date(),
+      });
+    } finally {
+      await renditionQuotaStore.close();
+    }
+    const quotaFailure = await pool.query<{
+      failure_code: string;
+      status: string;
+    }>(
+      `select status, failure_code from version_rendition_jobs where id = $1`,
+      [quotaRenditionJobId],
+    );
+    expect(quotaFailure.rows[0]).toEqual({
+      failure_code: 'rendition_quota_exceeded',
+      status: 'permanently_failed',
+    });
 
     const targetVersionId = randomUUID();
     const targetJobId = randomUUID();
@@ -378,7 +568,7 @@ describe.runIf(runInfrastructureTests)('durable OOXML pipeline', () => {
     );
     expect(ready.rows[0]?.status).toBe('ready');
     keys.push(
-      `organizations/${organizationId}/snapshots/${merge.rows[0]!.result_version_id}/schema-1.1.0-parser-1.1.0.json`,
+      `organizations/${organizationId}/snapshots/${merge.rows[0]!.result_version_id}/schema-1.2.0-parser-1.2.0.json`,
     );
 
     await mergeProcessor.process(mergeId);
@@ -482,6 +672,12 @@ function workerConfig(
     powerPointAutomaticMergeEnabled: false,
     powerPointAutomaticMergePilotOrganizationIds: [],
     redisUrl: 'redis://127.0.0.1:6379',
+    renditionEngineToken: 'mergecom-local-rendition-engine-token',
+    renditionEngineUrl: renditionEngineUrl!,
+    renditionFontPackVersion: 'mergecom-liberation-noto-v1',
+    renditionMaxOutputBytes: 200 * 1024 * 1024,
+    renditionRendererProfile: 'office-pdf-v1',
+    renditionRendererVersion: 'libreoffice-local',
     smtpUrl: 'smtp://127.0.0.1:1025',
     s3: {
       accessKey: process.env.TEST_S3_ACCESS_KEY ?? 'mergecom-local',

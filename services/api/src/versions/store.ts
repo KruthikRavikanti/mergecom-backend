@@ -13,6 +13,9 @@ import type {
   VersionActor,
   VersionPage,
   VersionSource,
+  VersionRendition,
+  VersionVisualData,
+  ComparisonVisualization,
 } from './types';
 
 export type VersionOperationErrorCode =
@@ -25,6 +28,7 @@ export type VersionOperationErrorCode =
   | 'merge_unavailable'
   | 'not_found'
   | 'quota_exceeded'
+  | 'rendition_unavailable'
   | 'stale_head'
   | 'upload_expired';
 
@@ -55,6 +59,22 @@ export interface AuthorizedMergeCandidate {
   extension: string;
   objectKey: string;
   sha256: string;
+}
+
+export interface AuthorizedRendition {
+  objectKey: string;
+  rendition: VersionRendition;
+}
+
+export interface AuthorizedVisualization {
+  artifactSha256: string;
+  objectKey: string;
+}
+
+export interface AuthorizedVisualData {
+  objectKey: string;
+  snapshotSha256: string;
+  visualData: Omit<VersionVisualData, 'payload'>;
 }
 
 export interface CreatedUploadRecord {
@@ -109,6 +129,22 @@ export interface VersionStore {
     requestId: string;
     theirsVersionId: string;
   }): Promise<{ merge: DocumentMerge; replayed: boolean }>;
+  createRendition(input: {
+    actor: VersionActor;
+    documentId: string;
+    fontPackVersion: string;
+    idempotencyKey: string;
+    projectId: string;
+    rendererProfile: string;
+    rendererVersion: string;
+    requestHash: string;
+    requestId: string;
+    versionId: string;
+  }): Promise<{
+    cacheHit?: boolean;
+    rendition: VersionRendition;
+    replayed: boolean;
+  }>;
   createUpload(input: {
     actor: VersionActor;
     baseVersionId: string | null;
@@ -174,6 +210,32 @@ export interface VersionStore {
     mergeId: string;
     projectId: string;
   }): Promise<AuthorizedMergeCandidate>;
+  getRendition(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    renditionId: string;
+    versionId: string;
+  }): Promise<AuthorizedRendition>;
+  getRenditionForVersion(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    rendererProfile: string;
+    versionId: string;
+  }): Promise<VersionRendition>;
+  getVisualData(input: {
+    actor: VersionActor;
+    documentId: string;
+    projectId: string;
+    versionId: string;
+  }): Promise<AuthorizedVisualData>;
+  getVisualization(input: {
+    actor: VersionActor;
+    comparisonId: string;
+    documentId: string;
+    projectId: string;
+  }): Promise<AuthorizedVisualization>;
   getVersion(input: {
     actor: VersionActor;
     documentId: string;
@@ -198,6 +260,11 @@ export interface VersionStore {
     requestId: string;
     versionId: string;
   }): Promise<{ replayed: boolean; version: DocumentVersionSummary }>;
+  appendRenditionViewAudit(input: {
+    actor: VersionActor;
+    renditionId: string;
+    requestId: string;
+  }): Promise<void>;
 }
 
-export type { ArtifactSummary };
+export type { ArtifactSummary, ComparisonVisualization };

@@ -13,8 +13,8 @@ namespace MergeCom.DocumentEngine;
 
 public sealed class OoxmlInspector(InspectionOptions options)
 {
-    public const string ParserVersion = "1.1.0";
-    public const string SchemaVersion = "1.1.0";
+    public const string ParserVersion = "1.2.0";
+    public const string SchemaVersion = "1.2.0";
 
     private static readonly JsonSerializerOptions StableJsonOptions = new()
     {
@@ -194,7 +194,8 @@ public sealed class OoxmlInspector(InspectionOptions options)
                         shape.LocalName,
                         captured[1] ?? string.Empty,
                         HashText(shape.OuterXml),
-                        PresentationAssetHash(slidePart, shape, assetHashes)));
+                        PresentationAssetHash(slidePart, shape, assetHashes),
+                        PresentationBoundsFor(shape)));
                 }
             }
 
@@ -210,7 +211,10 @@ public sealed class OoxmlInspector(InspectionOptions options)
                 shapes));
         }
 
-        return (new PresentationInventory(slides), Validate(document));
+        return (new PresentationInventory(
+            presentation.SlideSize?.Cx?.Value ?? 0,
+            presentation.SlideSize?.Cy?.Value ?? 0,
+            slides), Validate(document));
     }
 
     private (object, List<ValidationIssue>) InspectSpreadsheet(
@@ -276,6 +280,23 @@ public sealed class OoxmlInspector(InspectionOptions options)
                     cell.StyleIndex?.Value));
             }
 
+            var mergedRanges = worksheet.Descendants<S.MergeCell>()
+                .Select(item => item.Reference?.Value)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Select(item => item!)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            var hiddenRows = worksheet.Descendants<S.Row>()
+                .Where(row => row.Hidden?.Value == true && row.RowIndex?.Value is not null)
+                .Select(row => row.RowIndex!.Value)
+                .Order()
+                .ToArray();
+            var hiddenColumns = worksheet.Descendants<S.Column>()
+                .Where(column => column.Hidden?.Value == true)
+                .Select(column => $"{column.Min?.Value ?? 0}:{column.Max?.Value ?? 0}")
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
             sheets.Add(new(
                 index + 1,
                 sheet.SheetId?.Value,
@@ -286,6 +307,9 @@ public sealed class OoxmlInspector(InspectionOptions options)
                 sheetTables,
                 sheetCharts,
                 worksheetPart.DrawingsPart is not null,
+                mergedRanges,
+                hiddenRows,
+                hiddenColumns,
                 cells));
         }
 
@@ -524,6 +548,19 @@ public sealed class OoxmlInspector(InspectionOptions options)
         or P.Picture
         or P.GroupShape
         or P.ConnectionShape;
+
+    private static PresentationBounds? PresentationBoundsFor(OpenXmlElement shape)
+    {
+        var offset = shape.Descendants<DocumentFormat.OpenXml.Drawing.Offset>().FirstOrDefault();
+        var extents = shape.Descendants<DocumentFormat.OpenXml.Drawing.Extents>().FirstOrDefault();
+        var x = offset?.X?.Value;
+        var y = offset?.Y?.Value;
+        var width = extents?.Cx?.Value;
+        var height = extents?.Cy?.Value;
+        return x is not null && y is not null && width > 0 && height > 0
+            ? new PresentationBounds(x.Value, y.Value, width.Value, height.Value)
+            : null;
+    }
 
     private static InspectionRejectedException InvalidStructure(string code, string message)
         => new(code, message, "permanently_failed");

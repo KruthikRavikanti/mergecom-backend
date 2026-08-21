@@ -19,6 +19,9 @@ function configureProductionEnvironment(): void {
     NODE_ENV: 'production',
     NOTIFICATION_FROM: 'MergeCom <no-reply@mergecom.test>',
     REDIS_URL: 'rediss://cache.mergecom.test:6379',
+    RENDITION_ENGINE_INTERNAL_TOKEN:
+      'production-rendition-engine-token-at-least-32-chars',
+    RENDITION_ENGINE_URL: 'http://rendition-engine:3004',
     S3_ACCESS_KEY: 'storage-access',
     S3_ENDPOINT: 'https://storage.mergecom.test',
     S3_SECRET_KEY: 'storage-secret',
@@ -104,15 +107,19 @@ describe('production worker configuration', () => {
     expect(config.logLevel).toBe('info');
   });
 
-  it.each(['DATABASE_URL', 'REDIS_URL', 'S3_ACCESS_KEY', 'S3_SECRET_KEY'])(
-    'refuses a missing %s',
-    (name) => {
-      configureProductionEnvironment();
-      delete process.env[name];
+  it.each([
+    'DATABASE_URL',
+    'REDIS_URL',
+    'RENDITION_ENGINE_INTERNAL_TOKEN',
+    'RENDITION_ENGINE_URL',
+    'S3_ACCESS_KEY',
+    'S3_SECRET_KEY',
+  ])('refuses a missing %s', (name) => {
+    configureProductionEnvironment();
+    delete process.env[name];
 
-      expect(loadWorkerConfig).toThrow(`${name} is required`);
-    },
-  );
+    expect(loadWorkerConfig).toThrow(`${name} is required`);
+  });
 
   it('rejects local or insecure external production dependencies', () => {
     configureProductionEnvironment();

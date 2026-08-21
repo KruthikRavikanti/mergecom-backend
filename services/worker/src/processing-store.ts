@@ -1,16 +1,53 @@
 import { Pool, type PoolClient } from 'pg';
 
+import { PermanentProcessingError } from './types';
 import type {
   ClaimedComparisonJob,
   ClaimedMergeJob,
   ClaimedProcessingJob,
+  ClaimedRenditionJob,
   ComparisonResult,
   DispatchableComparison,
   DispatchableJob,
   DispatchableMerge,
+  DispatchableRendition,
   InspectionResult,
   MergeResult,
+  RenditionResult,
 } from './types';
+
+interface RenditionClaimRow {
+  artifact_byte_size: string | number;
+  artifact_object_key: string;
+  artifact_sha256: string;
+  attempts: number;
+  extension: string;
+  file_type: ClaimedRenditionJob['fileType'];
+  font_pack_version: string;
+  id: string;
+  max_attempts: number;
+  organization_id: string;
+  renderer_profile: string;
+  renderer_version: string;
+  rendition_id: string;
+  trace_id: string;
+  version_id: string;
+}
+
+interface LockedRenditionRow {
+  attempts: number;
+  font_pack_version: string;
+  lease_owner: string | null;
+  max_attempts: number;
+  object_key: string | null;
+  organization_id: string;
+  renderer_profile: string;
+  renderer_version: string;
+  rendition_id: string;
+  rendition_sha256: string | null;
+  status: string;
+  version_id: string;
+}
 
 interface MergeClaimRow {
   attempts: number;
@@ -322,6 +359,101 @@ export class ProcessingStore {
     });
   }
 
+  public async listDispatchableRenditions(
+    limit = 100,
+  ): Promise<DispatchableRendition[]> {
+    await transaction(this.pool, async (client) => {
+      const expired = await client.query<{ rendition_id: string }>(
+        `update version_rendition_jobs
+            set status = 'retryable_failed', available_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, updated_at = now(),
+                last_error = 'The worker lease expired before completion.'
+          where status = 'running' and lease_expires_at <= now()
+            and attempts < max_attempts
+        returning rendition_id`,
+      );
+      if (expired.rows.length > 0) {
+        await client.query(
+          `update version_renditions
+              set status = 'retryable_failed', updated_at = now()
+            where id = any($1::uuid[])`,
+          [expired.rows.map((row) => row.rendition_id)],
+        );
+      }
+      const exhausted = await client.query<{
+        organization_id: string;
+        rendition_id: string;
+      }>(
+        `update version_rendition_jobs
+            set status = 'permanently_failed', completed_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, failure_code = 'lease_exhausted',
+                last_error = 'All attempts ended with an expired worker lease.',
+                updated_at = now()
+          where status = 'running' and lease_expires_at <= now()
+            and attempts >= max_attempts
+        returning organization_id, rendition_id`,
+      );
+      for (const row of exhausted.rows) {
+        await client.query(
+          `update version_renditions
+              set status = 'permanently_failed', failure_code = 'lease_exhausted',
+                  updated_at = now()
+            where id = $1`,
+          [row.rendition_id],
+        );
+        await insertRenditionOutcomeEvent(client, {
+          failureCode: 'lease_exhausted',
+          organizationId: row.organization_id,
+          outcome: 'permanently_failed',
+          renditionId: row.rendition_id,
+        });
+      }
+    });
+    const result = await this.pool.query<{
+      id: string;
+      max_attempts: number;
+      queue_age_seconds: string | number;
+      rendition_id: string;
+    }>(
+      `select id, rendition_id, max_attempts,
+              extract(epoch from (now() - created_at)) as queue_age_seconds
+         from version_rendition_jobs
+        where status in ('queued', 'retryable_failed')
+          and available_at <= now() and attempts < max_attempts
+        order by available_at, created_at, id
+        limit $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      maxAttempts: row.max_attempts,
+      queueAgeSeconds: Math.max(0, Number(row.queue_age_seconds)),
+      renditionId: row.rendition_id,
+    }));
+  }
+
+  public async markRenditionDispatched(
+    rendition: DispatchableRendition,
+  ): Promise<void> {
+    await transaction(this.pool, async (client) => {
+      await client.query(
+        `update version_rendition_jobs
+            set dispatched_at = now(), updated_at = now()
+          where id = $1 and status in ('queued', 'retryable_failed')`,
+        [rendition.id],
+      );
+      await client.query(
+        `update outbox_events
+            set status = 'published', published_at = now(), last_error = null
+          where aggregate_id = $1 and event_type = 'version.rendition_requested'
+            and status = 'pending'`,
+        [rendition.renditionId],
+      );
+    });
+  }
+
   public async listDispatchableMerges(
     limit = 100,
   ): Promise<DispatchableMerge[]> {
@@ -530,6 +662,81 @@ export class ProcessingStore {
               updated_at = now()
         where id = $1 and status = 'running' and lease_owner = $2`,
       [comparisonId, leaseOwner, leaseMilliseconds],
+    );
+    return result.rowCount === 1;
+  }
+
+  public async claimRendition(
+    jobId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<ClaimedRenditionJob | null> {
+    return transaction(this.pool, async (client) => {
+      const result = await client.query<RenditionClaimRow>(
+        `with claimed as (
+           update version_rendition_jobs
+              set status = 'running', attempts = attempts + 1,
+                  started_at = coalesce(started_at, now()), heartbeat_at = now(),
+                  lease_owner = $2,
+                  lease_expires_at = now() + ($3::text || ' milliseconds')::interval,
+                  failure_code = null, last_error = null, updated_at = now()
+            where id = $1 and status in ('queued', 'retryable_failed')
+              and available_at <= now() and attempts < max_attempts
+          returning *
+         )
+         select j.id, j.rendition_id, j.organization_id, j.attempts,
+                j.max_attempts, j.trace_id, r.version_id, r.source_sha256,
+                r.renderer_profile, r.renderer_version, r.font_pack_version,
+                d.kind as file_type, a.object_key as artifact_object_key,
+                a.sha256 as artifact_sha256, a.byte_size as artifact_byte_size,
+                a.extension
+           from claimed j
+           join version_renditions r on r.id = j.rendition_id
+           join document_versions v on v.id = r.version_id
+           join artifacts a on a.id = v.artifact_id
+           join documents d on d.id = v.document_id`,
+        [jobId, leaseOwner, leaseMilliseconds],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      await client.query(
+        `update version_renditions
+            set status = 'running', failure_code = null, updated_at = now()
+          where id = $1`,
+        [row.rendition_id],
+      );
+      return {
+        artifactByteSize: Number(row.artifact_byte_size),
+        artifactObjectKey: row.artifact_object_key,
+        artifactSha256: row.artifact_sha256,
+        attempts: row.attempts,
+        extension: row.extension,
+        fileType: row.file_type,
+        fontPackVersion: row.font_pack_version,
+        id: row.id,
+        maxAttempts: row.max_attempts,
+        organizationId: row.organization_id,
+        rendererProfile: row.renderer_profile,
+        rendererVersion: row.renderer_version,
+        renditionId: row.rendition_id,
+        traceId: row.trace_id,
+        versionId: row.version_id,
+      };
+    });
+  }
+
+  public async heartbeatRendition(
+    jobId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `update version_rendition_jobs
+          set heartbeat_at = now(),
+              lease_expires_at = now() + ($3::text || ' milliseconds')::interval,
+              updated_at = now()
+        where id = $1 and status = 'running' and lease_owner = $2`,
+      [jobId, leaseOwner, leaseMilliseconds],
     );
     return result.rowCount === 1;
   }
@@ -752,6 +959,18 @@ export class ProcessingStore {
     result: ComparisonResult;
     resultObjectKey: string;
     resultSha256: string;
+    visualization: {
+      approximateChanges: number;
+      artifactSha256: string;
+      engineVersion: string;
+      exactChanges: number;
+      mappedChanges: number;
+      objectKey: string;
+      rendererProfile: string;
+      schemaVersion: string;
+      totalChanges: number;
+      unavailableChanges: number;
+    };
   }): Promise<void> {
     await transaction(this.pool, async (client) => {
       const comparison = await lockComparison(client, input.comparison.id);
@@ -792,6 +1011,58 @@ export class ProcessingStore {
         label: change.label,
         path: change.path,
       }));
+      const insertedVisualization = await client.query<{ id: string }>(
+        `insert into comparison_visualizations
+          (organization_id, comparison_id, schema_version, engine_version,
+           renderer_profile, object_key, artifact_sha256, total_changes,
+           mapped_changes, exact_changes, approximate_changes,
+           unavailable_changes)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         on conflict (comparison_id, schema_version, engine_version,
+                      renderer_profile)
+         do nothing
+         returning id`,
+        [
+          comparison.organization_id,
+          input.comparison.id,
+          input.visualization.schemaVersion,
+          input.visualization.engineVersion,
+          input.visualization.rendererProfile,
+          input.visualization.objectKey,
+          input.visualization.artifactSha256,
+          input.visualization.totalChanges,
+          input.visualization.mappedChanges,
+          input.visualization.exactChanges,
+          input.visualization.approximateChanges,
+          input.visualization.unavailableChanges,
+        ],
+      );
+      if (!insertedVisualization.rows[0]) {
+        const existing = await client.query<{
+          artifact_sha256: string;
+          object_key: string;
+        }>(
+          `select artifact_sha256, object_key
+             from comparison_visualizations
+            where comparison_id = $1 and schema_version = $2
+              and engine_version = $3 and renderer_profile = $4`,
+          [
+            input.comparison.id,
+            input.visualization.schemaVersion,
+            input.visualization.engineVersion,
+            input.visualization.rendererProfile,
+          ],
+        );
+        if (
+          existing.rows[0]?.artifact_sha256 !==
+            input.visualization.artifactSha256 ||
+          existing.rows[0]?.object_key !== input.visualization.objectKey
+        ) {
+          throw new Error(
+            'A deterministic comparison visualization conflict was detected.',
+          );
+        }
+      }
       await client.query(
         `update version_comparisons
             set status = 'completed', completed_at = now(),
@@ -866,6 +1137,158 @@ export class ProcessingStore {
         outcome: 'permanently_failed',
       });
       return false;
+    });
+  }
+
+  public async completeRendition(input: {
+    job: ClaimedRenditionJob;
+    leaseOwner: string;
+    objectKey: string;
+    result: RenditionResult;
+  }): Promise<void> {
+    await transaction(this.pool, async (client) => {
+      const rendition = await lockRendition(client, input.job.id);
+      if (!rendition) throw new Error('Rendition job was not found.');
+      if (rendition.object_key) {
+        if (
+          rendition.object_key !== input.objectKey ||
+          rendition.rendition_sha256 !== input.result.outputSha256
+        ) {
+          throw new Error('A deterministic rendition conflict was detected.');
+        }
+        return;
+      }
+      if (rendition.status !== 'running') return;
+      if (rendition.lease_owner !== input.leaseOwner) {
+        throw new Error(
+          'The rendition lease is no longer owned by this worker.',
+        );
+      }
+      if (
+        rendition.renderer_profile !== input.result.rendererProfile ||
+        rendition.renderer_version !== input.result.rendererVersion ||
+        rendition.font_pack_version !== input.result.fontPackVersion
+      ) {
+        throw new Error('The rendition result version contract changed.');
+      }
+      await client.query(
+        'select 1 from organizations where id = $1 for update',
+        [rendition.organization_id],
+      );
+      const usage = await client.query<{
+        artifact_bytes: string;
+        rendition_bytes: string;
+        rendition_object_exists: boolean;
+      }>(
+        `select
+           (select coalesce(sum(byte_size), 0)::text
+              from artifacts where organization_id = $1) as artifact_bytes,
+           (select coalesce(sum(byte_count), 0)::text
+              from (
+                select object_key, max(byte_count) as byte_count
+                  from version_renditions
+                 where organization_id = $1 and status = 'completed'
+                 group by object_key
+              ) completed_renditions) as rendition_bytes,
+           exists(
+             select 1 from version_renditions
+              where organization_id = $1 and status = 'completed'
+                and object_key = $2
+           ) as rendition_object_exists`,
+        [rendition.organization_id, input.objectKey],
+      );
+      const currentUsage = usage.rows[0];
+      const addedBytes = currentUsage?.rendition_object_exists
+        ? 0
+        : input.result.byteCount;
+      if (
+        Number(currentUsage?.artifact_bytes ?? 0) +
+          Number(currentUsage?.rendition_bytes ?? 0) +
+          addedBytes >
+        this.organizationQuotaBytes
+      ) {
+        throw new PermanentProcessingError(
+          'rendition_quota_exceeded',
+          'Storing the rendition would exceed the workspace storage quota.',
+        );
+      }
+      await client.query(
+        `update version_renditions
+            set status = 'completed', object_key = $2,
+                rendition_sha256 = $3, byte_count = $4, page_count = $5,
+                dimensions = $6, warnings = $7, failure_code = null,
+                completed_at = now(), updated_at = now()
+          where id = $1`,
+        [
+          rendition.rendition_id,
+          input.objectKey,
+          input.result.outputSha256,
+          input.result.byteCount,
+          input.result.pageCount,
+          JSON.stringify(input.result.dimensions),
+          JSON.stringify(input.result.warnings),
+        ],
+      );
+      await client.query(
+        `update version_rendition_jobs
+            set status = 'completed', completed_at = now(),
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, failure_code = null, last_error = null,
+                updated_at = now()
+          where id = $1`,
+        [input.job.id],
+      );
+      await insertRenditionOutcomeEvent(client, {
+        failureCode: null,
+        organizationId: rendition.organization_id,
+        outcome: 'completed',
+        renditionId: rendition.rendition_id,
+      });
+    });
+  }
+
+  public async recordRenditionFailure(input: {
+    error: string;
+    failureCode: string;
+    job: ClaimedRenditionJob;
+    leaseOwner: string;
+    retryable: boolean;
+    retryAt: Date;
+  }): Promise<boolean> {
+    return transaction(this.pool, async (client) => {
+      const rendition = await lockRendition(client, input.job.id);
+      if (!rendition || rendition.status !== 'running') return false;
+      if (rendition.lease_owner !== input.leaseOwner) return false;
+      const retry =
+        input.retryable && rendition.attempts < rendition.max_attempts;
+      const status = retry ? 'retryable_failed' : 'permanently_failed';
+      await client.query(
+        `update version_rendition_jobs
+            set status = $2::processing_job_status,
+                available_at = case when $2 = 'retryable_failed' then $3 else available_at end,
+                completed_at = case when $2 = 'permanently_failed' then now() else null end,
+                lease_owner = null, lease_expires_at = null,
+                heartbeat_at = null, failure_code = $4, last_error = $5,
+                updated_at = now()
+          where id = $1`,
+        [input.job.id, status, input.retryAt, input.failureCode, input.error],
+      );
+      await client.query(
+        `update version_renditions
+            set status = $2::processing_job_status, failure_code = $3,
+                updated_at = now()
+          where id = $1`,
+        [rendition.rendition_id, status, input.failureCode],
+      );
+      if (!retry) {
+        await insertRenditionOutcomeEvent(client, {
+          failureCode: input.failureCode,
+          organizationId: rendition.organization_id,
+          outcome: 'permanently_failed',
+          renditionId: rendition.rendition_id,
+        });
+      }
+      return retry;
     });
   }
 
@@ -1204,6 +1627,23 @@ async function lockComparison(
   return result.rows[0] ?? null;
 }
 
+async function lockRendition(
+  client: PoolClient,
+  jobId: string,
+): Promise<LockedRenditionRow | null> {
+  const result = await client.query<LockedRenditionRow>(
+    `select j.organization_id, j.rendition_id, j.status, j.attempts,
+            j.max_attempts, j.lease_owner, r.version_id,
+            r.renderer_profile, r.renderer_version, r.font_pack_version,
+            r.object_key, r.rendition_sha256
+       from version_rendition_jobs j
+       join version_renditions r on r.id = j.rendition_id
+      where j.id = $1 for update of j, r`,
+    [jobId],
+  );
+  return result.rows[0] ?? null;
+}
+
 function apiMergeAnalysis(analysis: MergeResult['analysis']) {
   return {
     automaticMergeEligible: analysis.automatic_merge_eligible,
@@ -1358,6 +1798,31 @@ async function insertComparisonOutcomeEvent(
         comparisonId: input.comparisonId,
         failureCode: input.failureCode,
         outcome: input.outcome,
+      }),
+    ],
+  );
+}
+
+async function insertRenditionOutcomeEvent(
+  client: PoolClient,
+  input: {
+    failureCode: string | null;
+    organizationId: string;
+    outcome: string;
+    renditionId: string;
+  },
+): Promise<void> {
+  await client.query(
+    `insert into outbox_events
+      (organization_id, aggregate_type, aggregate_id, event_type, payload)
+     values ($1, 'version_rendition', $2, 'version.rendition_finished', $3)`,
+    [
+      input.organizationId,
+      input.renditionId,
+      JSON.stringify({
+        failureCode: input.failureCode,
+        outcome: input.outcome,
+        renditionId: input.renditionId,
       }),
     ],
   );

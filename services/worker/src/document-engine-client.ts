@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type {
   ClaimedComparisonJob,
   ClaimedMergeJob,
+  ComparisonEngineOutput,
   ComparisonResult,
   DocumentFileType,
   InspectionResult,
@@ -67,7 +68,7 @@ export class DocumentEngineClient {
     job: ClaimedComparisonJob,
     baseArtifact: Uint8Array,
     targetArtifact: Uint8Array,
-  ): Promise<ComparisonResult> {
+  ): Promise<ComparisonEngineOutput> {
     const [baseResult, targetResult] = await Promise.all([
       this.inspect(
         {
@@ -120,7 +121,11 @@ export class DocumentEngineClient {
       }
       throw new PermanentProcessingError(error.code, error.message);
     }
-    return parseComparisonResult(await response.json(), job);
+    return {
+      baseSnapshot: baseResult.snapshot,
+      result: parseComparisonResult(await response.json(), job),
+      targetSnapshot: targetResult.snapshot,
+    };
   }
 
   public async merge(

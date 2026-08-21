@@ -102,7 +102,13 @@ export async function createApp(options: CreateAppOptions = {}) {
   const versionService =
     options.versionService ??
     (versionStore && blobStore && config.blobStorage
-      ? new VersionService(versionStore, blobStore, config.blobStorage)
+      ? new VersionService(
+          versionStore,
+          blobStore,
+          config.blobStorage,
+          undefined,
+          config.rendition,
+        )
       : null);
   const readinessProbe =
     options.readinessProbe ??

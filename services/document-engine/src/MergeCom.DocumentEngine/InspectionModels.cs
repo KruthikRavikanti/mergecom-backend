@@ -43,9 +43,15 @@ public sealed record PresentationShape(
     string Kind,
     string Text,
     string MarkupHash,
-    string? AssetHash);
+    string? AssetHash,
+    PresentationBounds? Bounds);
 
-public sealed record PresentationInventory(IReadOnlyList<PresentationSlide> Slides);
+public sealed record PresentationBounds(long X, long Y, long Width, long Height);
+
+public sealed record PresentationInventory(
+    long Width,
+    long Height,
+    IReadOnlyList<PresentationSlide> Slides);
 
 public sealed record SpreadsheetSheet(
     int Position,
@@ -57,6 +63,9 @@ public sealed record SpreadsheetSheet(
     int TableCount,
     int ChartCount,
     bool HasDrawings,
+    IReadOnlyList<string> MergedRanges,
+    IReadOnlyList<uint> HiddenRows,
+    IReadOnlyList<string> HiddenColumns,
     IReadOnlyList<SpreadsheetCell> Cells);
 
 public sealed record SpreadsheetCell(

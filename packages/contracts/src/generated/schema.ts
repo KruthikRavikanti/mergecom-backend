@@ -769,6 +769,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/visualization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getComparisonVisualization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/viewer-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recordComparisonViewerEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges": {
         parameters: {
             query?: never;
@@ -992,6 +1034,91 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getDocumentVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/renditions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createVersionRendition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/rendition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getVersionRendition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/renditions/{renditionId}/grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+                renditionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createRenditionViewGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/visual-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getVersionVisualData"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1355,6 +1482,92 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        VersionRendition: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            versionId: string;
+            sourceSha256: string;
+            rendererProfile: string;
+            rendererVersion: string;
+            fontPackVersion: string;
+            /** @enum {string} */
+            state: "queued" | "running" | "retryable_failed" | "permanently_failed" | "quarantined" | "completed";
+            attempts: number;
+            maxAttempts: number;
+            nextAttemptAt: string | null;
+            failureCode: string | null;
+            /** Format: uuid */
+            supportTraceId: string;
+            renditionSha256: string | null;
+            byteCount: number | null;
+            pageCount: number | null;
+            dimensions: {
+                width: number;
+                height: number;
+            }[];
+            warnings: string[];
+            completedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        RenditionViewGrant: components["schemas"]["SignedBlobGrant"] & {
+            sha256: string;
+            byteCount: number;
+            pageCount: number;
+        };
+        VisualLocator: {
+            /** @enum {string} */
+            kind: "page" | "paragraph" | "sheet_cell" | "slide" | "table_cell";
+            /** @enum {string} */
+            confidence: "exact" | "approximate" | "unavailable";
+            /** @enum {string} */
+            side: "base" | "target";
+            page?: number;
+            slideId?: string;
+            sheetId?: string;
+            cell?: string;
+            semanticPath?: string;
+            boundingBox?: {
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+            };
+        };
+        ComparisonVisualization: {
+            /** Format: uuid */
+            comparisonId: string;
+            schemaVersion: string;
+            engineVersion: string;
+            rendererProfile: string;
+            coverage: {
+                total: number;
+                mapped: number;
+                exact: number;
+                approximate: number;
+                unavailable: number;
+            };
+            mappings: {
+                changeId: string;
+                /** @enum {string} */
+                confidence: "exact" | "approximate" | "unavailable";
+                locators: components["schemas"]["VisualLocator"][];
+                reason: string | null;
+            }[];
+        };
+        VersionVisualData: {
+            /** Format: uuid */
+            versionId: string;
+            fileType: components["schemas"]["DocumentKind"];
+            schemaVersion: string;
+            parserVersion: string;
+            warnings: components["schemas"]["ProcessingWarning"][];
+            unsupportedFeatures: string[];
+            payload: unknown;
         };
         MergeVersionReference: components["schemas"]["ComparisonVersionReference"] & {
             /** @enum {string} */
@@ -3177,6 +3390,66 @@ export interface operations {
             default: components["responses"]["ApiError"];
         };
     };
+    getComparisonVisualization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versioned semantic-change to visual-location mappings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonVisualization"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    recordComparisonViewerEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                comparisonId: components["parameters"]["ComparisonId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    durationMilliseconds: number;
+                    /** @enum {string} */
+                    outcome: "loaded" | "failed";
+                };
+            };
+        };
+        responses: {
+            /** @description Authorized viewer telemetry recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
     createDocumentMerge: {
         parameters: {
             query?: never;
@@ -3570,6 +3843,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentVersion"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createVersionRendition: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing immutable rendition request replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRendition"];
+                };
+            };
+            /** @description Durable rendition requested. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRendition"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getVersionRendition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current rendition lifecycle for the configured profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRendition"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    createRenditionViewGrant: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+                renditionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Short-lived inline PDF grant with expected integrity metadata. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenditionViewGrant"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getVersionVisualData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                projectId: components["parameters"]["ProjectId"];
+                documentId: components["parameters"]["DocumentId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized structured visual payload from the normalized snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionVisualData"];
                 };
             };
             default: components["responses"]["ApiError"];

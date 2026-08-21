@@ -4,9 +4,11 @@ import {
   createRedisReadinessProbe,
   type WorkerReadinessProbe,
 } from './readiness';
+import type { WorkerMetrics } from './metrics';
 
 interface CreateAppOptions {
   logger?: FastifyServerOptions['logger'];
+  metrics?: WorkerMetrics;
   readinessProbe?: WorkerReadinessProbe;
   redisUrl?: string | undefined;
 }
@@ -21,6 +23,11 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/health/live', () => ({ service: 'worker', status: 'alive' }));
+  app.get('/metrics', (_request, reply) =>
+    reply
+      .type('text/plain; version=0.0.4')
+      .send(options.metrics?.render() ?? ''),
+  );
   app.get('/health/ready', async (_request, reply) => {
     const dependencies = await readinessProbe();
     const ready = Object.values(dependencies).every(

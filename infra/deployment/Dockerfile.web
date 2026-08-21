@@ -12,6 +12,7 @@ COPY packages/test-fixtures/package.json packages/test-fixtures/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY services/api/package.json services/api/package.json
 COPY services/worker/package.json services/worker/package.json
+COPY services/rendition-engine/package.json services/rendition-engine/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps/web apps/web
 COPY packages packages

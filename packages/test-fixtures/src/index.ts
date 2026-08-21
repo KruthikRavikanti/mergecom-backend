@@ -13,5 +13,11 @@ export const healthFixtures = {
 };
 
 export const officeFixturePaths = {
+  corruptOffice: 'packages/test-fixtures/office/corrupt-office.docx',
+  externalLinkExcel: 'packages/test-fixtures/office/external-link-excel.xlsx',
+  macroWord: 'packages/test-fixtures/office/macro-word.docm',
+  visualExcel: 'packages/test-fixtures/office/visual-excel.xlsx',
+  visualPowerPoint: 'packages/test-fixtures/office/visual-powerpoint.pptx',
+  visualWord: 'packages/test-fixtures/office/visual-word.docx',
   validWord: 'packages/test-fixtures/office/valid-word.docx',
 } as const;

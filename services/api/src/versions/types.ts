@@ -93,6 +93,76 @@ export interface VersionComparison {
   warnings: string[];
 }
 
+export interface VersionRendition {
+  attempts: number;
+  byteCount: number | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  dimensions: Array<{ height: number; width: number }>;
+  failureCode: string | null;
+  fontPackVersion: string;
+  id: string;
+  maxAttempts: number;
+  nextAttemptAt: Date | null;
+  pageCount: number | null;
+  rendererProfile: string;
+  rendererVersion: string;
+  renditionSha256: string | null;
+  sourceSha256: string;
+  state: ProcessingJobStatus;
+  supportTraceId: string;
+  updatedAt: Date;
+  versionId: string;
+  warnings: string[];
+}
+
+export interface VisualLocator {
+  boundingBox?: {
+    height: number;
+    width: number;
+    x: number;
+    y: number;
+  };
+  cell?: string;
+  confidence: 'approximate' | 'exact' | 'unavailable';
+  kind: 'page' | 'paragraph' | 'sheet_cell' | 'slide' | 'table_cell';
+  page?: number;
+  semanticPath?: string;
+  sheetId?: string;
+  side: 'base' | 'target';
+  slideId?: string;
+}
+
+export interface ComparisonVisualization {
+  comparisonId: string;
+  coverage: {
+    approximate: number;
+    exact: number;
+    mapped: number;
+    total: number;
+    unavailable: number;
+  };
+  engineVersion: string;
+  mappings: Array<{
+    changeId: string;
+    confidence: 'approximate' | 'exact' | 'unavailable';
+    locators: VisualLocator[];
+    reason: string | null;
+  }>;
+  rendererProfile: string;
+  schemaVersion: string;
+}
+
+export interface VersionVisualData {
+  fileType: DocumentKind;
+  parserVersion: string;
+  payload: unknown;
+  schemaVersion: string;
+  unsupportedFeatures: string[];
+  versionId: string;
+  warnings: ProcessingWarning[];
+}
+
 export type MergeOperationStatus =
   | 'queued'
   | 'running'

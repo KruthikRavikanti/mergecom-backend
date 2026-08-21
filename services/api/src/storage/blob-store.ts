@@ -60,6 +60,11 @@ export interface BlobStore {
     partNumber: number,
     expiresInSeconds: number,
   ): Promise<SignedBlobGrant>;
+  signView(
+    key: string,
+    contentType: string,
+    expiresInSeconds: number,
+  ): Promise<SignedBlobGrant>;
   signUpload(
     key: string,
     contentType: string,

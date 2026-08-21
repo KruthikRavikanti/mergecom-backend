@@ -6,15 +6,19 @@ import {
   ComparisonProcessor,
   DocumentProcessor,
   MergeProcessor,
+  RenditionProcessor,
 } from './pipeline';
 import {
   PermanentProcessingError,
   type ClaimedComparisonJob,
   type ClaimedMergeJob,
   type ClaimedProcessingJob,
+  type ClaimedRenditionJob,
   type ComparisonResult,
   type InspectionResult,
   type MergeResult,
+  type RenditionResult,
+  type SnapshotEnvelope,
 } from './types';
 
 const job: ClaimedProcessingJob = {
@@ -38,8 +42,8 @@ const result: InspectionResult = {
     file_type: 'word_document',
     format_payload: { paragraph_count: 1 },
     package: { entry_count: 3, has_macros: false },
-    parser_version: '1.1.0',
-    schema_version: '1.1.0',
+    parser_version: '1.2.0',
+    schema_version: '1.2.0',
     source_sha256: job.artifactSha256,
     stable_hash: 'b'.repeat(64),
     unsupported_features: [],
@@ -91,7 +95,7 @@ describe('document processor', () => {
     expect(storage.putSnapshot).toHaveBeenCalledOnce();
     const snapshot = storage.putSnapshot.mock.calls[0]?.[0];
     expect(snapshot.key).toContain(
-      `${job.versionId}/schema-1.1.0-parser-1.1.0.json`,
+      `${job.versionId}/schema-1.2.0-parser-1.2.0.json`,
     );
     expect(snapshot.snapshotSha256).toBe(
       createHash('sha256')
@@ -185,7 +189,7 @@ const comparisonJob: ClaimedComparisonJob = {
   id: '52000000-0000-4000-8000-000000000001',
   maxAttempts: 3,
   organizationId: job.organizationId,
-  parserVersion: '1.1.0',
+  parserVersion: '1.2.0',
   targetArtifact: {
     byteSize: 4,
     extension: '.docx',
@@ -224,6 +228,19 @@ const comparisonResult: ComparisonResult = {
   warnings: [],
 };
 
+const comparisonSnapshot = (sourceSha256: string): SnapshotEnvelope => ({
+  file_type: comparisonJob.fileType,
+  format_payload: {},
+  package: { entry_count: 3, has_macros: false },
+  parser_version: comparisonJob.parserVersion,
+  schema_version: comparisonJob.parserVersion,
+  source_sha256: sourceSha256,
+  stable_hash: 'a'.repeat(64),
+  unsupported_features: [],
+  validation_errors: [],
+  warnings: [],
+});
+
 describe('comparison processor', () => {
   it('verifies both artifacts and stores an immutable result before completion', async () => {
     const store = {
@@ -236,12 +253,19 @@ describe('comparison processor', () => {
     };
     const storage = {
       putComparison: vi.fn().mockResolvedValue(undefined),
+      putVisualization: vi.fn().mockResolvedValue(undefined),
       readArtifact: vi
         .fn()
         .mockResolvedValueOnce(Uint8Array.from([1, 2, 3, 4]))
         .mockResolvedValueOnce(Uint8Array.from([4, 3, 2, 1])),
     };
-    const engine = { compare: vi.fn().mockResolvedValue(comparisonResult) };
+    const engine = {
+      compare: vi.fn().mockResolvedValue({
+        baseSnapshot: comparisonSnapshot(comparisonJob.baseArtifact.sha256),
+        result: comparisonResult,
+        targetSnapshot: comparisonSnapshot(comparisonJob.targetArtifact.sha256),
+      }),
+    };
     const processor = new ComparisonProcessor(
       store,
       storage,
@@ -257,11 +281,12 @@ describe('comparison processor', () => {
     expect(storage.putComparison).toHaveBeenCalledWith(
       expect.objectContaining({
         key: expect.stringContaining(
-          `${comparisonJob.id}/schema-1.0.0-parser-1.1.0.json`,
+          `${comparisonJob.id}/schema-1.0.0-parser-1.2.0.json`,
         ),
         stableHash: comparisonResult.stable_hash,
       }),
     );
+    expect(storage.putVisualization).toHaveBeenCalledOnce();
     expect(store.completeComparison).toHaveBeenCalledOnce();
     expect(store.recordComparisonFailure).not.toHaveBeenCalled();
   });
@@ -290,7 +315,7 @@ const mergeJob: ClaimedMergeJob = {
     sha256: '1'.repeat(64),
     versionId: 'a2000000-0000-4000-8000-000000000001',
   },
-  parserVersion: '1.1.0',
+  parserVersion: '1.2.0',
   requestedByUserId: 'b2000000-0000-4000-8000-000000000001',
   theirsArtifact: comparisonJob.targetArtifact,
   traceId: job.traceId,
@@ -492,6 +517,112 @@ describe('merge processor', () => {
       expect.any(Uint8Array),
       false,
       true,
+    );
+  });
+});
+
+const renditionJob: ClaimedRenditionJob = {
+  artifactByteSize: 4,
+  artifactObjectKey: 'organizations/org/artifacts/source.docx',
+  artifactSha256: 'e'.repeat(64),
+  attempts: 1,
+  extension: '.docx',
+  fileType: 'word_document',
+  fontPackVersion: 'fonts-v1',
+  id: 'c2000000-0000-4000-8000-000000000001',
+  maxAttempts: 3,
+  organizationId: job.organizationId,
+  rendererProfile: 'office-pdf-v1',
+  rendererVersion: 'renderer-v1',
+  renditionId: 'd2000000-0000-4000-8000-000000000001',
+  traceId: job.traceId,
+  versionId: job.versionId,
+};
+const renditionPdf = new TextEncoder().encode('%PDF-1.7\n%%EOF');
+const renditionResult: RenditionResult = {
+  byteCount: renditionPdf.byteLength,
+  dimensions: [{ height: 792, width: 612 }],
+  fontPackVersion: renditionJob.fontPackVersion,
+  outputSha256: createHash('sha256').update(renditionPdf).digest('hex'),
+  pageCount: 1,
+  pdf: renditionPdf,
+  rendererProfile: renditionJob.rendererProfile,
+  rendererVersion: renditionJob.rendererVersion,
+  warnings: [],
+};
+
+describe('rendition processor', () => {
+  it('stores one content-addressed PDF before transactional completion', async () => {
+    const store = {
+      claimRendition: vi.fn().mockResolvedValue(renditionJob),
+      completeRendition: vi.fn().mockResolvedValue(undefined),
+      heartbeatRendition: vi.fn().mockResolvedValue(true),
+      listDispatchableRenditions: vi.fn().mockResolvedValue([]),
+      markRenditionDispatched: vi.fn().mockResolvedValue(undefined),
+      recordRenditionFailure: vi.fn().mockResolvedValue(false),
+    };
+    const storage = {
+      putRendition: vi.fn().mockResolvedValue(undefined),
+      readArtifact: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3, 4])),
+    };
+    const processor = new RenditionProcessor(
+      store,
+      storage,
+      { render: vi.fn().mockResolvedValue(renditionResult) },
+      30_000,
+      60_000,
+    );
+
+    await processor.process(renditionJob.id);
+
+    expect(storage.putRendition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: expect.stringContaining(
+          `/renditions/cache/${renditionJob.rendererProfile}/${renditionJob.artifactSha256}-${renditionJob.rendererVersion}-${renditionJob.fontPackVersion}.pdf`,
+        ),
+        renditionSha256: renditionResult.outputSha256,
+      }),
+    );
+    expect(store.completeRendition).toHaveBeenCalledWith(
+      expect.objectContaining({ result: renditionResult }),
+    );
+    expect(store.recordRenditionFailure).not.toHaveBeenCalled();
+  });
+
+  it('retains terminal integrity failures without retrying', async () => {
+    const store = {
+      claimRendition: vi.fn().mockResolvedValue(renditionJob),
+      completeRendition: vi.fn().mockResolvedValue(undefined),
+      heartbeatRendition: vi.fn().mockResolvedValue(true),
+      listDispatchableRenditions: vi.fn().mockResolvedValue([]),
+      markRenditionDispatched: vi.fn().mockResolvedValue(undefined),
+      recordRenditionFailure: vi.fn().mockResolvedValue(false),
+    };
+    const processor = new RenditionProcessor(
+      store,
+      {
+        putRendition: vi.fn().mockResolvedValue(undefined),
+        readArtifact: vi
+          .fn()
+          .mockRejectedValue(
+            new PermanentProcessingError(
+              'artifact_hash_mismatch',
+              'Source integrity mismatch.',
+            ),
+          ),
+      },
+      { render: vi.fn().mockResolvedValue(renditionResult) },
+      30_000,
+      60_000,
+    );
+
+    await processor.process(renditionJob.id);
+
+    expect(store.recordRenditionFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failureCode: 'artifact_hash_mismatch',
+        retryable: false,
+      }),
     );
   });
 });

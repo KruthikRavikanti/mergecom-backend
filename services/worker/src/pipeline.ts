@@ -7,6 +7,8 @@ import type { ArtifactStorage } from './artifact-storage';
 import type { WorkerConfig } from './config';
 import type { DocumentEngineClient } from './document-engine-client';
 import type { ProcessingStore } from './processing-store';
+import type { RenditionEngineClient } from './rendition-engine-client';
+import { WorkerMetrics } from './metrics';
 import {
   createDocumentQueue,
   createDocumentWorker,
@@ -17,13 +19,18 @@ import {
   type ClaimedComparisonJob,
   type ClaimedMergeJob,
   type ClaimedProcessingJob,
+  type ClaimedRenditionJob,
+  type ComparisonEngineOutput,
   type ComparisonResult,
   type DispatchableComparison,
   type DispatchableJob,
   type DispatchableMerge,
+  type DispatchableRendition,
   type InspectionResult,
   type MergeResult,
+  type RenditionResult,
 } from './types';
+import { createComparisonVisualization } from './visualization';
 
 interface StoreLike {
   claim(
@@ -88,6 +95,18 @@ interface ComparisonStoreLike {
     result: ComparisonResult;
     resultObjectKey: string;
     resultSha256: string;
+    visualization: {
+      approximateChanges: number;
+      artifactSha256: string;
+      engineVersion: string;
+      exactChanges: number;
+      mappedChanges: number;
+      objectKey: string;
+      rendererProfile: string;
+      schemaVersion: string;
+      totalChanges: number;
+      unavailableChanges: number;
+    };
   }): Promise<void>;
   heartbeatComparison(
     comparisonId: string,
@@ -115,6 +134,11 @@ interface ComparisonStorageLike {
     resultSha256: string;
     stableHash: string;
   }): Promise<void>;
+  putVisualization(input: {
+    body: Uint8Array;
+    key: string;
+    sha256: string;
+  }): Promise<void>;
   readArtifact(input: {
     byteSize: number;
     objectKey: string;
@@ -127,7 +151,58 @@ interface ComparisonEngineLike {
     job: ClaimedComparisonJob,
     baseArtifact: Uint8Array,
     targetArtifact: Uint8Array,
-  ): Promise<ComparisonResult>;
+  ): Promise<ComparisonEngineOutput>;
+}
+
+interface RenditionStoreLike {
+  claimRendition(
+    jobId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<ClaimedRenditionJob | null>;
+  completeRendition(input: {
+    job: ClaimedRenditionJob;
+    leaseOwner: string;
+    objectKey: string;
+    result: RenditionResult;
+  }): Promise<void>;
+  heartbeatRendition(
+    jobId: string,
+    leaseOwner: string,
+    leaseMilliseconds: number,
+  ): Promise<boolean>;
+  listDispatchableRenditions(limit?: number): Promise<DispatchableRendition[]>;
+  markRenditionDispatched(rendition: DispatchableRendition): Promise<void>;
+  recordRenditionFailure(input: {
+    error: string;
+    failureCode: string;
+    job: ClaimedRenditionJob;
+    leaseOwner: string;
+    retryable: boolean;
+    retryAt: Date;
+  }): Promise<boolean>;
+}
+
+interface RenditionStorageLike {
+  putRendition(input: {
+    body: Uint8Array;
+    key: string;
+    renditionSha256: string;
+    rendererProfile: string;
+    rendererVersion: string;
+  }): Promise<void>;
+  readArtifact(input: {
+    byteSize: number;
+    objectKey: string;
+    sha256: string;
+  }): Promise<Uint8Array>;
+}
+
+interface RenditionEngineLike {
+  render(
+    job: ClaimedRenditionJob,
+    artifact: Uint8Array,
+  ): Promise<RenditionResult>;
 }
 
 interface MergeStoreLike {
@@ -270,6 +345,8 @@ export class ComparisonProcessor {
     private readonly engine: ComparisonEngineLike,
     private readonly leaseMilliseconds: number,
     private readonly heartbeatMilliseconds: number,
+    private readonly rendererProfile = 'office-pdf-v1',
+    private readonly metrics = new WorkerMetrics(),
   ) {}
 
   public async process(comparisonId: string): Promise<void> {
@@ -302,11 +379,12 @@ export class ComparisonProcessor {
           sha256: comparison.targetArtifact.sha256,
         }),
       ]);
-      const result = await this.engine.compare(
+      const output = await this.engine.compare(
         comparison,
         baseArtifact,
         targetArtifact,
       );
+      const result = output.result;
       const resultBytes = new TextEncoder().encode(JSON.stringify(result));
       const resultSha256 = createHash('sha256')
         .update(resultBytes)
@@ -318,18 +396,62 @@ export class ComparisonProcessor {
         comparison.id,
         `schema-${result.comparison_schema_version}-parser-${result.parser_version}.json`,
       ].join('/');
-      await this.storage.putComparison({
-        body: resultBytes,
-        key: resultObjectKey,
-        resultSha256,
-        stableHash: result.stable_hash,
+      const visualization = createComparisonVisualization({
+        baseSnapshot: output.baseSnapshot,
+        comparisonId: comparison.id,
+        fileType: comparison.fileType,
+        rendererProfile: this.rendererProfile,
+        result,
+        targetSnapshot: output.targetSnapshot,
       });
+      const visualizationBytes = new TextEncoder().encode(
+        JSON.stringify(visualization),
+      );
+      const visualizationSha256 = createHash('sha256')
+        .update(visualizationBytes)
+        .digest('hex');
+      const visualizationObjectKey = [
+        'organizations',
+        comparison.organizationId,
+        'comparison-visualizations',
+        comparison.id,
+        `schema-${visualization.schemaVersion}-engine-${visualization.engineVersion}.json`,
+      ].join('/');
+      this.metrics.recordMapping(
+        visualization.coverage.total,
+        visualization.coverage.mapped,
+      );
+      await Promise.all([
+        this.storage.putComparison({
+          body: resultBytes,
+          key: resultObjectKey,
+          resultSha256,
+          stableHash: result.stable_hash,
+        }),
+        this.storage.putVisualization({
+          body: visualizationBytes,
+          key: visualizationObjectKey,
+          sha256: visualizationSha256,
+        }),
+      ]);
       await this.store.completeComparison({
         comparison,
         leaseOwner: this.leaseOwner,
         result,
         resultObjectKey,
         resultSha256,
+        visualization: {
+          approximateChanges: visualization.coverage.approximate,
+          artifactSha256: visualizationSha256,
+          engineVersion: visualization.engineVersion,
+          exactChanges: visualization.coverage.exact,
+          mappedChanges: visualization.coverage.mapped,
+          objectKey: visualizationObjectKey,
+          rendererProfile: visualization.rendererProfile,
+          schemaVersion: visualization.schemaVersion,
+          totalChanges: visualization.coverage.total,
+          unavailableChanges: visualization.coverage.unavailable,
+        },
       });
     } catch (error) {
       const permanent = error instanceof PermanentProcessingError;
@@ -343,6 +465,85 @@ export class ComparisonProcessor {
         failureCode: permanent
           ? error.code
           : 'comparison_dependency_unavailable',
+        leaseOwner: this.leaseOwner,
+        retryable: !permanent,
+        retryAt: new Date(Date.now() + retryDelay),
+      });
+      if (retry) throw error;
+    } finally {
+      clearInterval(heartbeat);
+    }
+  }
+}
+
+export class RenditionProcessor {
+  private readonly leaseOwner = `${hostname()}:${process.pid}:${randomUUID()}`;
+
+  public constructor(
+    private readonly store: RenditionStoreLike,
+    private readonly storage: RenditionStorageLike,
+    private readonly engine: RenditionEngineLike,
+    private readonly leaseMilliseconds: number,
+    private readonly heartbeatMilliseconds: number,
+    private readonly metrics = new WorkerMetrics(),
+  ) {}
+
+  public async process(jobId: string): Promise<void> {
+    const job = await this.store.claimRendition(
+      jobId,
+      this.leaseOwner,
+      this.leaseMilliseconds,
+    );
+    if (!job) return;
+    const startedAt = performance.now();
+    const heartbeat = setInterval(() => {
+      void this.store
+        .heartbeatRendition(job.id, this.leaseOwner, this.leaseMilliseconds)
+        .catch(() => false);
+    }, this.heartbeatMilliseconds);
+    heartbeat.unref();
+    try {
+      const artifact = await this.storage.readArtifact({
+        byteSize: job.artifactByteSize,
+        objectKey: job.artifactObjectKey,
+        sha256: job.artifactSha256,
+      });
+      const result = await this.engine.render(job, artifact);
+      const objectKey = [
+        'organizations',
+        job.organizationId,
+        'renditions',
+        'cache',
+        job.rendererProfile,
+        `${job.artifactSha256}-${job.rendererVersion}-${job.fontPackVersion}.pdf`,
+      ].join('/');
+      await this.storage.putRendition({
+        body: result.pdf,
+        key: objectKey,
+        renditionSha256: result.outputSha256,
+        rendererProfile: result.rendererProfile,
+        rendererVersion: result.rendererVersion,
+      });
+      await this.store.completeRendition({
+        job,
+        leaseOwner: this.leaseOwner,
+        objectKey,
+        result,
+      });
+      this.metrics.recordRenditionSuccess(
+        (performance.now() - startedAt) / 1000,
+        result.byteCount,
+      );
+    } catch (error) {
+      this.metrics.recordRenditionFailure();
+      const permanent = error instanceof PermanentProcessingError;
+      const retryDelay = Math.min(60_000, 1_000 * 2 ** (job.attempts - 1));
+      const retry = await this.store.recordRenditionFailure({
+        error: errorMessage(error),
+        failureCode: permanent
+          ? error.code
+          : 'rendition_dependency_unavailable',
+        job,
         leaseOwner: this.leaseOwner,
         retryable: !permanent,
         retryAt: new Date(Date.now() + retryDelay),
@@ -446,6 +647,7 @@ export class DocumentPipeline {
   private readonly comparisonProcessor: ComparisonProcessor;
   private readonly mergeProcessor: MergeProcessor;
   private readonly processor: DocumentProcessor;
+  private readonly renditionProcessor: RenditionProcessor;
   private readonly queue: Queue<DocumentQueueJob>;
   private readonly worker: Worker<DocumentQueueJob>;
   private dispatchTimer: NodeJS.Timeout | null = null;
@@ -456,6 +658,8 @@ export class DocumentPipeline {
     private readonly store: ProcessingStore,
     storage: ArtifactStorage,
     engine: DocumentEngineClient,
+    renditionEngine: RenditionEngineClient,
+    private readonly metrics = new WorkerMetrics(),
   ) {
     this.processor = new DocumentProcessor(
       store,
@@ -470,6 +674,8 @@ export class DocumentPipeline {
       engine,
       config.leaseMilliseconds,
       config.heartbeatMilliseconds,
+      config.renditionRendererProfile,
+      metrics,
     );
     this.mergeProcessor = new MergeProcessor(
       store,
@@ -482,6 +688,14 @@ export class DocumentPipeline {
       config.excelAutomaticMergeEnabled,
       config.excelAutomaticMergePilotOrganizationIds,
     );
+    this.renditionProcessor = new RenditionProcessor(
+      store,
+      storage,
+      renditionEngine,
+      config.leaseMilliseconds,
+      config.heartbeatMilliseconds,
+      metrics,
+    );
     this.queue = createDocumentQueue(config.redisUrl);
     this.worker = createDocumentWorker(
       config.redisUrl,
@@ -492,6 +706,9 @@ export class DocumentPipeline {
         }
         if (job.kind === 'comparison') {
           return this.comparisonProcessor.process(job.jobId);
+        }
+        if (job.kind === 'rendition') {
+          return this.renditionProcessor.process(job.jobId);
         }
         return job.kind === 'merge'
           ? this.mergeProcessor.process(job.jobId)
@@ -587,6 +804,29 @@ export class DocumentPipeline {
           },
         );
         await this.store.markMergeDispatched(merge);
+      }
+      for (const rendition of await this.store.listDispatchableRenditions()) {
+        this.metrics.recordRenditionQueueAge(rendition.queueAgeSeconds);
+        const queueJobId = `rendition-${rendition.renditionId}`;
+        const existing = await this.queue.getJob(queueJobId);
+        if (existing) {
+          const state = await existing.getState();
+          if (state === 'completed' || state === 'failed') {
+            await existing.remove();
+          }
+        }
+        await this.queue.add(
+          'office-rendition',
+          { jobId: rendition.id, kind: 'rendition' },
+          {
+            attempts: rendition.maxAttempts,
+            backoff: { delay: 1_000, type: 'exponential' },
+            jobId: queueJobId,
+            removeOnComplete: false,
+            removeOnFail: false,
+          },
+        );
+        await this.store.markRenditionDispatched(rendition);
       }
     } finally {
       this.dispatching = false;

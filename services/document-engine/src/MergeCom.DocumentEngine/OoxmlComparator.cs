@@ -156,7 +156,7 @@ public sealed class OoxmlComparator
                     $"/presentation/slides/{slide.Part.TrimStart('/')}/shapes/{shape.Id}",
                     "content",
                     "medium",
-                    $"{shape.Kind}\n{shape.Name}\n{shape.Text}\n{shape.MarkupHash}\n{shape.AssetHash}",
+                    $"{shape.Kind}\n{shape.Name}\n{shape.Text}\n{shape.MarkupHash}\n{shape.AssetHash}\n{shape.Bounds}",
                     shape.Text.Length > 0 ? shape.Text : $"{shape.Kind} visual"));
             }
         }
@@ -180,7 +180,7 @@ public sealed class OoxmlComparator
                 $"/workbook/sheets/{sheetIdentity}",
                 "structure",
                 "high",
-                $"{sheet.Name}\n{sheet.Visibility}\n{sheet.Dimension}\n{sheet.TableCount}\n{sheet.ChartCount}\n{sheet.HasDrawings}",
+                $"{sheet.Name}\n{sheet.Visibility}\n{sheet.Dimension}\n{sheet.TableCount}\n{sheet.ChartCount}\n{sheet.HasDrawings}\n{string.Join(',', sheet.MergedRanges)}\n{string.Join(',', sheet.HiddenRows)}\n{string.Join(',', sheet.HiddenColumns)}",
                 $"{sheet.Name} ({sheet.Visibility})"));
             foreach (var cell in sheet.Cells)
             {

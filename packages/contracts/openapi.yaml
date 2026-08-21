@@ -1140,6 +1140,48 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/VersionComparison' }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/visualization:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ComparisonId'
+    get:
+      operationId: getComparisonVisualization
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Versioned semantic-change to visual-location mappings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonVisualization' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/comparisons/{comparisonId}/viewer-events:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/ComparisonId'
+    post:
+      operationId: recordComparisonViewerEvent
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [durationMilliseconds, outcome]
+              properties:
+                durationMilliseconds:
+                  { type: number, minimum: 0, maximum: 300000 }
+                outcome: { type: string, enum: [loaded, failed] }
+      responses:
+        '204': { description: Authorized viewer telemetry recorded. }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/merges:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -1436,6 +1478,84 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DocumentVersion' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/renditions:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+    post:
+      operationId: createVersionRendition
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Existing immutable rendition request replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionRendition' }
+        '201':
+          description: Durable rendition requested.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionRendition' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/rendition:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+    get:
+      operationId: getVersionRendition
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Current rendition lifecycle for the configured profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionRendition' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/renditions/{renditionId}/grant:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+      - name: renditionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: createRenditionViewGrant
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Short-lived inline PDF grant with expected integrity metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RenditionViewGrant' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/visual-data:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DocumentId'
+      - $ref: '#/components/parameters/VersionId'
+    get:
+      operationId: getVersionVisualData
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Authorized structured visual payload from the normalized snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionVisualData' }
         default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}/documents/{documentId}/versions/{versionId}/download:
     parameters:
@@ -2167,6 +2287,182 @@ components:
           items: { $ref: '#/components/schemas/ComparisonChange' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    VersionRendition:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          versionId,
+          sourceSha256,
+          rendererProfile,
+          rendererVersion,
+          fontPackVersion,
+          state,
+          attempts,
+          maxAttempts,
+          nextAttemptAt,
+          failureCode,
+          supportTraceId,
+          renditionSha256,
+          byteCount,
+          pageCount,
+          dimensions,
+          warnings,
+          completedAt,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        versionId: { type: string, format: uuid }
+        sourceSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        rendererProfile: { type: string }
+        rendererVersion: { type: string }
+        fontPackVersion: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              queued,
+              running,
+              retryable_failed,
+              permanently_failed,
+              quarantined,
+              completed,
+            ]
+        attempts: { type: integer, minimum: 0 }
+        maxAttempts: { type: integer, minimum: 1 }
+        nextAttemptAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        failureCode:
+          oneOf: [{ type: string }, { type: 'null' }]
+        supportTraceId: { type: string, format: uuid }
+        renditionSha256:
+          oneOf:
+            - { type: string, pattern: '^[0-9a-f]{64}$' }
+            - { type: 'null' }
+        byteCount:
+          oneOf: [{ type: integer, minimum: 1 }, { type: 'null' }]
+        pageCount:
+          oneOf: [{ type: integer, minimum: 1 }, { type: 'null' }]
+        dimensions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [width, height]
+            properties:
+              width: { type: number, exclusiveMinimum: 0 }
+              height: { type: number, exclusiveMinimum: 0 }
+        warnings:
+          type: array
+          items: { type: string }
+        completedAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RenditionViewGrant:
+      allOf:
+        - $ref: '#/components/schemas/SignedBlobGrant'
+        - type: object
+          additionalProperties: false
+          required: [sha256, byteCount, pageCount]
+          properties:
+            sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+            byteCount: { type: integer, minimum: 1 }
+            pageCount: { type: integer, minimum: 1 }
+    VisualLocator:
+      type: object
+      additionalProperties: false
+      required: [kind, confidence, side]
+      properties:
+        kind:
+          type: string
+          enum: [page, paragraph, sheet_cell, slide, table_cell]
+        confidence: { type: string, enum: [exact, approximate, unavailable] }
+        side: { type: string, enum: [base, target] }
+        page: { type: integer, minimum: 1 }
+        slideId: { type: string }
+        sheetId: { type: string }
+        cell: { type: string }
+        semanticPath: { type: string }
+        boundingBox:
+          type: object
+          additionalProperties: false
+          required: [x, y, width, height]
+          properties:
+            x: { type: number, minimum: 0, maximum: 1 }
+            y: { type: number, minimum: 0, maximum: 1 }
+            width: { type: number, minimum: 0, maximum: 1 }
+            height: { type: number, minimum: 0, maximum: 1 }
+    ComparisonVisualization:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          comparisonId,
+          schemaVersion,
+          engineVersion,
+          rendererProfile,
+          coverage,
+          mappings,
+        ]
+      properties:
+        comparisonId: { type: string, format: uuid }
+        schemaVersion: { type: string }
+        engineVersion: { type: string }
+        rendererProfile: { type: string }
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [total, mapped, exact, approximate, unavailable]
+          properties:
+            total: { type: integer, minimum: 0 }
+            mapped: { type: integer, minimum: 0 }
+            exact: { type: integer, minimum: 0 }
+            approximate: { type: integer, minimum: 0 }
+            unavailable: { type: integer, minimum: 0 }
+        mappings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [changeId, confidence, locators, reason]
+            properties:
+              changeId: { type: string }
+              confidence:
+                { type: string, enum: [exact, approximate, unavailable] }
+              locators:
+                type: array
+                items: { $ref: '#/components/schemas/VisualLocator' }
+              reason:
+                oneOf: [{ type: string }, { type: 'null' }]
+    VersionVisualData:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          versionId,
+          fileType,
+          schemaVersion,
+          parserVersion,
+          warnings,
+          unsupportedFeatures,
+          payload,
+        ]
+      properties:
+        versionId: { type: string, format: uuid }
+        fileType: { $ref: '#/components/schemas/DocumentKind' }
+        schemaVersion: { type: string }
+        parserVersion: { type: string }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ProcessingWarning' }
+        unsupportedFeatures:
+          type: array
+          items: { type: string }
+        payload: {}
     MergeVersionReference:
       allOf:
         - $ref: '#/components/schemas/ComparisonVersionReference'

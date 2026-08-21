@@ -6,6 +6,7 @@ const imageNames = [
   'MERGECOM_API_IMAGE',
   'MERGECOM_WORKER_IMAGE',
   'MERGECOM_DOCUMENT_ENGINE_IMAGE',
+  'MERGECOM_RENDITION_ENGINE_IMAGE',
   'MERGECOM_WEB_IMAGE',
   'MERGECOM_OFFICE_ADDIN_IMAGE',
 ];
@@ -22,6 +23,7 @@ const requiredNames = [
   'OIDC_CLIENT_SECRET',
   'OIDC_ISSUER',
   'REDIS_URL',
+  'RENDITION_ENGINE_INTERNAL_TOKEN',
   'S3_ACCESS_KEY',
   'S3_BUCKET',
   'S3_ENDPOINT',
@@ -176,6 +178,11 @@ export function validateConfiguration(environment, options = {}) {
       'DOCUMENT_ENGINE_INTERNAL_TOKEN must be at least 32 characters.',
     );
   }
+  if (environment.RENDITION_ENGINE_INTERNAL_TOKEN.length < 32) {
+    throw new Error(
+      'RENDITION_ENGINE_INTERNAL_TOKEN must be at least 32 characters.',
+    );
+  }
   if (
     !['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'].includes(
       environment.LOG_LEVEL || 'info',
@@ -206,6 +213,26 @@ export function validateConfiguration(environment, options = {}) {
     'POWERPOINT_AUTOMATIC_MERGE_ENABLED',
     'POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS',
   );
+  validatePilotAllowlist(
+    environment,
+    'VISUAL_COMPARISON_ENABLED',
+    'VISUAL_COMPARISON_PILOT_ORGANIZATION_IDS',
+  );
+  const visualFileTypes = new Set(
+    (environment.VISUAL_COMPARISON_FILE_TYPES || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  if (
+    visualFileTypes.size === 0 ||
+    [...visualFileTypes].some(
+      (value) =>
+        !['presentation', 'spreadsheet', 'word_document'].includes(value),
+    )
+  ) {
+    throw new Error('VISUAL_COMPARISON_FILE_TYPES is invalid.');
+  }
   validatePilotAllowlist(
     environment,
     'EXCEL_AUTOMATIC_MERGE_ENABLED',

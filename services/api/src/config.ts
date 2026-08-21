@@ -12,6 +12,7 @@ export interface ApiConfig {
   logLevel: LogLevel;
   nodeEnv: 'development' | 'production' | 'test';
   officeAddinOrigin: string;
+  rendition?: RenditionRequestConfig;
   oidc: {
     clientId: string;
     clientSecret?: string | undefined;
@@ -21,6 +22,15 @@ export interface ApiConfig {
   sessionIdleMilliseconds: number;
   trustedProxyHops: number;
   webOrigin: string;
+}
+
+export interface RenditionRequestConfig {
+  enabled: boolean;
+  enabledFileTypes: Array<'presentation' | 'spreadsheet' | 'word_document'>;
+  fontPackVersion: string;
+  pilotOrganizationIds: string[];
+  rendererProfile: string;
+  rendererVersion: string;
 }
 
 type LogLevel =
@@ -79,6 +89,75 @@ function parseLogLevel(): LogLevel {
     throw new Error('LOG_LEVEL is invalid.');
   }
   return value as LogLevel;
+}
+
+function parseBoolean(name: string, fallback: boolean): boolean {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be true or false.`);
+}
+
+function loadRenditionConfig(
+  nodeEnv: ApiConfig['nodeEnv'],
+): RenditionRequestConfig {
+  const supported = new Set([
+    'presentation',
+    'spreadsheet',
+    'word_document',
+  ] as const);
+  const fileTypes = (
+    process.env.VISUAL_COMPARISON_FILE_TYPES ??
+    'presentation,spreadsheet,word_document'
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (
+    fileTypes.length === 0 ||
+    fileTypes.some(
+      (value) =>
+        !supported.has(
+          value as 'presentation' | 'spreadsheet' | 'word_document',
+        ),
+    )
+  ) {
+    throw new Error('VISUAL_COMPARISON_FILE_TYPES is invalid.');
+  }
+  const pilotOrganizationIds = (
+    process.env.VISUAL_COMPARISON_PILOT_ORGANIZATION_IDS ?? ''
+  )
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (
+    pilotOrganizationIds.some(
+      (value) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+          value,
+        ),
+    )
+  ) {
+    throw new Error(
+      'VISUAL_COMPARISON_PILOT_ORGANIZATION_IDS must contain comma-separated UUIDs.',
+    );
+  }
+  return {
+    enabled: parseBoolean(
+      'VISUAL_COMPARISON_ENABLED',
+      nodeEnv !== 'production',
+    ),
+    enabledFileTypes: [
+      ...new Set(fileTypes),
+    ] as RenditionRequestConfig['enabledFileTypes'],
+    fontPackVersion:
+      process.env.RENDITION_FONT_PACK_VERSION ?? 'mergecom-liberation-noto-v1',
+    pilotOrganizationIds: [...new Set(pilotOrganizationIds)],
+    rendererProfile: process.env.RENDITION_RENDERER_PROFILE ?? 'office-pdf-v1',
+    rendererVersion:
+      process.env.RENDITION_RENDERER_VERSION ?? 'libreoffice-local',
+  };
 }
 
 function assertProductionUrl(
@@ -268,6 +347,7 @@ export function loadConfig(): ApiConfig {
     logLevel: parseLogLevel(),
     nodeEnv,
     officeAddinOrigin,
+    rendition: loadRenditionConfig(nodeEnv),
     oidc:
       authMode === 'entra'
         ? {

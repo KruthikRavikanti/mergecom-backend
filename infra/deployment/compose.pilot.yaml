@@ -54,6 +54,12 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
       SMTP_URL: ${SMTP_URL:?SMTP_URL is required}
       TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-2}
+      VISUAL_COMPARISON_ENABLED: ${VISUAL_COMPARISON_ENABLED:-false}
+      VISUAL_COMPARISON_FILE_TYPES: ${VISUAL_COMPARISON_FILE_TYPES:-presentation,spreadsheet,word_document}
+      VISUAL_COMPARISON_PILOT_ORGANIZATION_IDS: ${VISUAL_COMPARISON_PILOT_ORGANIZATION_IDS:-}
+      RENDITION_FONT_PACK_VERSION: ${RENDITION_FONT_PACK_VERSION:-mergecom-liberation-noto-v1}
+      RENDITION_RENDERER_PROFILE: ${RENDITION_RENDERER_PROFILE:-office-pdf-v1}
+      RENDITION_RENDERER_VERSION: ${RENDITION_RENDERER_VERSION:-libreoffice-bookworm-v1}
       WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN is required}
     healthcheck:
       test:
@@ -97,11 +103,50 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=1536m
 
+  rendition-engine:
+    <<: *runtime-defaults
+    image: ${MERGECOM_RENDITION_ENGINE_IMAGE:?MERGECOM_RENDITION_ENGINE_IMAGE must be digest-pinned}
+    environment:
+      HOME: /tmp/mergecom-home
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      RENDITION_ENGINE_HOST: 0.0.0.0
+      RENDITION_ENGINE_INTERNAL_TOKEN: ${RENDITION_ENGINE_INTERNAL_TOKEN:?RENDITION_ENGINE_INTERNAL_TOKEN is required}
+      RENDITION_ENGINE_PORT: 3004
+      RENDITION_FONT_PACK_VERSION: ${RENDITION_FONT_PACK_VERSION:-mergecom-liberation-noto-v1}
+      RENDITION_RENDERER_PROFILE: ${RENDITION_RENDERER_PROFILE:-office-pdf-v1}
+      RENDITION_RENDERER_VERSION: ${RENDITION_RENDERER_VERSION:-libreoffice-bookworm-v1}
+      RENDITION_TEMP_ROOT: /tmp/mergecom-rendition
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3004/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 4
+    networks:
+      - rendition
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    stop_grace_period: 20s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1536m
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 1024
+
   worker:
     <<: *runtime-defaults
     image: ${MERGECOM_WORKER_IMAGE:?MERGECOM_WORKER_IMAGE must be digest-pinned}
     depends_on:
       document-engine:
+        condition: service_healthy
+      rendition-engine:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
@@ -117,6 +162,11 @@ services:
       POWERPOINT_AUTOMATIC_MERGE_ENABLED: ${POWERPOINT_AUTOMATIC_MERGE_ENABLED:-false}
       POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS: ${POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS:-}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      RENDITION_ENGINE_INTERNAL_TOKEN: ${RENDITION_ENGINE_INTERNAL_TOKEN:?RENDITION_ENGINE_INTERNAL_TOKEN is required}
+      RENDITION_ENGINE_URL: http://rendition-engine:3004
+      RENDITION_FONT_PACK_VERSION: ${RENDITION_FONT_PACK_VERSION:-mergecom-liberation-noto-v1}
+      RENDITION_RENDERER_PROFILE: ${RENDITION_RENDERER_PROFILE:-office-pdf-v1}
+      RENDITION_RENDERER_VERSION: ${RENDITION_RENDERER_VERSION:-libreoffice-bookworm-v1}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
       S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required}
       S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT is required}
@@ -139,6 +189,7 @@ services:
       retries: 4
     networks:
       - backend
+      - rendition
     stop_grace_period: 45s
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
@@ -194,3 +245,6 @@ services:
 networks:
   backend:
     driver: bridge
+  rendition:
+    driver: bridge
+    internal: true

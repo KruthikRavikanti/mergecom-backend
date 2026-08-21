@@ -18,6 +18,12 @@ export interface WorkerConfig {
   powerPointAutomaticMergeEnabled: boolean;
   powerPointAutomaticMergePilotOrganizationIds: string[];
   redisUrl: string;
+  renditionEngineToken: string;
+  renditionEngineUrl: string;
+  renditionFontPackVersion: string;
+  renditionRendererProfile: string;
+  renditionRendererVersion: string;
+  renditionMaxOutputBytes: number;
   smtpUrl: string;
   s3: {
     accessKey: string;
@@ -147,6 +153,11 @@ export function loadWorkerConfig(): WorkerConfig {
     nodeEnv,
     'http://127.0.0.1:3003',
   );
+  const renditionEngineUrl = configured(
+    'RENDITION_ENGINE_URL',
+    nodeEnv,
+    'http://127.0.0.1:3004',
+  );
   const s3Endpoint = configured(
     'S3_ENDPOINT',
     nodeEnv,
@@ -169,6 +180,9 @@ export function loadWorkerConfig(): WorkerConfig {
       protocols: ['smtps:'],
     });
     assertProductionUrl('DOCUMENT_ENGINE_URL', documentEngineUrl, {
+      protocols: ['http:', 'https:'],
+    });
+    assertProductionUrl('RENDITION_ENGINE_URL', renditionEngineUrl, {
       protocols: ['http:', 'https:'],
     });
     assertProductionUrl('S3_ENDPOINT', s3Endpoint, {
@@ -197,6 +211,16 @@ export function loadWorkerConfig(): WorkerConfig {
   if (documentEngineToken.length < 32) {
     throw new Error(
       'DOCUMENT_ENGINE_INTERNAL_TOKEN must be at least 32 characters.',
+    );
+  }
+  const renditionEngineToken = configured(
+    'RENDITION_ENGINE_INTERNAL_TOKEN',
+    nodeEnv,
+    'mergecom-local-rendition-engine-token',
+  );
+  if (renditionEngineToken.length < 32) {
+    throw new Error(
+      'RENDITION_ENGINE_INTERNAL_TOKEN must be at least 32 characters.',
     );
   }
   return {
@@ -235,6 +259,18 @@ export function loadWorkerConfig(): WorkerConfig {
       'POWERPOINT_AUTOMATIC_MERGE_PILOT_ORGANIZATION_IDS',
     ),
     redisUrl,
+    renditionEngineToken,
+    renditionEngineUrl,
+    renditionFontPackVersion:
+      process.env.RENDITION_FONT_PACK_VERSION ?? 'mergecom-liberation-noto-v1',
+    renditionRendererProfile:
+      process.env.RENDITION_RENDERER_PROFILE ?? 'office-pdf-v1',
+    renditionRendererVersion:
+      process.env.RENDITION_RENDERER_VERSION ?? 'libreoffice-local',
+    renditionMaxOutputBytes: positiveInteger(
+      'RENDITION_MAX_OUTPUT_BYTES',
+      200 * 1024 * 1024,
+    ),
     smtpUrl,
     s3: {
       accessKey: configured('S3_ACCESS_KEY', nodeEnv, 'mergecom-local'),

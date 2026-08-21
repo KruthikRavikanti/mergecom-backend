@@ -281,6 +281,28 @@ export class S3BlobStore implements BlobStore {
     };
   }
 
+  public async signView(
+    key: string,
+    contentType: string,
+    expiresInSeconds: number,
+  ): Promise<SignedBlobGrant> {
+    return {
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
+      headers: {},
+      method: 'GET',
+      url: await getSignedUrl(
+        this.client,
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ResponseContentDisposition: 'inline',
+          ResponseContentType: contentType,
+        }),
+        { expiresIn: expiresInSeconds },
+      ),
+    };
+  }
+
   public async signUpload(
     key: string,
     contentType: string,

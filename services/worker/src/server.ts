@@ -7,6 +7,8 @@ import { NotificationPipeline } from './notification-pipeline';
 import { NotificationStore } from './notification-store';
 import { DocumentPipeline } from './pipeline';
 import { ProcessingStore } from './processing-store';
+import { RenditionEngineClient } from './rendition-engine-client';
+import { WorkerMetrics } from './metrics';
 import {
   createRedisReadinessProbe,
   type WorkerReadinessProbe,
@@ -22,7 +24,19 @@ const engine = new DocumentEngineClient(
   config.documentEngineUrl,
   config.documentEngineToken,
 );
-const pipeline = new DocumentPipeline(config, store, storage, engine);
+const renditionEngine = new RenditionEngineClient(
+  config.renditionEngineUrl,
+  config.renditionEngineToken,
+);
+const metrics = new WorkerMetrics();
+const pipeline = new DocumentPipeline(
+  config,
+  store,
+  storage,
+  engine,
+  renditionEngine,
+  metrics,
+);
 const notificationStore = new NotificationStore(config.databaseUrl);
 const notificationPipeline = new NotificationPipeline(
   config,
@@ -35,19 +49,27 @@ const notificationPipeline = new NotificationPipeline(
 );
 const redisProbe = createRedisReadinessProbe(config.redisUrl);
 const readiness: WorkerReadinessProbe = async () => {
-  const [redis, database, notificationDatabase, objectStorage, documentEngine] =
-    await Promise.all([
-      redisProbe(),
-      store.probe(),
-      notificationStore.probe(),
-      storage.probe(),
-      engine.probe(),
-    ]);
+  const [
+    redis,
+    database,
+    notificationDatabase,
+    objectStorage,
+    documentEngine,
+    rendition,
+  ] = await Promise.all([
+    redisProbe(),
+    store.probe(),
+    notificationStore.probe(),
+    storage.probe(),
+    engine.probe(),
+    renditionEngine.probe(),
+  ]);
   return {
     database: database && notificationDatabase ? 'ready' : 'unavailable',
     documentEngine: documentEngine ? 'ready' : 'unavailable',
     objectStorage: objectStorage ? 'ready' : 'unavailable',
     redis: redis.redis ?? 'unavailable',
+    renditionEngine: rendition ? 'ready' : 'unavailable',
   };
 };
 readiness.close = async () => {
@@ -75,6 +97,7 @@ const app = createApp({
     },
   },
   readinessProbe: readiness,
+  metrics,
 });
 
 const shutdown = async () => {

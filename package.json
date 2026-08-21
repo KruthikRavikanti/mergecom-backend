@@ -13,7 +13,7 @@
     "clean": "turbo run clean && rm -rf coverage playwright-report test-results",
     "check:production-bundle": "node scripts/check-production-bundle.mjs",
     "dev": "concurrently --kill-others --names workspace,document-engine \"pnpm dev:workspace\" \"pnpm dev:document-engine\"",
-    "dev:document-engine": "ASPNETCORE_URLS=http://0.0.0.0:3003 dotnet watch --project services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj run --no-launch-profile",
+    "dev:document-engine": "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://0.0.0.0:3003 dotnet watch --project services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj run --no-launch-profile",
     "dev:workspace": "turbo run dev --parallel",
     "format": "prettier --write . && dotnet format services/document-engine/MergeCom.DocumentEngine.sln",
     "format:check": "prettier --check . && dotnet format services/document-engine/MergeCom.DocumentEngine.sln --verify-no-changes",

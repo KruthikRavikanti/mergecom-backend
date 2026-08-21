@@ -70,6 +70,24 @@ export interface ClaimedComparisonJob {
   traceId: string;
 }
 
+export interface ClaimedRenditionJob {
+  artifactByteSize: number;
+  artifactObjectKey: string;
+  artifactSha256: string;
+  attempts: number;
+  extension: string;
+  fileType: DocumentFileType;
+  fontPackVersion: string;
+  id: string;
+  maxAttempts: number;
+  organizationId: string;
+  rendererProfile: string;
+  rendererVersion: string;
+  renditionId: string;
+  traceId: string;
+  versionId: string;
+}
+
 export interface ClaimedMergeJob {
   attempts: number;
   baseArtifact: ComparisonArtifact;
@@ -123,6 +141,65 @@ export interface ComparisonResult {
   summary: Record<string, number>;
   target_source_sha256: string;
   warnings: string[];
+}
+
+export interface ComparisonEngineOutput {
+  baseSnapshot: SnapshotEnvelope;
+  result: ComparisonResult;
+  targetSnapshot: SnapshotEnvelope;
+}
+
+export interface RenditionResult {
+  byteCount: number;
+  dimensions: Array<{ height: number; width: number }>;
+  fontPackVersion: string;
+  outputSha256: string;
+  pageCount: number;
+  pdf: Uint8Array;
+  rendererProfile: string;
+  rendererVersion: string;
+  warnings: string[];
+}
+
+export type VisualLocatorConfidence = 'approximate' | 'exact' | 'unavailable';
+
+export interface VisualLocator {
+  boundingBox?: {
+    height: number;
+    width: number;
+    x: number;
+    y: number;
+  };
+  cell?: string;
+  confidence: VisualLocatorConfidence;
+  kind: 'page' | 'paragraph' | 'sheet_cell' | 'slide' | 'table_cell';
+  page?: number;
+  semanticPath?: string;
+  sheetId?: string;
+  side: 'base' | 'target';
+  slideId?: string;
+}
+
+export interface VisualChangeMapping {
+  changeId: string;
+  confidence: VisualLocatorConfidence;
+  locators: VisualLocator[];
+  reason: string | null;
+}
+
+export interface ComparisonVisualizationArtifact {
+  comparisonId: string;
+  coverage: {
+    approximate: number;
+    exact: number;
+    mapped: number;
+    total: number;
+    unavailable: number;
+  };
+  engineVersion: string;
+  mappings: VisualChangeMapping[];
+  rendererProfile: string;
+  schemaVersion: string;
 }
 
 export interface MergeResult {
@@ -195,6 +272,13 @@ export interface DispatchableComparison {
 export interface DispatchableMerge {
   id: string;
   maxAttempts: number;
+}
+
+export interface DispatchableRendition {
+  id: string;
+  maxAttempts: number;
+  queueAgeSeconds: number;
+  renditionId: string;
 }
 
 export class PermanentProcessingError extends Error {

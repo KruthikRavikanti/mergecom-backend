@@ -885,6 +885,132 @@ export const normalizedSnapshots = pgTable(
   ],
 );
 
+export const versionRenditions = pgTable(
+  'version_renditions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    versionId: uuid('version_id')
+      .references(() => documentVersions.id, { onDelete: 'cascade' })
+      .notNull(),
+    requestedByUserId: uuid('requested_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    sourceSha256: text('source_sha256').notNull(),
+    rendererProfile: text('renderer_profile').notNull(),
+    rendererVersion: text('renderer_version').notNull(),
+    fontPackVersion: text('font_pack_version').notNull(),
+    status: processingJobStatus('status').default('queued').notNull(),
+    objectKey: text('object_key'),
+    renditionSha256: text('rendition_sha256'),
+    byteCount: bigint('byte_count', { mode: 'number' }),
+    pageCount: integer('page_count'),
+    dimensions: jsonb('dimensions')
+      .$type<Array<{ height: number; width: number }>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    warnings: jsonb('warnings')
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    failureCode: text('failure_code'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('version_renditions_source_profile_uq').on(
+      table.versionId,
+      table.sourceSha256,
+      table.rendererProfile,
+      table.rendererVersion,
+      table.fontPackVersion,
+    ),
+    index('version_renditions_object_key_idx').on(table.objectKey),
+    uniqueIndex('version_renditions_organization_version_id_uq').on(
+      table.organizationId,
+      table.versionId,
+      table.id,
+    ),
+    index('version_renditions_version_created_idx').on(
+      table.organizationId,
+      table.versionId,
+      table.createdAt,
+    ),
+    check(
+      'version_renditions_source_hash_ck',
+      sql`${table.sourceSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'version_renditions_output_hash_ck',
+      sql`${table.renditionSha256} is null or ${table.renditionSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'version_renditions_output_size_ck',
+      sql`${table.byteCount} is null or ${table.byteCount} > 0`,
+    ),
+    check(
+      'version_renditions_page_count_ck',
+      sql`${table.pageCount} is null or ${table.pageCount} > 0`,
+    ),
+    check(
+      'version_renditions_completion_ck',
+      sql`(${table.status} = 'completed'
+            and ${table.objectKey} is not null
+            and ${table.renditionSha256} is not null
+            and ${table.byteCount} is not null
+            and ${table.pageCount} is not null
+            and ${table.completedAt} is not null)
+          or (${table.status} <> 'completed')`,
+    ),
+  ],
+);
+
+export const versionRenditionJobs = pgTable(
+  'version_rendition_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    renditionId: uuid('rendition_id')
+      .references(() => versionRenditions.id, { onDelete: 'cascade' })
+      .notNull(),
+    status: processingJobStatus('status').default('queued').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    failureCode: text('failure_code'),
+    lastError: text('last_error'),
+    traceId: uuid('trace_id').defaultRandom().notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('version_rendition_jobs_rendition_uq').on(table.renditionId),
+    index('version_rendition_jobs_queue_idx').on(
+      table.status,
+      table.availableAt,
+    ),
+    index('version_rendition_jobs_lease_idx').on(
+      table.status,
+      table.leaseExpiresAt,
+    ),
+    check(
+      'version_rendition_jobs_attempts_ck',
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} > 0 and ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+  ],
+);
+
 export const versionComparisons = pgTable(
   'version_comparisons',
   {
@@ -907,7 +1033,7 @@ export const versionComparisons = pgTable(
     comparisonSchemaVersion: text('comparison_schema_version')
       .default('1.0.0')
       .notNull(),
-    parserVersion: text('parser_version').default('1.1.0').notNull(),
+    parserVersion: text('parser_version').default('1.2.0').notNull(),
     engineVersion: text('engine_version').default('1.0.0').notNull(),
     status: processingJobStatus('status').default('queued').notNull(),
     attempts: integer('attempts').default(0).notNull(),
@@ -1001,6 +1127,61 @@ export const versionComparisons = pgTable(
   ],
 );
 
+export const comparisonVisualizations = pgTable(
+  'comparison_visualizations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    comparisonId: uuid('comparison_id')
+      .references(() => versionComparisons.id, { onDelete: 'cascade' })
+      .notNull(),
+    schemaVersion: text('schema_version').notNull(),
+    engineVersion: text('engine_version').notNull(),
+    rendererProfile: text('renderer_profile').notNull(),
+    objectKey: text('object_key').notNull(),
+    artifactSha256: text('artifact_sha256').notNull(),
+    totalChanges: integer('total_changes').notNull(),
+    mappedChanges: integer('mapped_changes').notNull(),
+    exactChanges: integer('exact_changes').notNull(),
+    approximateChanges: integer('approximate_changes').notNull(),
+    unavailableChanges: integer('unavailable_changes').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('comparison_visualizations_profile_uq').on(
+      table.comparisonId,
+      table.schemaVersion,
+      table.engineVersion,
+      table.rendererProfile,
+    ),
+    uniqueIndex('comparison_visualizations_object_key_uq').on(table.objectKey),
+    uniqueIndex('comparison_visualizations_organization_comparison_id_uq').on(
+      table.organizationId,
+      table.comparisonId,
+      table.id,
+    ),
+    check(
+      'comparison_visualizations_hash_ck',
+      sql`${table.artifactSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'comparison_visualizations_counts_ck',
+      sql`${table.totalChanges} >= 0
+          and ${table.mappedChanges} >= 0
+          and ${table.exactChanges} >= 0
+          and ${table.approximateChanges} >= 0
+          and ${table.unavailableChanges} >= 0
+          and ${table.mappedChanges} <= ${table.totalChanges}
+          and ${table.exactChanges} + ${table.approximateChanges} = ${table.mappedChanges}
+          and ${table.mappedChanges} + ${table.unavailableChanges} = ${table.totalChanges}`,
+    ),
+  ],
+);
+
 export const mergeOperations = pgTable(
   'merge_operations',
   {
@@ -1028,7 +1209,7 @@ export const mergeOperations = pgTable(
       .notNull(),
     note: text('note').notNull(),
     mergeSchemaVersion: text('merge_schema_version').default('1.2.0').notNull(),
-    parserVersion: text('parser_version').default('1.1.0').notNull(),
+    parserVersion: text('parser_version').default('1.2.0').notNull(),
     engineVersion: text('engine_version').default('1.2.0').notNull(),
     status: mergeOperationStatus('status').default('queued').notNull(),
     attempts: integer('attempts').default(0).notNull(),
