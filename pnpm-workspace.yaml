@@ -15,4 +15,9 @@ minimumReleaseAgeExclude:
   - concurrently@10.0.5
 
 overrides:
+  '@esbuild-kit/core-utils>esbuild': 0.28.2
+  'office-addin-manifest>adm-zip': 0.6.0
+  'tsx>esbuild': 0.28.2
   uuid: 11.1.1
+  'vite>esbuild': 0.28.2
+  'vite>postcss': 8.5.23

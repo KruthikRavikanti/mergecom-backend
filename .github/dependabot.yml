@@ -7,9 +7,15 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - '*'
       production-dependencies:
+        applies-to: version-updates
         dependency-type: production
       development-dependencies:
+        applies-to: version-updates
         dependency-type: development
 
   - package-ecosystem: nuget
@@ -17,9 +23,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      nuget-updates:
+        patterns:
+          - '*'
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - '*'
