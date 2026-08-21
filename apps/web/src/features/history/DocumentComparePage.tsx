@@ -1,6 +1,7 @@
 import { ErrorState, LoadingState } from '@mergecom/ui';
 import {
   ArrowLeft,
+  CircleHelp,
   ClipboardCheck,
   FileDiff,
   GitCompareArrows,
@@ -143,6 +144,12 @@ export function DocumentComparePage() {
     }
   }
 
+  function openGuide() {
+    const next = new URLSearchParams(location.search);
+    next.set('tour', '1');
+    void navigate({ search: next.toString() }, { replace: true });
+  }
+
   return (
     <section className="comparison-page">
       <Link
@@ -162,6 +169,16 @@ export function DocumentComparePage() {
           <span>{project.data.name}</span>
         </div>
         <div className="comparison-header-actions">
+          {result.state === 'completed' ? (
+            <button
+              className="button-secondary"
+              type="button"
+              onClick={openGuide}
+            >
+              <CircleHelp aria-hidden="true" size={17} />
+              Guide
+            </button>
+          ) : null}
           {canCompareWithApproved ? (
             <button
               className="button-secondary"

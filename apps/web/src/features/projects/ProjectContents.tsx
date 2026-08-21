@@ -491,11 +491,35 @@ export function ProjectContents({
           })}
         </div>
       ) : (
-        <p className="mt-8 border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-600">
-          {archived
-            ? 'No archived documents in this folder.'
-            : 'This folder is empty.'}
-        </p>
+        <div className="mt-8 border border-dashed border-slate-300 bg-white p-8 text-center">
+          <h2 className="text-base font-bold text-slate-950">
+            {archived ? 'No archived documents' : 'This folder is empty'}
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+            {archived
+              ? 'Archived documents in this folder will appear here.'
+              : canWrite
+                ? 'Create a document record for web uploads or link a saved Word, Excel, or PowerPoint file from the Office add-in.'
+                : 'A project contributor can add a document. Existing versions and reviews will appear here when shared.'}
+          </p>
+          {!archived ? (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {canWrite ? (
+                <button
+                  className="button-primary"
+                  type="button"
+                  onClick={() => setCreateType('document')}
+                >
+                  <FileText aria-hidden="true" size={17} />
+                  Create document
+                </button>
+              ) : null}
+              <Link className="button-secondary" to="/app/setup">
+                Office setup
+              </Link>
+            </div>
+          ) : null}
+        </div>
       )}
       <Dialog
         description={

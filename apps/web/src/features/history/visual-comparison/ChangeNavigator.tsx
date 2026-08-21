@@ -66,7 +66,11 @@ export const ChangeNavigator = memo(function ChangeNavigator({
   }
 
   return (
-    <aside className="change-navigator" aria-label="Detected changes">
+    <aside
+      className="change-navigator"
+      data-tour="change-rail"
+      aria-label="Detected changes"
+    >
       <div className="change-navigator-heading">
         <div>
           <h2>Changes</h2>

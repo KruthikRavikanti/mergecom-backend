@@ -1,4 +1,5 @@
 import { getHttpsServerOptions } from 'office-addin-dev-certs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 
@@ -9,6 +10,42 @@ function officeDevelopmentCertificates(): Plugin {
       server: { https: await getHttpsServerOptions() },
     }),
     name: 'mergecom-office-development-certificates',
+  };
+}
+
+const manifestNames = [
+  'manifest.word.xml',
+  'manifest.excel.xml',
+  'manifest.powerpoint.xml',
+] as const;
+
+function officeManifestAssets(): Plugin {
+  return {
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const name = request.url?.slice(1);
+        if (!manifestNames.includes(name as (typeof manifestNames)[number])) {
+          next();
+          return;
+        }
+        response.setHeader('content-type', 'application/xml; charset=utf-8');
+        response.end(
+          readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url))),
+        );
+      });
+    },
+    generateBundle() {
+      for (const name of manifestNames) {
+        this.emitFile({
+          fileName: name,
+          source: readFileSync(
+            fileURLToPath(new URL(`./${name}`, import.meta.url)),
+          ),
+          type: 'asset',
+        });
+      }
+    },
+    name: 'mergecom-office-manifest-assets',
   };
 }
 
@@ -24,10 +61,12 @@ export default defineConfig(({ command, mode }) => ({
     },
     sourcemap: true,
   },
-  plugins:
-    command === 'serve' && mode !== 'test'
+  plugins: [
+    officeManifestAssets(),
+    ...(command === 'serve' && mode !== 'test'
       ? [officeDevelopmentCertificates()]
-      : [],
+      : []),
+  ],
   server: {
     host: '0.0.0.0',
     proxy: {

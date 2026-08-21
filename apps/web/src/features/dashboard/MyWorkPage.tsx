@@ -16,6 +16,7 @@ import {
   useMyWorkQuery,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
+import { OnboardingChecklist } from '../onboarding/OnboardingChecklist';
 
 const sections: Array<{
   empty: string;
@@ -94,7 +95,7 @@ export function MyWorkPage() {
         ))}
       </div>
 
-      <div className="mt-7 grid gap-8 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="mt-7 grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-8">
           {sections
             .filter((section) => selected === 'all' || selected === section.key)
@@ -109,7 +110,10 @@ export function MyWorkPage() {
             ))}
         </div>
         <aside className="border-t border-slate-300 pt-6 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-          <h2 className="text-sm font-bold text-slate-900">Quick actions</h2>
+          {user ? <OnboardingChecklist user={user} /> : null}
+          <h2 className="mt-6 text-sm font-bold text-slate-900">
+            Quick actions
+          </h2>
           <div className="mt-3 grid gap-2">
             <Link className="button-secondary justify-start" to="/app/projects">
               <FolderPlus aria-hidden="true" size={17} />

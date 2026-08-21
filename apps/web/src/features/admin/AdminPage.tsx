@@ -1,5 +1,12 @@
 import { ErrorState, LoadingState, Toast } from '@mergecom/ui';
-import { Clipboard, Send, Trash2, UserCheck, UserX } from 'lucide-react';
+import {
+  Clipboard,
+  Download,
+  Send,
+  Trash2,
+  UserCheck,
+  UserX,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import {
@@ -7,6 +14,7 @@ import {
   useChangeMembershipStatusMutation,
   useCreateInvitationMutation,
   useMembersQuery,
+  useProductFeedbackQuery,
   useRemoveMembershipMutation,
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
@@ -21,13 +29,18 @@ export function AdminPage() {
   const [role, setRole] = useState<OrganizationRole>('reviewer');
   const [invitationUrl, setInvitationUrl] = useState<string | null>(null);
   const [actionError, setActionError] = useState(false);
+  const canAdminister = canManageAccess(user?.activeOrganization?.role);
   const memberships = useMembersQuery(user?.activeOrganization?.id);
+  const feedback = useProductFeedbackQuery(
+    user?.activeOrganization?.id,
+    canAdminister,
+  );
   const invitation = useCreateInvitationMutation(user!);
   const changeRole = useChangeMembershipRoleMutation(user!);
   const changeStatus = useChangeMembershipStatusMutation(user!);
   const removeMembership = useRemoveMembershipMutation(user!);
 
-  if (!user || !canManageAccess(user.activeOrganization?.role)) {
+  if (!user || !canAdminister) {
     return <ErrorState message="Administration access is not available." />;
   }
   if (memberships.isLoading)
@@ -61,6 +74,18 @@ export function AdminPage() {
   const runAction = (action: () => void) => {
     setActionError(false);
     action();
+  };
+
+  const downloadFeedback = () => {
+    const blob = new Blob([JSON.stringify(feedback.data ?? [], null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.download = `mergecom-feedback-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.href = url;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -238,6 +263,77 @@ export function AdminPage() {
           </tbody>
         </table>
       </div>
+
+      <section className="mt-9 border-t border-slate-300 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-950">
+              Product feedback
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Tenant-scoped submissions, newest first.
+            </p>
+          </div>
+          <button
+            className="button-secondary"
+            disabled={!feedback.data?.length}
+            type="button"
+            onClick={downloadFeedback}
+          >
+            <Download aria-hidden="true" size={17} />
+            Download JSON
+          </button>
+        </div>
+        {feedback.isError ? (
+          <p className="mt-4 text-sm text-red-700" role="alert">
+            Product feedback could not be loaded.
+          </p>
+        ) : feedback.isLoading ? (
+          <p className="mt-4 text-sm text-slate-500">Loading feedback...</p>
+        ) : feedback.data?.length ? (
+          <div className="mt-4 overflow-x-auto border border-slate-200 bg-white">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Rating</th>
+                  <th className="px-4 py-3 font-semibold">Reason</th>
+                  <th className="px-4 py-3 font-semibold">Comment</th>
+                  <th className="px-4 py-3 font-semibold">Context</th>
+                  <th className="px-4 py-3 font-semibold">Submitted</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {feedback.data.slice(0, 25).map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-3 font-bold text-slate-950">
+                      {item.rating}/5
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {item.reason.replace(/_/gu, ' ')}
+                    </td>
+                    <td className="max-w-md whitespace-pre-wrap px-4 py-3 text-slate-700">
+                      {item.comment ?? 'No comment'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      <p>{item.resourceType.replace(/_/gu, ' ')}</p>
+                      <p className="mt-1 max-w-56 truncate" title={item.route}>
+                        {item.route}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      {new Date(item.createdAt).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-4 border-y border-slate-200 py-5 text-sm text-slate-500">
+            No product feedback has been submitted.
+          </p>
+        )}
+      </section>
       {actionError ? (
         <Toast
           kind="error"

@@ -27,6 +27,36 @@ Use the application's normal developer add-in/sideload flow and load only the
 matching manifest. The manifests request `ReadAllDocument`, require `CompressedFile`,
 and point their source and icon URLs at the local HTTPS server.
 
+The web app's **Office setup** page exposes the same host-specific manifest URLs and
+non-secret readiness state. The development server serves each manifest at its root,
+for example `https://localhost:5176/manifest.powerpoint.xml`.
+
+### Mac desktop
+
+Create the host-specific `wef` folder if it does not exist, place only the matching
+manifest there, and restart the Office application:
+
+| Application | Sideload folder |
+| --- | --- |
+| Word | `~/Library/Containers/com.microsoft.Word/Data/Documents/wef` |
+| Excel | `~/Library/Containers/com.microsoft.Excel/Data/Documents/wef` |
+| PowerPoint | `~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/wef` |
+
+Use an add-in-only manifest in these folders; do not place a unified manifest there.
+
+### Windows desktop
+
+Create a local shared folder, add it as a trusted add-in catalog in the Office Trust
+Center, place the matching manifest in that folder, and restart the Office host. Open
+**Home > Add-ins > Advanced > SHARED FOLDER** and select MergeCom.
+
+### Office on the web
+
+Open the document, choose **Home > Add-ins > More Settings > Upload My Add-in**, and
+upload the matching XML manifest. Browser upload is a sideload mechanism; exact
+package capture still depends on the Office host/platform capabilities shown in the
+task pane.
+
 ## Expected states
 
 - `Office host`: Office.js initialized with a recognized host and platform.
@@ -42,6 +72,10 @@ and point their source and icon URLs at the local HTTPS server.
 - `Browser preview`: the page was opened outside Office; capture remains disabled.
 - `Version finalized`: exact bytes reached immutable storage and the API created the
   version. Processing may still be queued or running.
+- `Save and compare`: capture and finalize the exact current package, resolve the
+  approved or latest eligible baseline, request deterministic comparison, and open
+  the web workspace. Existing ready versions are reused; source files are not
+  reconstructed.
 - `Conflict preserved`: the incoming version exists, but the branch head did not
   move.
 - `Version retrieval`: choose an authorized immutable version. The branch head is

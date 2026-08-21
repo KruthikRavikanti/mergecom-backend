@@ -1,9 +1,12 @@
 import {
   Bell,
+  BookOpenCheck,
   Building2,
   FolderKanban,
   LayoutDashboard,
   LogOut,
+  MessageSquareText,
+  MonitorCog,
   Settings,
   ShieldCheck,
   Users,
@@ -18,12 +21,20 @@ import {
 } from '../../api/queries';
 import { useAuth } from '../../auth/AuthContext';
 import { canManageAccess, roleLabels } from '../../auth/roles';
+import type { FeedbackResourceType } from '../../api/queries';
+import { FeedbackDialog } from '../../features/onboarding/FeedbackDialog';
 import { Brand } from './Brand';
 import { GlobalSearch } from './GlobalSearch';
 
 const navigation = [
   { icon: LayoutDashboard, label: 'My Work', to: '/app' },
+  {
+    icon: BookOpenCheck,
+    label: 'Getting started',
+    to: '/app/getting-started',
+  },
   { icon: FolderKanban, label: 'Projects', to: '/app/projects' },
+  { icon: MonitorCog, label: 'Office setup', to: '/app/setup' },
   { icon: Users, label: 'Team', to: '/app/team' },
   { icon: Settings, label: 'Settings', to: '/app/settings' },
   {
@@ -41,6 +52,13 @@ export function AppLayout() {
     user?.activeOrganization?.id,
     true,
   );
+  const location = useLocation();
+  const feedbackRequested =
+    new URLSearchParams(location.search).get('feedback') === 'open';
+  const [dismissedFeedbackLocation, setDismissedFeedbackLocation] = useState<
+    string | null
+  >(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
   if (!user) return null;
   const active = user.activeOrganization;
@@ -66,7 +84,7 @@ export function AppLayout() {
         </div>
         <nav
           aria-label="Workspace"
-          className="grid grid-cols-5 gap-1 px-3 pb-3 sm:flex sm:overflow-x-auto lg:block lg:space-y-1 lg:pb-0"
+          className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:pb-0"
         >
           {visibleNavigation.map(({ icon: Icon, label, to }) => (
             <NavLink
@@ -145,6 +163,15 @@ export function AppLayout() {
             <GlobalSearch organizationId={active?.id} />
           </div>
           <div className="flex items-center gap-1">
+            <button
+              aria-label="Product feedback"
+              className="rounded p-2 text-slate-500 hover:bg-slate-100"
+              title="Product feedback"
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+            >
+              <MessageSquareText aria-hidden="true" size={19} />
+            </button>
             <Link
               aria-label={
                 unreadCount > 0
@@ -194,8 +221,34 @@ export function AppLayout() {
           )}
         </main>
       </div>
+      <FeedbackDialog
+        onClose={() => {
+          setFeedbackOpen(false);
+          setDismissedFeedbackLocation(location.key);
+        }}
+        open={
+          feedbackOpen ||
+          (feedbackRequested && dismissedFeedbackLocation !== location.key)
+        }
+        resourceType={feedbackResourceType(location.pathname, location.search)}
+        route={location.pathname}
+        user={user}
+      />
     </div>
   );
+}
+
+function feedbackResourceType(
+  pathname: string,
+  search: string,
+): FeedbackResourceType {
+  if (new URLSearchParams(search).get('source') === 'office-addin') {
+    return 'office_addin';
+  }
+  if (pathname.includes('/comparisons/')) return 'comparison';
+  if (pathname.endsWith('/getting-started')) return 'onboarding';
+  if (pathname.endsWith('/setup')) return 'setup';
+  return 'workspace';
 }
 
 function RecentRouteTracker() {

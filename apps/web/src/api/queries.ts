@@ -47,6 +47,13 @@ export type RecentDocument = components['schemas']['RecentDocument'];
 export type ComparisonSummary = components['schemas']['ComparisonSummary'];
 export type BaselineRecommendation =
   components['schemas']['BaselineRecommendation'];
+export type OnboardingState = components['schemas']['OnboardingState'];
+export type OfficeSetupReadiness =
+  components['schemas']['OfficeSetupReadiness'];
+export type FeedbackReason = components['schemas']['FeedbackReason'];
+export type FeedbackResourceType =
+  components['schemas']['FeedbackResourceType'];
+export type ProductFeedback = components['schemas']['ProductFeedback'];
 
 export const queryKeys = {
   apiReadiness: ['api', 'readiness'] as const,
@@ -56,6 +63,12 @@ export const queryKeys = {
     ['workspace', organizationId, 'recents'] as const,
   workspaceSearch: (organizationId: string, query: string) =>
     ['workspace', organizationId, 'search', query] as const,
+  onboarding: (organizationId: string) =>
+    ['onboarding', organizationId] as const,
+  setupReadiness: (organizationId: string) =>
+    ['onboarding', organizationId, 'setup-readiness'] as const,
+  productFeedback: (organizationId: string) =>
+    ['onboarding', organizationId, 'feedback'] as const,
   notificationPreferences: (organizationId: string) =>
     ['notifications', organizationId, 'preferences'] as const,
   notifications: (organizationId: string, unreadOnly: boolean) =>
@@ -363,6 +376,132 @@ export function useRecordRecentDocumentMutation(currentUser: CurrentUser) {
         ],
       });
     },
+  });
+}
+
+export function useOnboardingQuery(organizationId: string | undefined) {
+  return useQuery({
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/onboarding',
+        { params: { path: { organizationId: organizationId! } } },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Getting started state could not be loaded.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.onboarding(organizationId ?? ''),
+  });
+}
+
+export function useUpdateOnboardingPreferencesMutation(
+  currentUser: CurrentUser,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      dismissed?: boolean;
+      tour?: {
+        status: 'completed' | 'skipped';
+        version: string;
+      };
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { error, response } = await apiClient.PATCH(
+        '/v1/organizations/{organizationId}/onboarding/preferences',
+        {
+          body: input,
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId },
+          },
+        },
+      );
+      if (!response.ok) {
+        throw failure(error, 'Getting started preference could not be saved.');
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.onboarding(activeOrganizationId(currentUser)),
+      });
+    },
+  });
+}
+
+export function useOfficeSetupReadinessQuery(
+  organizationId: string | undefined,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/onboarding/setup-readiness',
+        { params: { path: { organizationId: organizationId! } } },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Office setup readiness could not be checked.');
+      }
+      return data;
+    },
+    queryKey: queryKeys.setupReadiness(organizationId ?? ''),
+    staleTime: 60_000,
+  });
+}
+
+export function useSubmitProductFeedbackMutation(currentUser: CurrentUser) {
+  return useMutation({
+    mutationFn: async (input: {
+      comment: string | null;
+      productVersion: string;
+      rating: number;
+      reason: FeedbackReason;
+      resourceType: FeedbackResourceType;
+      route: string;
+    }) => {
+      const organizationId = activeOrganizationId(currentUser);
+      const { data, error, response } = await apiClient.POST(
+        '/v1/organizations/{organizationId}/onboarding/feedback',
+        {
+          body: input,
+          params: {
+            header: { 'X-CSRF-Token': currentUser.session.csrfToken },
+            path: { organizationId },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Feedback could not be submitted.');
+      }
+      return data;
+    },
+  });
+}
+
+export function useProductFeedbackQuery(
+  organizationId: string | undefined,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: Boolean(organizationId) && enabled,
+    queryFn: async () => {
+      const { data, error, response } = await apiClient.GET(
+        '/v1/organizations/{organizationId}/onboarding/feedback',
+        {
+          params: {
+            path: { organizationId: organizationId! },
+            query: { limit: 500 },
+          },
+        },
+      );
+      if (!response.ok || !data) {
+        throw failure(error, 'Product feedback could not be loaded.');
+      }
+      return data.items;
+    },
+    queryKey: queryKeys.productFeedback(organizationId ?? ''),
   });
 }
 

@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/KruthikRavikanti/mergecom-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/KruthikRavikanti/mergecom-backend/actions/workflows/ci.yml)
 
-MergeCom is a document version review workspace for Microsoft Office files. Phase 15
-adds a provider-neutral pilot deployment baseline: hardened non-root images, immutable
-digest deployment, migration gating, production configuration preflight, hosted Office
-manifests, release health checks, and backup/restore drills. Phase 14 exact-version
-retrieval remains available across the shared Word, Excel, and PowerPoint task pane.
+MergeCom is a document version review workspace for Microsoft Office files. Phases
+26-29 add Office-first Save and Compare, a role-aware My Work surface, deterministic
+comparison explanations, guided onboarding, synthetic Word/Excel/PowerPoint examples,
+setup diagnostics, and privacy-bounded product feedback. Exact immutable source
+packages and conservative authorization remain the system of record.
 
 ## Repository map
 
@@ -16,6 +16,7 @@ apps/office-addin/           shared Office task pane, host adapter, and manifest
 services/api/                Fastify HTTP API
 services/worker/             durable BullMQ/PostgreSQL processing pipeline
 services/document-engine/    bounded ASP.NET Core Open XML inspection engine
+services/rendition-engine/   isolated Office-to-PDF visual rendition service
 packages/contracts/          OpenAPI source and generated TypeScript client types
 packages/ui/                 shared accessible UI primitives
 packages/office-core/        shared Office artifact invariants
@@ -52,7 +53,8 @@ pnpm dev
 
 The web app is available at `http://localhost:5173`, the Office task pane at
 `https://localhost:5176`, the API at `http://localhost:3001`, the worker health server
-at `http://localhost:3002`, and the document engine at `http://localhost:3003`.
+at `http://localhost:3002`, the document engine at `http://localhost:3003`, and the
+rendition engine at `http://localhost:3004`.
 Mailpit is available at `http://localhost:8025` and the MinIO console at
 `http://localhost:9001`.
 
@@ -72,6 +74,7 @@ pnpm test:unit           # Vitest and xUnit
 pnpm test:integration    # service startup and gated Testcontainers checks
 pnpm test:e2e            # Playwright desktop/mobile route suite
 pnpm test:deployment     # pilot topology and configuration contract
+pnpm demo:provision      # idempotently provision tenant-local synthetic comparisons
 pnpm verify              # complete local quality gate
 ```
 
@@ -86,6 +89,8 @@ pnpm test:integration
 ```
 
 See [local setup](docs/setup/local-development.md),
+[user quick start](docs/product/quick-start.md),
+[guided onboarding](docs/product/guided-onboarding.md),
 [identity and RBAC](docs/security/identity-rbac.md),
 [projects and folders](docs/product/projects-folders.md),
 [artifact versioning](docs/product/artifact-versioning.md),
@@ -97,6 +102,8 @@ See [local setup](docs/setup/local-development.md),
 [Office version push](docs/product/office-version-push.md),
 [Office version retrieval](docs/product/office-version-pull.md),
 [notifications](docs/product/notifications.md),
+[visual comparison](docs/product/visual-comparison.md),
+[synthetic demo operations](docs/runbooks/synthetic-demo.md),
 [pilot deployment](docs/runbooks/pilot-deployment.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.

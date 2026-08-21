@@ -16,6 +16,9 @@ import type { IdentityStore } from './identity/store';
 import { PostgresNotificationStore } from './notifications/postgres-store';
 import { registerNotificationRoutes } from './notifications/routes';
 import type { NotificationStore } from './notifications/store';
+import { PostgresOnboardingStore } from './onboarding/postgres-store';
+import { registerOnboardingRoutes } from './onboarding/routes';
+import type { OnboardingStore } from './onboarding/store';
 import { PostgresProjectStore } from './projects/postgres-store';
 import { registerProjectRoutes } from './projects/routes';
 import type { ProjectStore } from './projects/store';
@@ -54,6 +57,7 @@ interface CreateAppOptions {
   identityStore?: IdentityStore;
   logger?: FastifyServerOptions['logger'];
   notificationStore?: NotificationStore;
+  onboardingStore?: OnboardingStore;
   projectStore?: ProjectStore;
   readinessProbe?: ReadinessProbe;
   reviewStore?: ReviewStore;
@@ -74,6 +78,7 @@ export async function createApp(options: CreateAppOptions = {}) {
       !options.projectStore ||
       !options.reviewStore ||
       !options.notificationStore ||
+      !options.onboardingStore ||
       !options.versionStore ||
       !options.workspaceStore) &&
     options.databaseUrl
@@ -93,6 +98,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   const notificationStore =
     options.notificationStore ??
     (database ? new PostgresNotificationStore(database.pool) : null);
+  const onboardingStore =
+    options.onboardingStore ??
+    (database ? new PostgresOnboardingStore(database.pool) : null);
   const workspaceStore =
     options.workspaceStore ??
     (database ? new PostgresWorkspaceStore(database.pool) : null);
@@ -215,6 +223,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     }
     if (workspaceStore) {
       registerWorkspaceRoutes(app, { ...runtime, workspaceStore });
+    }
+    if (onboardingStore) {
+      registerOnboardingRoutes(app, { ...runtime, onboardingStore });
     }
   }
 

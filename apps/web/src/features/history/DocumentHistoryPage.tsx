@@ -425,8 +425,9 @@ export function DocumentHistoryPage() {
           ))}
         </div>
       ) : (
-        <div className="mt-4 border-y border-dashed border-slate-300 py-5 text-sm text-slate-600">
-          No reviews have been requested.
+        <div className="mt-4 border-y border-dashed border-slate-300 py-5 text-sm leading-6 text-slate-600">
+          No reviews have been requested. Approval is optional; request review
+          on a ready version when a recorded decision is needed.
         </div>
       )}
 
@@ -758,6 +759,34 @@ export function DocumentHistoryPage() {
           </p>
         </div>
       )}
+
+      {versions.data.items.length === 1 ? (
+        <div className="mt-4 border-l-4 border-slate-500 bg-white p-4">
+          <h2 className="text-sm font-bold text-slate-950">
+            A second version enables comparison
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Save the edited Office file from the add-in or upload another exact
+            package. The first version remains immutable and becomes the
+            comparison baseline.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canWrite ? (
+              <button
+                className="button-primary"
+                type="button"
+                onClick={() => setUploadOpen(true)}
+              >
+                <Upload aria-hidden="true" size={16} />
+                Upload second version
+              </button>
+            ) : null}
+            <Link className="button-secondary" to="/app/setup">
+              Office setup
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       <Dialog
         description="The original Office package is retained exactly and checked against its SHA-256."

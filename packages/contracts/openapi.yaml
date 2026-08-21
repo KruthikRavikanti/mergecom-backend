@@ -588,6 +588,144 @@ paths:
       responses:
         '204': { description: Recent document state updated. }
         default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: getOnboardingState
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: User-owned checklist derived from authorized persisted outcomes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OnboardingState' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/onboarding/preferences:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    patch:
+      operationId: updateOnboardingPreferences
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                dismissed: { type: boolean }
+                tour:
+                  type: object
+                  additionalProperties: false
+                  required: [version, status]
+                  properties:
+                    version: { type: string, minLength: 1, maxLength: 80 }
+                    status: { type: string, enum: [completed, skipped] }
+      responses:
+        '204': { description: User-owned onboarding preference updated. }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/onboarding/setup-readiness:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      operationId: getOfficeSetupReadiness
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Non-secret origins and authenticated setup readiness.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficeSetupReadiness' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/onboarding/samples:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    post:
+      operationId: registerSampleComparison
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [projectId, documentId, comparisonId, kind, title, description]
+              properties:
+                projectId: { type: string, format: uuid }
+                documentId: { type: string, format: uuid }
+                comparisonId: { type: string, format: uuid }
+                kind: { $ref: '#/components/schemas/DocumentKind' }
+                title: { type: string, minLength: 1, maxLength: 160 }
+                description: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '201':
+          description: Completed tenant-local synthetic comparison registered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SampleComparison' }
+        default: { $ref: '#/components/responses/ApiError' }
+  /v1/organizations/{organizationId}/onboarding/feedback:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    post:
+      operationId: submitProductFeedback
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [rating, reason, route, resourceType, productVersion]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                reason: { $ref: '#/components/schemas/FeedbackReason' }
+                comment:
+                  oneOf: [{ type: string, maxLength: 2000 }, { type: 'null' }]
+                route: { type: string, minLength: 1, maxLength: 500 }
+                resourceType:
+                  { $ref: '#/components/schemas/FeedbackResourceType' }
+                productVersion: { type: string, minLength: 1, maxLength: 80 }
+      responses:
+        '201':
+          description: Explicit content-free-by-default feedback submission stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductFeedback' }
+        default: { $ref: '#/components/responses/ApiError' }
+    get:
+      operationId: exportProductFeedback
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 500 }
+      responses:
+        '200':
+          description: Owner/admin tenant-scoped operator feedback export.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProductFeedback' }
+        default: { $ref: '#/components/responses/ApiError' }
   /v1/organizations/{organizationId}/projects/{projectId}:
     parameters:
       - $ref: '#/components/parameters/OrganizationId'
@@ -2174,6 +2312,134 @@ components:
             kind: { $ref: '#/components/schemas/DocumentKind' }
         openedAt: { type: string, format: date-time }
         destination: { type: string }
+    OnboardingStepKey:
+      type: string
+      enum:
+        [
+          explore_sample,
+          project_access,
+          add_document,
+          first_version,
+          save_and_compare,
+          review,
+        ]
+    OnboardingStep:
+      type: object
+      additionalProperties: false
+      required: [key, label, description, destination, completed]
+      properties:
+        key: { $ref: '#/components/schemas/OnboardingStepKey' }
+        label: { type: string }
+        description: { type: string }
+        destination: { type: string }
+        completed: { type: boolean }
+    SampleComparison:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, description, project, document, destination]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/DocumentKind' }
+        title: { type: string }
+        description: { type: string }
+        project: { $ref: '#/components/schemas/NamedResource' }
+        document: { $ref: '#/components/schemas/NamedResource' }
+        destination: { type: string }
+    OnboardingState:
+      type: object
+      additionalProperties: false
+      required: [dismissed, steps, progress, tour, samples]
+      properties:
+        dismissed: { type: boolean }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/OnboardingStep' }
+        progress:
+          type: object
+          additionalProperties: false
+          required: [completed, total]
+          properties:
+            completed: { type: integer, minimum: 0 }
+            total: { type: integer, minimum: 0 }
+        tour:
+          type: object
+          additionalProperties: false
+          required: [version, status]
+          properties:
+            version:
+              oneOf: [{ type: string }, { type: 'null' }]
+            status: { type: string, enum: [unseen, completed, skipped] }
+        samples:
+          type: array
+          items: { $ref: '#/components/schemas/SampleComparison' }
+    OfficeSetupReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          api,
+          authenticated,
+          environment,
+          taskPaneOrigin,
+          webOrigin,
+          manifestUrls,
+          productVersion,
+        ]
+      properties:
+        api: { type: string, const: ready }
+        authenticated: { type: boolean, const: true }
+        environment: { type: string, enum: [development, hosted] }
+        taskPaneOrigin: { type: string, format: uri }
+        webOrigin: { type: string, format: uri }
+        manifestUrls:
+          type: object
+          additionalProperties: false
+          required: [word, excel, powerpoint]
+          properties:
+            word: { type: string, format: uri }
+            excel: { type: string, format: uri }
+            powerpoint: { type: string, format: uri }
+        productVersion: { type: string }
+    FeedbackReason:
+      type: string
+      enum:
+        [
+          confusing,
+          missing_capability,
+          performance,
+          incorrect_result,
+          positive,
+          other,
+        ]
+    FeedbackResourceType:
+      type: string
+      enum: [onboarding, comparison, office_addin, setup, workspace, other]
+    ProductFeedback:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          userId,
+          rating,
+          reason,
+          comment,
+          route,
+          resourceType,
+          productVersion,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        reason: { $ref: '#/components/schemas/FeedbackReason' }
+        comment:
+          oneOf: [{ type: string }, { type: 'null' }]
+        route: { type: string }
+        resourceType: { $ref: '#/components/schemas/FeedbackResourceType' }
+        productVersion: { type: string }
+        createdAt: { type: string, format: date-time }
     ProjectPage:
       type: object
       additionalProperties: false

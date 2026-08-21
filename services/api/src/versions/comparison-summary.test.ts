@@ -83,6 +83,14 @@ describe('comparison summary', () => {
     ).toBe('formatting');
     expect(
       classifyComparisonChange(
+        change('same-visible-value', {
+          after: 'Quarterly plan',
+          before: 'Quarterly plan',
+        }),
+      ).category,
+    ).toBe('formatting');
+    expect(
+      classifyComparisonChange(
         change('unsupported', { category: 'validation' }),
       ).category,
     ).toBe('unsupported');

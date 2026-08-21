@@ -1406,6 +1406,9 @@ function brandMarkup(): string {
     <header class="brand">
       <span class="brand-mark" aria-hidden="true">M</span>
       <strong>MergeCom</strong>
+      <a class="brand-feedback" href="${webAppUrl('/app/setup?feedback=open&source=office-addin')}" target="_blank" rel="noreferrer">
+        <i data-lucide="external-link" aria-hidden="true"></i>Feedback
+      </a>
     </header>
   `;
 }

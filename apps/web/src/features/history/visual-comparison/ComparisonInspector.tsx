@@ -122,7 +122,11 @@ export function ComparisonInspector({
   }
 
   return (
-    <aside className="comparison-inspector" aria-label="Change inspector">
+    <aside
+      className="comparison-inspector"
+      data-tour="change-inspector"
+      aria-label="Change inspector"
+    >
       <div className="comparison-inspector-heading">
         <h2>Inspector</h2>
         {mapping ? (
@@ -166,7 +170,7 @@ export function ComparisonInspector({
             <p className="inspector-mapping-note">{mapping.reason}</p>
           ) : null}
 
-          <section className="inspector-review">
+          <section className="inspector-review" data-tour="review-controls">
             <div className="inspector-section-heading">
               <h3>Review discussion</h3>
               <span>{threads.length}</span>

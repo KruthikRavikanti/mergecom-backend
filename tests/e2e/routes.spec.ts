@@ -12,6 +12,7 @@ const excelDocumentPath = `${projectPath}/documents/${excelDocumentId}`;
 const versionPath = `${documentPath}/versions`;
 const reviewsPath = `${documentPath}/reviews`;
 const notificationsPath = `/v1/organizations/${organizationId}/notifications`;
+const onboardingPath = `/v1/organizations/${organizationId}/onboarding`;
 const reviewId = '92000000-0000-4000-8000-000000000001';
 const mergeId = '94000000-0000-4000-8000-000000000001';
 const excelMergeId = '94000000-0000-4000-8000-000000000002';
@@ -45,6 +46,7 @@ const currentUser = {
 
 test.beforeEach(async ({ page }) => {
   let authenticated = false;
+  let onboardingDismissed = false;
   const projects = [
     {
       accessRole: 'project_lead',
@@ -488,6 +490,85 @@ test.beforeEach(async ({ page }) => {
       );
       return;
     }
+    if (path === onboardingPath && method === 'GET') {
+      await route.fulfill({
+        json: {
+          dismissed: onboardingDismissed,
+          progress: { completed: 2, total: 6 },
+          samples: [
+            {
+              description: 'Synthetic document comparison.',
+              destination: `${documentPath}/history/comparisons/93000000-0000-4000-8000-000000000001?tour=1`,
+              document: { id: documentId, name: '[SAMPLE] Review.pptx' },
+              id: '93000000-0000-4000-8000-000000000001',
+              kind: 'presentation',
+              project: { id: projectId, name: '[SAMPLE] Guided Tour' },
+              title: 'Compare a synthetic presentation',
+            },
+          ],
+          steps: [
+            {
+              completed: false,
+              description: 'Inspect a synthetic comparison.',
+              destination: '/app/getting-started#samples',
+              key: 'explore_sample',
+              label: 'Explore a sample comparison',
+            },
+            {
+              completed: true,
+              description: 'Create or join a project.',
+              destination: '/app/projects',
+              key: 'project_access',
+              label: 'Create or join a project',
+            },
+          ],
+          tour: { status: 'unseen', version: null },
+        },
+        status: 200,
+      });
+      return;
+    }
+    if (path === `${onboardingPath}/preferences` && method === 'PATCH') {
+      const body = request.postDataJSON() as { dismissed?: boolean };
+      onboardingDismissed = body.dismissed ?? onboardingDismissed;
+      await route.fulfill({ body: '', status: 204 });
+      return;
+    }
+    if (path === `${onboardingPath}/setup-readiness` && method === 'GET') {
+      await route.fulfill({
+        json: {
+          api: 'ready',
+          authenticated: true,
+          environment: 'development',
+          manifestUrls: {
+            excel: 'https://localhost:5176/manifest.excel.xml',
+            powerpoint: 'https://localhost:5176/manifest.powerpoint.xml',
+            word: 'https://localhost:5176/manifest.word.xml',
+          },
+          productVersion: '0.9.0-phase29',
+          taskPaneOrigin: 'https://localhost:5176',
+          webOrigin: 'http://localhost:5173',
+        },
+        status: 200,
+      });
+      return;
+    }
+    if (path === `${onboardingPath}/feedback`) {
+      await route.fulfill(
+        method === 'GET'
+          ? { json: { items: [] }, status: 200 }
+          : {
+              json: {
+                ...request.postDataJSON(),
+                createdAt: '2026-08-21T12:00:00.000Z',
+                id: '97000000-0000-4000-8000-000000000001',
+                userId: currentUser.user.id,
+              },
+              status: 201,
+            },
+      );
+      return;
+    }
     if (path.endsWith('/memberships')) {
       await route.fulfill({
         json: {
@@ -852,6 +933,8 @@ async function startIdentitySession(page: Page) {
 
 const authenticatedRoutes = [
   { heading: 'My Work', path: '/app' },
+  { heading: 'Learn the core workflow', path: '/app/getting-started' },
+  { heading: 'Setup and readiness', path: '/app/setup' },
   { heading: 'Projects', path: '/app/projects' },
   { heading: 'Project Meridian', path: `/app/projects/${projectId}` },
   {

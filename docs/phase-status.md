@@ -1,5 +1,52 @@
 # Phase status
 
+## Phases 26-29: Office-first workflow and guided onboarding
+
+Status: implementation complete in the current worktree; manual Office-host and
+pilot-organization acceptance remain release gates.
+
+### Phase 26: Office Save and Compare
+
+- [x] The shared task pane can capture an exact saved package, push an immutable
+  version, resolve a deterministic baseline, request comparison, and deep-link to
+  the resulting workspace without reconstructing the Office file.
+- [x] Save, package-access, stale-base, processing, unsupported-host, and retry states
+  remain explicit across Word, Excel, and PowerPoint.
+
+### Phase 27: My Work and workspace search
+
+- [x] Role-authorized attention, recent work, reviews, failures, and conflict queues
+  share cursor pagination and URL-persisted filters.
+- [x] Global metadata search and recent-document tracking never search or index Office
+  package content.
+
+### Phase 28: Deterministic explanations
+
+- [x] Versioned deterministic summaries classify substantive, formatting-only, and
+  structural changes, expose attention reasons and approved-baseline context, and
+  cite stable change identifiers.
+- [x] Reports can omit before/after values by default; optional AI explanation is
+  non-authoritative, feature-gated, and falls back to the deterministic result.
+
+### Phase 29: Guided onboarding and feedback
+
+- [x] Server-derived role-aware checklists use persisted project, document, version,
+  comparison, review, and sample-exploration evidence with per-user dismiss state.
+- [x] Tenant-local `[SAMPLE]` Word, Excel, and PowerPoint pairs run through normal
+  upload, processing, comparison, authorization, visualization, and summary paths.
+- [x] The comparison guide supports keyboard navigation, reduced motion, skip/resume,
+  and inline focus without blocking the underlying workspace.
+- [x] Office setup guidance selects host/platform-specific sideloading steps and
+  exposes only non-secret readiness information.
+- [x] Explicit feedback sends only the disclosed rating, reason, optional comment,
+  route, resource category, and product version. Owner/admin read and JSON export are
+  tenant scoped.
+
+Product behavior is in `docs/product/quick-start.md` and
+`docs/product/guided-onboarding.md`. Sample operations are in
+`docs/runbooks/synthetic-demo.md`; implementation evidence is in
+`docs/verification/phase-26-29-command-results.md`.
+
 ## Phases 16-25: Visual comparison workspace
 
 Status: implementation complete in the current worktree; organization pilot

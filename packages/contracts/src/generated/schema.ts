@@ -423,6 +423,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organizations/{organizationId}/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getOnboardingState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/onboarding/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateOnboardingPreferences"];
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/onboarding/setup-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getOfficeSetupReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/onboarding/samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["registerSampleComparison"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organizations/{organizationId}/onboarding/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["exportProductFeedback"];
+        put?: never;
+        post: operations["submitProductFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations/{organizationId}/projects/{projectId}": {
         parameters: {
             query?: never;
@@ -1478,6 +1568,78 @@ export interface components {
             /** Format: date-time */
             openedAt: string;
             destination: string;
+        };
+        /** @enum {string} */
+        OnboardingStepKey: "explore_sample" | "project_access" | "add_document" | "first_version" | "save_and_compare" | "review";
+        OnboardingStep: {
+            key: components["schemas"]["OnboardingStepKey"];
+            label: string;
+            description: string;
+            destination: string;
+            completed: boolean;
+        };
+        SampleComparison: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["DocumentKind"];
+            title: string;
+            description: string;
+            project: components["schemas"]["NamedResource"];
+            document: components["schemas"]["NamedResource"];
+            destination: string;
+        };
+        OnboardingState: {
+            dismissed: boolean;
+            steps: components["schemas"]["OnboardingStep"][];
+            progress: {
+                completed: number;
+                total: number;
+            };
+            tour: {
+                version: string | null;
+                /** @enum {string} */
+                status: "unseen" | "completed" | "skipped";
+            };
+            samples: components["schemas"]["SampleComparison"][];
+        };
+        OfficeSetupReadiness: {
+            /** @constant */
+            api: "ready";
+            /** @constant */
+            authenticated: true;
+            /** @enum {string} */
+            environment: "development" | "hosted";
+            /** Format: uri */
+            taskPaneOrigin: string;
+            /** Format: uri */
+            webOrigin: string;
+            manifestUrls: {
+                /** Format: uri */
+                word: string;
+                /** Format: uri */
+                excel: string;
+                /** Format: uri */
+                powerpoint: string;
+            };
+            productVersion: string;
+        };
+        /** @enum {string} */
+        FeedbackReason: "confusing" | "missing_capability" | "performance" | "incorrect_result" | "positive" | "other";
+        /** @enum {string} */
+        FeedbackResourceType: "onboarding" | "comparison" | "office_addin" | "setup" | "workspace" | "other";
+        ProductFeedback: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            rating: number;
+            reason: components["schemas"]["FeedbackReason"];
+            comment: string | null;
+            route: string;
+            resourceType: components["schemas"]["FeedbackResourceType"];
+            productVersion: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         ProjectPage: {
             items: components["schemas"]["Project"][];
@@ -2854,6 +3016,188 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getOnboardingState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User-owned checklist derived from authorized persisted outcomes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    updateOnboardingPreferences: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    dismissed?: boolean;
+                    tour?: {
+                        version: string;
+                        /** @enum {string} */
+                        status: "completed" | "skipped";
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description User-owned onboarding preference updated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    getOfficeSetupReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Non-secret origins and authenticated setup readiness. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeSetupReadiness"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    registerSampleComparison: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    projectId: string;
+                    /** Format: uuid */
+                    documentId: string;
+                    /** Format: uuid */
+                    comparisonId: string;
+                    kind: components["schemas"]["DocumentKind"];
+                    title: string;
+                    description: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Completed tenant-local synthetic comparison registered. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleComparison"];
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    exportProductFeedback: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owner/admin tenant-scoped operator feedback export. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProductFeedback"][];
+                    };
+                };
+            };
+            default: components["responses"]["ApiError"];
+        };
+    };
+    submitProductFeedback: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    rating: number;
+                    reason: components["schemas"]["FeedbackReason"];
+                    comment?: string | null;
+                    route: string;
+                    resourceType: components["schemas"]["FeedbackResourceType"];
+                    productVersion: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Explicit content-free-by-default feedback submission stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductFeedback"];
+                };
             };
             default: components["responses"]["ApiError"];
         };

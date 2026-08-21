@@ -1285,6 +1285,114 @@ export const organizationFeatureFlags = pgTable(
   ],
 );
 
+export const userOnboardingStates = pgTable(
+  'user_onboarding_states',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+    tourVersion: text('tour_version'),
+    tourStatus: text('tour_status'),
+    tourUpdatedAt: timestamp('tour_updated_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('user_onboarding_states_user_uq').on(
+      table.organizationId,
+      table.userId,
+    ),
+    check(
+      'user_onboarding_states_tour_ck',
+      sql`(${table.tourVersion} is null and ${table.tourStatus} is null and ${table.tourUpdatedAt} is null)
+          or (${table.tourVersion} is not null and ${table.tourStatus} in ('completed', 'skipped') and ${table.tourUpdatedAt} is not null)`,
+    ),
+  ],
+);
+
+export const sampleComparisons = pgTable(
+  'sample_comparisons',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    projectId: uuid('project_id')
+      .references(() => projects.id, { onDelete: 'restrict' })
+      .notNull(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'restrict' })
+      .notNull(),
+    comparisonId: uuid('comparison_id')
+      .references(() => versionComparisons.id, { onDelete: 'restrict' })
+      .notNull(),
+    kind: documentKind('kind').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    createdByUserId: uuid('created_by_user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('sample_comparisons_kind_uq').on(
+      table.organizationId,
+      table.kind,
+    ),
+    uniqueIndex('sample_comparisons_comparison_uq').on(table.comparisonId),
+    index('sample_comparisons_organization_created_idx').on(
+      table.organizationId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const productFeedback = pgTable(
+  'product_feedback',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .references(() => organizations.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'restrict' })
+      .notNull(),
+    rating: integer('rating').notNull(),
+    reason: text('reason').notNull(),
+    comment: text('comment'),
+    route: text('route').notNull(),
+    resourceType: text('resource_type').notNull(),
+    productVersion: text('product_version').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('product_feedback_organization_created_idx').on(
+      table.organizationId,
+      table.createdAt,
+      table.id,
+    ),
+    check('product_feedback_rating_ck', sql`${table.rating} between 1 and 5`),
+    check(
+      'product_feedback_reason_ck',
+      sql`${table.reason} in ('confusing', 'missing_capability', 'performance', 'incorrect_result', 'positive', 'other')`,
+    ),
+    check(
+      'product_feedback_resource_type_ck',
+      sql`${table.resourceType} in ('onboarding', 'comparison', 'office_addin', 'setup', 'workspace', 'other')`,
+    ),
+  ],
+);
+
 export const mergeOperations = pgTable(
   'merge_operations',
   {

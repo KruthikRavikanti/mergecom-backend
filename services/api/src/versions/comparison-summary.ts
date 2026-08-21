@@ -8,7 +8,7 @@ import type {
 } from './types';
 
 export const COMPARISON_SUMMARY_SCHEMA_VERSION = '1.0.0';
-export const COMPARISON_SUMMARY_ENGINE_VERSION = '1.0.1';
+export const COMPARISON_SUMMARY_ENGINE_VERSION = '1.0.2';
 
 const categoryLabels: Record<ComparisonSummaryCategoryKey, string> = {
   date: 'Date-like values',
@@ -174,6 +174,14 @@ export function classifyComparisonChange(change: ComparisonChange): {
       },
       category: 'date',
     };
+  }
+  if (
+    change.category === 'content' &&
+    change.changeType === 'modified' &&
+    change.before !== null &&
+    change.before === change.after
+  ) {
+    return { attention: null, category: 'formatting' };
   }
   if (isStructuralChange(change)) {
     return {

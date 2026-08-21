@@ -13,6 +13,8 @@ import { DocumentComparePage } from '../features/history/DocumentComparePage';
 import { DocumentMergePage } from '../features/history/DocumentMergePage';
 import { InviteAcceptancePage } from '../features/invitations/InviteAcceptancePage';
 import { NotificationInboxPage } from '../features/notifications/NotificationInboxPage';
+import { GettingStartedPage } from '../features/onboarding/GettingStartedPage';
+import { SetupPage } from '../features/onboarding/SetupPage';
 import { ProjectPage } from '../features/projects/ProjectPage';
 import { DocumentReviewPage } from '../features/reviews/DocumentReviewPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -45,6 +47,8 @@ export const createAppRoutes = (queryClient: QueryClient): RouteObject[] => [
       {
         children: [
           { element: <MyWorkPage />, index: true },
+          { element: <GettingStartedPage />, path: 'getting-started' },
+          { element: <SetupPage />, path: 'setup' },
           { element: <DashboardPage />, path: 'projects' },
           { element: <ProjectPage />, path: 'projects/:projectId' },
           {

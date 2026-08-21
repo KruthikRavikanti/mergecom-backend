@@ -39,6 +39,27 @@ textarea {
   background: #991b1b;
 }
 
+.brand-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: #fee2e2;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.brand-feedback:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.brand-feedback svg {
+  width: 13px;
+  height: 13px;
+}
+
 .brand-mark {
   display: grid;
   width: 28px;

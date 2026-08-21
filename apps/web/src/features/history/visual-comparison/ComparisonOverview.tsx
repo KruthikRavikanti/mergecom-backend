@@ -61,6 +61,7 @@ export function ComparisonOverview({
   return (
     <section
       className="comparison-overview"
+      data-tour="comparison-summary"
       aria-labelledby="comparison-overview"
     >
       <div className="comparison-overview-heading">

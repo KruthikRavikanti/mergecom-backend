@@ -7,6 +7,7 @@ import {
 } from '@mergecom/ui';
 import { FolderPlus, Grid2X2, List, Search } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   type Project,
@@ -232,11 +233,40 @@ export function DashboardPage() {
           ))}
         </div>
       ) : (
-        <p className="mt-10 border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-600">
-          {query
-            ? 'No projects match this search.'
-            : `No ${archived ? 'archived' : 'active'} projects.`}
-        </p>
+        <div className="mt-10 border border-dashed border-slate-300 bg-white p-8 text-center">
+          <h2 className="text-base font-bold text-slate-950">
+            {query
+              ? 'No projects match this search'
+              : `No ${archived ? 'archived' : 'active'} projects`}
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+            {query
+              ? 'Try a different project or client name.'
+              : canCreate
+                ? 'Projects hold authorized folders, Office documents, versions, comparisons, and reviews.'
+                : 'A project lead can add you to an authorized project. You can explore a synthetic comparison while you wait.'}
+          </p>
+          {!query && !archived ? (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {canCreate ? (
+                <button
+                  className="button-primary"
+                  type="button"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  <FolderPlus aria-hidden="true" size={17} />
+                  New project
+                </button>
+              ) : null}
+              <Link
+                className="button-secondary"
+                to="/app/getting-started#samples"
+              >
+                Try a sample comparison
+              </Link>
+            </div>
+          ) : null}
+        </div>
       )}
       <Dialog
         description="Create a persisted workspace for folders, documents, and project members."

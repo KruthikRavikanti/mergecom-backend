@@ -199,6 +199,75 @@
   color: #172033;
 }
 
+.comparison-tour {
+  align-items: center;
+  background: #172033;
+  border-bottom: 1px solid #334155;
+  color: #fff;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.comparison-tour > div:first-child {
+  min-width: 0;
+}
+
+.comparison-tour span {
+  color: #fca5a5;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.comparison-tour h2 {
+  font-size: 14px;
+  margin: 2px 0 0;
+}
+
+.comparison-tour p {
+  color: #cbd5e1;
+  font-size: 11px;
+  margin: 3px 0 0;
+  max-width: 76ch;
+}
+
+.comparison-tour-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.comparison-tour-actions button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #64748b;
+  color: #fff;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 5px 7px;
+}
+
+.comparison-tour-actions button:disabled {
+  color: #64748b;
+}
+
+.comparison-tour-actions .comparison-tour-complete {
+  background: #fff;
+  color: #172033;
+  gap: 5px;
+}
+
+.comparison-tour-highlight {
+  outline: 3px solid #dc2626;
+  outline-offset: -3px;
+  position: relative;
+  z-index: 2;
+}
+
 .comparison-overview {
   border-bottom: 1px solid #cbd5e1;
   background: #fff;
@@ -1613,6 +1682,14 @@
   .comparison-overview-heading {
     display: block;
     padding: 14px;
+  }
+
+  .comparison-tour {
+    align-items: flex-start;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 10px 12px;
   }
 
   .comparison-report-actions {

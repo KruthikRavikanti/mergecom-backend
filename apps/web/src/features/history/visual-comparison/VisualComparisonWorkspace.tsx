@@ -23,6 +23,7 @@ import {
   useVersionVisualDataQuery,
 } from '../../../api/queries';
 import type { CurrentUser } from '../../../auth/session';
+import { ComparisonTour } from '../../onboarding/ComparisonTour';
 import { ChangeNavigator, type ChangeCategoryFilter } from './ChangeNavigator';
 import { ComparisonOverview, type ComparisonScope } from './ComparisonOverview';
 import { ComparisonInspector } from './ComparisonInspector';
@@ -589,6 +590,12 @@ export function VisualComparisonWorkspace({
 
   return (
     <div className="visual-comparison-shell" ref={workspaceRef}>
+      {searchParams.get('tour') === '1' ? (
+        <ComparisonTour
+          user={user}
+          onClose={() => updateSearch({ tour: null })}
+        />
+      ) : null}
       {summary.data ? (
         <ComparisonOverview
           baseline={baseline.data}
@@ -673,7 +680,7 @@ export function VisualComparisonWorkspace({
           threadCounts={threadCounts}
           visualization={visualization.data}
         />
-        <main className="comparison-viewers">
+        <main className="comparison-viewers" data-tour="version-viewers">
           <button
             aria-label={inspectorOpen ? 'Close inspector' : 'Open inspector'}
             className="inspector-toggle"
