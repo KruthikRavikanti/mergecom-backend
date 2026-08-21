@@ -1,4 +1,8 @@
 import type { PublicPageMetadata } from '../content/metadata';
+import {
+  createPublicStructuredData,
+  resolvePublicUrl,
+} from '../content/metadata-head';
 
 function upsertMeta(selector: string, attributes: Record<string, string>) {
   let element = document.head.querySelector<HTMLMetaElement>(selector);
@@ -22,7 +26,29 @@ function upsertCanonical(path: string) {
     canonical.dataset.marketingMeta = 'true';
     document.head.append(canonical);
   }
-  canonical.href = new URL(path, window.location.origin).href;
+  canonical.href = resolvePublicUrl(path, window.location.origin);
+}
+
+function removeMeta(selector: string) {
+  document.head.querySelector(selector)?.remove();
+}
+
+function updateStructuredData(enabled: boolean) {
+  const selector = 'script[data-marketing-structured-data="true"]';
+  if (!enabled) {
+    document.head.querySelector(selector)?.remove();
+    return;
+  }
+  let script = document.head.querySelector<HTMLScriptElement>(selector);
+  if (!script) {
+    script = document.createElement('script');
+    script.dataset.marketingStructuredData = 'true';
+    script.type = 'application/ld+json';
+    document.head.append(script);
+  }
+  script.textContent = JSON.stringify(
+    createPublicStructuredData(window.location.origin),
+  );
 }
 
 export function applyPublicPageMetadata(metadata: PublicPageMetadata) {
@@ -47,15 +73,44 @@ export function applyPublicPageMetadata(metadata: PublicPageMetadata) {
     content: 'website',
     property: 'og:type',
   });
+  upsertMeta('meta[property="og:url"]', {
+    content: resolvePublicUrl(metadata.path, window.location.origin),
+    property: 'og:url',
+  });
   if (metadata.image) {
     upsertMeta('meta[property="og:image"]', {
-      content: new URL(metadata.image, window.location.origin).href,
+      content: resolvePublicUrl(metadata.image, window.location.origin),
       property: 'og:image',
     });
+    upsertMeta('meta[property="og:image:alt"]', {
+      content: 'MergeCom comparison workspace',
+      property: 'og:image:alt',
+    });
+    upsertMeta('meta[name="twitter:image"]', {
+      content: resolvePublicUrl(metadata.image, window.location.origin),
+      name: 'twitter:image',
+    });
+  } else {
+    removeMeta('meta[property="og:image"]');
+    removeMeta('meta[property="og:image:alt"]');
+    removeMeta('meta[name="twitter:image"]');
   }
   upsertMeta('meta[name="twitter:card"]', {
-    content: 'summary_large_image',
+    content: metadata.image ? 'summary_large_image' : 'summary',
     name: 'twitter:card',
   });
+  upsertMeta('meta[name="twitter:title"]', {
+    content: metadata.title,
+    name: 'twitter:title',
+  });
+  upsertMeta('meta[name="twitter:description"]', {
+    content: metadata.description,
+    name: 'twitter:description',
+  });
+  upsertMeta('meta[name="theme-color"]', {
+    content: metadata.themeColor ?? '#172033',
+    name: 'theme-color',
+  });
+  updateStructuredData(Boolean(metadata.structuredData));
   upsertCanonical(metadata.path);
 }

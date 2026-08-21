@@ -1,6 +1,7 @@
 import { ArrowRight, Check, Mail, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { trackMarketingEvent } from '../analytics/MarketingAnalytics';
 import {
   MarketingContainer,
   SectionEyebrow,
@@ -56,7 +57,15 @@ export function RequestAccessPage() {
                   Your email application will open. Nothing is transmitted by
                   this website or attached to your message automatically.
                 </p>
-                <a className="marketing-button is-primary" href={emailHref}>
+                <a
+                  className="marketing-button is-primary"
+                  href={emailHref}
+                  onClick={() =>
+                    trackMarketingEvent({
+                      name: 'request_access_form_started',
+                    })
+                  }
+                >
                   Email the access team{' '}
                   <ArrowRight aria-hidden="true" size={17} />
                 </a>

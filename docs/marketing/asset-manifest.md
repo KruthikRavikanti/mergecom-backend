@@ -12,6 +12,9 @@ production bundle.
 | `marketing/comparison-workspace.webp` | Owned synthetic MergeCom comparison composition, captured from `website/w2-shell-hero` and fixture `marketing-comparison-v1` | 1280 x 514 | Desktop hero poster and product chapter |
 | `marketing/comparison-workspace-mobile.webp` | Owned synthetic MergeCom single-pane comparison composition, captured from `website/w2-shell-hero` and fixture `marketing-comparison-v1` | 390 x 404 | Mobile product chapter and poster crop |
 | `marketing/mergecom-social-card.webp` | Owned MergeCom homepage capture using synthetic product content | 1200 x 630 | Open Graph and social preview |
+| `favicon.svg` | Owned MergeCom lettermark constructed in repository source | 64 x 64 view box | Browser and manifest icon |
+| `apple-touch-icon.png` | Rasterized owned MergeCom lettermark | 180 x 180 | Apple touch icon |
+| `site.webmanifest` | Repository-authored application metadata | Text | Install metadata and SVG icon declaration |
 
 The legacy `images/mergecom-team.jpg` and `images/project-review.jpg` assets are
 not approved as primary marketing-story media. They remain only for historical

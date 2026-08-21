@@ -17,12 +17,21 @@ RUN pnpm install --frozen-lockfile
 COPY apps/web apps/web
 COPY packages packages
 ARG VITE_API_BASE_URL=/api
+ARG VITE_WEB_APP_BASE_URL
+ARG WEB_CONNECT_ORIGIN
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_WEB_APP_BASE_URL=${VITE_WEB_APP_BASE_URL}
+RUN node -e "const value=process.env.VITE_WEB_APP_BASE_URL; const url=new URL(value); if (url.protocol !== 'https:' || url.origin !== value) throw new Error('VITE_WEB_APP_BASE_URL must be an exact HTTPS origin.');"
+RUN WEB_CONNECT_ORIGIN="${WEB_CONNECT_ORIGIN}" node -e "const value=process.env.WEB_CONNECT_ORIGIN; const url=new URL(value); if (url.protocol !== 'https:' || url.origin !== value || ['localhost','127.0.0.1'].includes(url.hostname)) throw new Error('WEB_CONNECT_ORIGIN must be a hosted exact HTTPS origin.');"
 RUN pnpm --filter @mergecom/web... build
 
 FROM nginx:1.28.3-alpine3.23 AS runtime
 LABEL org.opencontainers.image.source="https://github.com/KruthikRavikanti/mergecom-backend"
+ARG WEB_CONNECT_ORIGIN
 COPY infra/deployment/nginx.web.conf /etc/nginx/nginx.conf
+RUN case "${WEB_CONNECT_ORIGIN}" in https://*) ;; *) exit 1 ;; esac \
+  && case "${WEB_CONNECT_ORIGIN}" in *\;*|*\'*) exit 1 ;; esac \
+  && sed -i "s|__MERGECOM_CONNECT_ORIGIN__|${WEB_CONNECT_ORIGIN}|g" /etc/nginx/nginx.conf
 COPY --from=build --chown=nginx:nginx /workspace/apps/web/dist /usr/share/nginx/html
 USER nginx
 EXPOSE 8080

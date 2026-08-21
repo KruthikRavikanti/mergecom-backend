@@ -8,10 +8,11 @@
     "pnpm": "11.22.0"
   },
   "scripts": {
-    "build": "turbo run build && pnpm build:dotnet && pnpm check:production-bundle && pnpm check:marketing-bundle",
+    "build": "turbo run build && pnpm build:dotnet && pnpm check:production-bundle && pnpm check:marketing-bundle && pnpm check:marketing-release",
     "build:dotnet": "dotnet build services/document-engine/MergeCom.DocumentEngine.sln --configuration Release --nologo",
     "clean": "turbo run clean && rm -rf coverage playwright-report test-results",
     "check:marketing-bundle": "node scripts/check-marketing-bundle.mjs",
+    "check:marketing-release": "node scripts/check-marketing-release.mjs",
     "check:production-bundle": "node scripts/check-production-bundle.mjs",
     "dev": "concurrently --kill-others --names workspace,document-engine \"pnpm dev:workspace\" \"pnpm dev:document-engine\"",
     "dev:document-engine": "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://0.0.0.0:3003 dotnet watch --project services/document-engine/src/MergeCom.DocumentEngine/MergeCom.DocumentEngine.csproj run --no-launch-profile",

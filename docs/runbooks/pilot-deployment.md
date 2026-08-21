@@ -44,10 +44,21 @@ bucket remains private; clients receive only short-lived signed grants.
 
 ## Build immutable images
 
-Run the `Pilot images` GitHub Actions workflow from the reviewed commit. Supply both
-hosted HTTPS origins. The workflow builds Linux AMD64 and ARM64 images, generates
+Run the `Pilot images` GitHub Actions workflow from the reviewed commit. Supply the
+web origin, Office origin, and exact public HTTPS object-storage origin. The workflow
+builds Linux AMD64 and ARM64 images, generates
 hosted Word/Excel/PowerPoint manifests, publishes SBOM and provenance attestations,
 and reports six `image@sha256:digest` references in its job summaries.
+
+The web origin is also passed to the web image as `VITE_WEB_APP_BASE_URL`. The build
+uses it for canonical metadata, structured data, `robots.txt`, and `sitemap.xml`, and
+fails if an allowlisted marketing route cannot be prerendered. Do not build a hosted
+web image without the exact final HTTPS origin.
+
+The object-storage origin becomes the web CSP's only connection destination besides
+the same origin. It must match the origin of `S3_ENDPOINT` used by signed browser
+grants. Rebuild the web image when that endpoint changes; do not replace it with an
+`https:` or wildcard source.
 
 Before rollout, review dependency audits and image scan results. Copy only digest
 references into the deployment configuration. Tags, including a commit SHA tag, are
@@ -86,6 +97,7 @@ Configure the external TLS proxy to preserve `Host`, append `X-Forwarded-For`, a
 | Office add-in | `127.0.0.1:8081` |
 
 Do not cache HTML, API responses, authentication callbacks, or Office manifests.
+Hashed `/assets/` files may use the supplied immutable cache policy.
 Office task panes must remain frameable by Office, so do not add `X-Frame-Options` or
 a restrictive `frame-ancestors` policy at the Office origin.
 

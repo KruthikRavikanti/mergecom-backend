@@ -5,6 +5,7 @@ import { AuthProvider } from '../auth/AuthContext';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { protectedRouteLoader } from '../auth/session';
 import { LoadingPage } from '../pages/LoadingPage';
+import { RouteErrorPage } from '../pages/RouteErrorPage';
 
 export const createProtectedRoute = (
   queryClient: QueryClient,
@@ -144,9 +145,6 @@ export const createProtectedRoute = (
       <ProtectedRoute />
     </AuthProvider>
   ),
-  lazy: async () => {
-    const { RouteErrorPage } = await import('../pages/RouteErrorPage');
-    return { ErrorBoundary: RouteErrorPage };
-  },
+  ErrorBoundary: RouteErrorPage,
   loader: protectedRouteLoader(queryClient),
 });

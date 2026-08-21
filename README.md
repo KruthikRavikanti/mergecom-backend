@@ -12,6 +12,7 @@ packages and conservative authorization remain the system of record.
 
 ```text
 apps/web/                    React web application
+apps/web/src/features/marketing/ public website and release metadata
 apps/office-addin/           shared Office task pane, host adapter, and manifests
 services/api/                Fastify HTTP API
 services/worker/             durable BullMQ/PostgreSQL processing pipeline
@@ -74,6 +75,8 @@ pnpm test:unit           # Vitest and xUnit
 pnpm test:integration    # service startup and gated Testcontainers checks
 pnpm test:e2e            # Playwright desktop/mobile route suite
 pnpm test:deployment     # pilot topology and configuration contract
+pnpm check:marketing-bundle  # public-entry JavaScript and poster budgets
+pnpm check:marketing-release # prerender, metadata, discovery, and asset contract
 pnpm demo:provision      # idempotently provision tenant-local synthetic comparisons
 pnpm verify              # complete local quality gate
 ```
@@ -104,6 +107,8 @@ See [local setup](docs/setup/local-development.md),
 [notifications](docs/product/notifications.md),
 [visual comparison](docs/product/visual-comparison.md),
 [synthetic demo operations](docs/runbooks/synthetic-demo.md),
+[marketing website](docs/marketing/website.md),
+[marketing release checklist](docs/marketing/release-checklist.md),
 [pilot deployment](docs/runbooks/pilot-deployment.md),
 [troubleshooting](docs/troubleshooting/local-development.md), and
 [phase status](docs/phase-status.md) for operational detail.

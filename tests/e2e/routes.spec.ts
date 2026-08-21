@@ -906,11 +906,19 @@ test.beforeEach(async ({ page }) => {
 });
 
 const publicRoutes = [
-  { heading: 'MergeCom', path: '/' },
+  {
+    heading: 'Version control for the documents that run your firm.',
+    path: '/',
+  },
+  {
+    heading: 'Document version control for Word, Excel, and PowerPoint.',
+    path: '/product',
+  },
   { heading: 'Sign in to MergeCom', path: '/login' },
   { heading: 'Join MergeCom', path: '/signup' },
-  { heading: 'Current security posture', path: '/security' },
-  { heading: 'Support', path: '/support' },
+  { heading: 'Implemented controls, stated precisely.', path: '/security' },
+  { heading: 'Help for the current workspace.', path: '/support' },
+  { heading: 'Request access to MergeCom.', path: '/request-access' },
   { heading: 'Page not found', path: '/not-a-route' },
 ];
 
@@ -1164,11 +1172,15 @@ test('shows immutable history states and uploads a version with progress', async
   });
 });
 
-test('support reports delivery failure', async ({ page }) => {
+test('support truthfully reports an unconfigured delivery channel', async ({
+  page,
+}) => {
   await page.goto('/support');
-  await page.getByLabel('Name').fill('Casey Reviewer');
-  await page.getByLabel('Work email').fill('casey@example.test');
-  await page.getByLabel('How can we help?').fill('Test request');
-  await page.getByRole('button', { name: 'Submit ticket' }).click();
-  await expect(page.getByRole('alert')).toContainText('not submitted');
+  await expect(page.getByRole('form')).toHaveCount(0);
+  await expect(page.getByRole('status')).toContainText(
+    'Online ticket delivery is not connected',
+  );
+  await expect(page.getByRole('status')).toContainText(
+    'Nothing has been submitted here',
+  );
 });

@@ -112,7 +112,15 @@ test('pilot topology keeps stateful dependencies external and hardens images', a
     resolve(repositoryRoot, 'infra/deployment/nginx.web.conf'),
     'utf8',
   );
-  assert.match(nginx, /connect-src 'self' https:/u);
+  assert.match(nginx, /connect-src 'self' __MERGECOM_CONNECT_ORIGIN__;/u);
+  assert.doesNotMatch(nginx, /connect-src[^;]*(?:\*|https:;)/u);
+  assert.match(nginx, /frame-ancestors 'none'/u);
+  assert.match(nginx, /Permissions-Policy/u);
+  assert.match(nginx, /Referrer-Policy/u);
+  assert.match(
+    nginx,
+    /try_files \$uri\/index\.html \$uri \$uri\/ \/app-shell\.html/u,
+  );
 
   const expectedUsers = new Map([
     ['Dockerfile.api', 'node'],

@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowRight } from 'lucide-react';
 
+import { trackMarketingEvent } from '../analytics/MarketingAnalytics';
 import { heroContent, marketingConfig } from '../content/site';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { HeroProductStage } from './HeroProductStage';
@@ -41,13 +42,27 @@ export function HeroSection() {
         <DisplayHeading as="h1">{heroContent.headline}</DisplayHeading>
         <p className="marketing-hero-description">{heroContent.description}</p>
         <div className="marketing-hero-actions">
-          <MarketingButton href={heroContent.primaryAction.href}>
+          <MarketingButton
+            href={heroContent.primaryAction.href}
+            onClick={() =>
+              trackMarketingEvent({
+                name: 'hero_cta_selected',
+                target: 'request_access',
+              })
+            }
+          >
             {heroContent.primaryAction.label}
             <ArrowRight aria-hidden="true" size={17} />
           </MarketingButton>
           <MarketingButton
             href={heroContent.secondaryAction.href}
             variant="ghost"
+            onClick={() =>
+              trackMarketingEvent({
+                name: 'hero_cta_selected',
+                target: 'product',
+              })
+            }
           >
             {heroContent.secondaryAction.label}
             <ArrowDown aria-hidden="true" size={17} />

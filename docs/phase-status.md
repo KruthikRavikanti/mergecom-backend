@@ -1,5 +1,30 @@
 # Phase status
 
+## Website Track W1-W6: public marketing website
+
+Status: implementation complete on the stacked `website/w1-foundation` through
+`website/w6-seo-release` branches; hosted-origin and owner release acceptance remain
+deployment gates. This track does not begin or imply product Phase 30.
+
+- [x] Public and protected routes have explicit module and bundle boundaries; the
+  homepage performs no authenticated session request.
+- [x] The responsive public shell, synthetic comparison hero, product narrative,
+  use cases, implementation-backed proof, security, support, and truthful access
+  paths share one scoped design system.
+- [x] Desktop, tablet, and mobile checks cover WCAG 2.2 AA rules, keyboard behavior,
+  reduced motion, overflow, deterministic screenshots, and failed-network logging.
+- [x] Bundle gates keep public JavaScript and media within the published budgets and
+  prevent protected PDF/comparison modules from entering the initial route.
+- [x] Route-specific metadata, owned social media, structured data, robots, sitemap,
+  bounded prerendering, hydration, and an isolated protected-route shell are built
+  into the existing pilot image.
+- [x] Analytics is optional, provider-neutral, content-free, limited to public routes,
+  and disabled by default; deployment headers permit no unapproved destination.
+
+Maintenance guidance is in `docs/marketing/website.md`; release gates are in
+`docs/marketing/release-checklist.md`; verification evidence is in
+`docs/verification/website-track-command-results.md`.
+
 ## Phases 26-29: Office-first workflow and guided onboarding
 
 Status: implementation complete in the current worktree; manual Office-host and

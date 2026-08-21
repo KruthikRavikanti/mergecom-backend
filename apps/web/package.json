@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -b && vite build",
-    "clean": "rm -rf dist coverage",
+    "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist-server && node ../../scripts/prerender-marketing.mjs",
+    "clean": "rm -rf dist dist-server coverage",
     "dev": "vite --port 5173",
     "lint": "eslint src vite.config.ts",
     "preview": "vite preview --port 4173",

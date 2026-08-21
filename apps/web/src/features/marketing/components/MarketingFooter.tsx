@@ -28,7 +28,9 @@ export function MarketingFooter() {
       </MarketingContainer>
       <MarketingContainer className="marketing-footer-bottom">
         <p>{marketingConfig.productStatus}</p>
-        <p>&copy; {new Date().getFullYear()} MergeCom</p>
+        <p suppressHydrationWarning>
+          &copy; {new Date().getFullYear()} MergeCom
+        </p>
       </MarketingContainer>
     </footer>
   );

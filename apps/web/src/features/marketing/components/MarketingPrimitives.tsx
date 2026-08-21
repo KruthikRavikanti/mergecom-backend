@@ -1,4 +1,8 @@
-import type { HTMLAttributes, PropsWithChildren } from 'react';
+import type {
+  HTMLAttributes,
+  MouseEventHandler,
+  PropsWithChildren,
+} from 'react';
 import { Link } from 'react-router-dom';
 
 interface MarketingSectionProps extends PropsWithChildren<
@@ -54,13 +58,19 @@ export function HairlineDivider({ className = '' }: { className?: string }) {
 export function MarketingButton({
   children,
   href,
+  onClick,
   variant = 'primary',
 }: PropsWithChildren<{
   href: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
   variant?: 'ghost' | 'primary' | 'secondary';
 }>) {
   return (
-    <Link className={`marketing-button is-${variant}`} to={href}>
+    <Link
+      className={`marketing-button is-${variant}`}
+      to={href}
+      onClick={onClick}
+    >
       {children}
     </Link>
   );

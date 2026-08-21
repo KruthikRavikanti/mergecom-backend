@@ -1,55 +1,43 @@
 import type { RouteObject } from 'react-router-dom';
 
 import { AuthProviderRoute } from '../auth/AuthProviderRoute';
+import { PublicLayout } from '../components/layout/PublicLayout';
 import { publicPageMetadata } from '../features/marketing/content/metadata';
+import { MarketingHomePage } from '../features/marketing/pages/MarketingHomePage';
+import { MarketingSecurityPage } from '../features/marketing/pages/MarketingSecurityPage';
+import { MarketingSupportPage } from '../features/marketing/pages/MarketingSupportPage';
+import { ProductPage } from '../features/marketing/pages/ProductPage';
+import { RequestAccessPage } from '../features/marketing/pages/RequestAccessPage';
+import { LoadingPage } from '../pages/LoadingPage';
+import { RouteErrorPage } from '../pages/RouteErrorPage';
 
 export const createPublicRoutes = (): RouteObject[] => [
   {
     children: [
       {
+        Component: MarketingHomePage,
         handle: { marketingMeta: publicPageMetadata.home },
         index: true,
-        lazy: async () => {
-          const { MarketingHomePage } =
-            await import('../features/marketing/pages/MarketingHomePage');
-          return { Component: MarketingHomePage };
-        },
       },
       {
+        Component: MarketingSecurityPage,
         handle: { marketingMeta: publicPageMetadata.security },
         path: 'security',
-        lazy: async () => {
-          const { MarketingSecurityPage } =
-            await import('../features/marketing/pages/MarketingSecurityPage');
-          return { Component: MarketingSecurityPage };
-        },
       },
       {
+        Component: ProductPage,
         handle: { marketingMeta: publicPageMetadata.product },
         path: 'product',
-        lazy: async () => {
-          const { ProductPage } =
-            await import('../features/marketing/pages/ProductPage');
-          return { Component: ProductPage };
-        },
       },
       {
+        Component: MarketingSupportPage,
         handle: { marketingMeta: publicPageMetadata.support },
         path: 'support',
-        lazy: async () => {
-          const { MarketingSupportPage } =
-            await import('../features/marketing/pages/MarketingSupportPage');
-          return { Component: MarketingSupportPage };
-        },
       },
       {
+        Component: RequestAccessPage,
         handle: { marketingMeta: publicPageMetadata.requestAccess },
         path: 'request-access',
-        lazy: async () => {
-          const { RequestAccessPage } =
-            await import('../features/marketing/pages/RequestAccessPage');
-          return { Component: RequestAccessPage };
-        },
       },
       {
         children: [
@@ -73,12 +61,9 @@ export const createPublicRoutes = (): RouteObject[] => [
         element: <AuthProviderRoute />,
       },
     ],
-    lazy: async () => {
-      const { PublicLayout } =
-        await import('../components/layout/PublicLayout');
-      const { RouteErrorPage } = await import('../pages/RouteErrorPage');
-      return { Component: PublicLayout, ErrorBoundary: RouteErrorPage };
-    },
+    Component: PublicLayout,
+    ErrorBoundary: RouteErrorPage,
+    HydrateFallback: LoadingPage,
     path: '/',
   },
 ];
